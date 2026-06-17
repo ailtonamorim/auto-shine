@@ -926,6 +926,8 @@ async function initPartnerPage() {
   const tabButtons = managementShell.querySelectorAll("[data-partner-tab]");
   const tabPanels = managementShell.querySelectorAll("[data-partner-panel]");
   const cancelEditButton = document.getElementById("partner-cancel-edit");
+  let wizardGoToStep = null;
+  let syncTimeTags = null;
 
   // loja em memória para edição rápida (evita fetch extra)
   let cachedShops = [];
@@ -1331,9 +1333,18 @@ async function initPartnerPage() {
     setPartnerFeedback(photoFeedback, "");
     setPartnerFeedback(coverFeedback, "");
     setPartnerFeedback(geocodeFeedback, "");
-    submitButton.textContent = "Salvar lava jato";
+    submitButton.textContent = "Publicar lava jato";
     form.dataset.editingShopId = "";
     if (cancelEditButton) cancelEditButton.classList.add("hidden");
+    // Resetar zona de foto e wizard
+    const photoPreview = document.getElementById("partner-photo-preview");
+    const photoPlaceholder = document.getElementById("partner-photo-placeholder");
+    const photoZone = document.getElementById("partner-photo-zone");
+    if (photoPreview) { photoPreview.src = ""; photoPreview.classList.add("hidden"); }
+    if (photoPlaceholder) photoPlaceholder.classList.remove("hidden");
+    if (photoZone) photoZone.classList.remove("has-preview");
+    syncTimeTags?.();
+    wizardGoToStep?.(1);
   }
 
   function loadShopToForm(loja) {
@@ -1365,8 +1376,20 @@ async function initPartnerPage() {
       createServiceRow();
     }
 
-    submitButton.textContent = "Salvar alteracoes";
+    submitButton.textContent = "Salvar alterações";
+    // Mostrar foto existente no preview
+    const photoPreview = document.getElementById("partner-photo-preview");
+    const photoPlaceholder = document.getElementById("partner-photo-placeholder");
+    const photoZone = document.getElementById("partner-photo-zone");
+    if (loja.fotoUrl && photoPreview) {
+      photoPreview.src = loja.fotoUrl;
+      photoPreview.classList.remove("hidden");
+      if (photoPlaceholder) photoPlaceholder.classList.add("hidden");
+      if (photoZone) photoZone.classList.add("has-preview");
+    }
+    syncTimeTags?.();
     switchTab("cadastro");
+    wizardGoToStep?.(1);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -2043,6 +2066,136 @@ async function initPartnerPage() {
     showAuthArea();
     notify("Sessão do dono encerrada.");
   });
+
+  // ── Wizard de cadastro ─────────────────────────────────────────────────────
+  function initWizard() {
+    const panels = form.querySelectorAll(".wizard-panel");
+    const progressSteps = document.querySelectorAll("#partner-wizard-progress .wizard-progress-step");
+    if (!panels.length) return;
+
+    function goToStep(n) {
+      panels.forEach((p) => p.classList.toggle("hidden", parseInt(p.dataset.wizardPanel) !== n));
+      progressSteps.forEach((s) => {
+        const sn = parseInt(s.dataset.step);
+        s.classList.toggle("is-active", sn === n);
+        s.classList.toggle("is-done", sn < n);
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    wizardGoToStep = goToStep;
+
+    form.querySelectorAll("[data-wizard-next]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const step = parseInt(btn.dataset.wizardNext);
+        if (step === 1) {
+          const nome = (document.getElementById("partner-shop-name")?.value || "").trim();
+          const desc = (document.getElementById("partner-summary")?.value || "").trim();
+          const addr = (document.getElementById("partner-address")?.value || "").trim();
+          if (!nome || !desc || !addr) { notify("Preencha nome, descrição e endereço antes de continuar."); return; }
+          const lat = latitudeInput?.value;
+          const lng = longitudeInput?.value;
+          if (!lat || !lng) { notify('Clique em "Localizar no mapa" para confirmar o endereço antes de continuar.'); return; }
+        }
+        if (step === 2) {
+          const photoFile = photoFileInput?.files?.[0];
+          const photoUrl = (document.getElementById("partner-photo")?.value || "").trim();
+          if (!photoFile && !photoUrl) { notify("Adicione uma foto do seu lava jato para continuar."); return; }
+        }
+        if (step === 3) {
+          const days = readScheduleDaysFromForm();
+          if (!days.length) { notify("Selecione pelo menos um dia de atendimento."); return; }
+        }
+        goToStep(step + 1);
+      });
+    });
+
+    form.querySelectorAll("[data-wizard-prev]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const step = parseInt(btn.dataset.wizardPrev);
+        goToStep(step - 1);
+      });
+    });
+  }
+
+  function initPhotoZone() {
+    const zone = document.getElementById("partner-photo-zone");
+    const preview = document.getElementById("partner-photo-preview");
+    const placeholder = document.getElementById("partner-photo-placeholder");
+    if (!zone || !photoFileInput) return;
+
+    zone.addEventListener("click", (e) => {
+      if (!e.target.closest("img")) photoFileInput.click();
+    });
+
+    zone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); photoFileInput.click(); }
+    });
+
+    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("is-dragover"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("is-dragover"));
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      zone.classList.remove("is-dragover");
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith("image/")) showPreview(file);
+    });
+
+    photoFileInput.addEventListener("change", () => {
+      const file = photoFileInput.files[0];
+      if (file) showPreview(file);
+    });
+
+    function showPreview(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (preview) { preview.src = e.target.result; preview.classList.remove("hidden"); }
+        if (placeholder) placeholder.classList.add("hidden");
+        zone.classList.add("has-preview");
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  function initTimeTags() {
+    const presetBtns = form.querySelectorAll("[data-add-time]");
+    if (!scheduleTimesInput || !presetBtns.length) return;
+
+    function getActiveTimes() {
+      return parseScheduleTimes(scheduleTimesInput.value);
+    }
+
+    function setActiveTimes(times) {
+      scheduleTimesInput.value = [...new Set(times)].sort().join(", ");
+      refreshChips();
+    }
+
+    function refreshChips() {
+      const active = getActiveTimes();
+      presetBtns.forEach((btn) => {
+        btn.classList.toggle("is-selected", active.includes(btn.dataset.addTime));
+      });
+    }
+
+    presetBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const time = btn.dataset.addTime;
+        const times = getActiveTimes();
+        if (times.includes(time)) {
+          setActiveTimes(times.filter((t) => t !== time));
+        } else {
+          setActiveTimes([...times, time]);
+        }
+      });
+    });
+
+    refreshChips();
+    syncTimeTags = refreshChips;
+  }
+
+  initWizard();
+  initPhotoZone();
+  initTimeTags();
 
   // Verifica se já está logado via token
   const dono = getDonoFromToken();
