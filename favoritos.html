@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoShine — Favoritos</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body data-page="favoritos">
+  <div class="bg-decor"></div>
+
+  <header class="topbar container">
+    <a class="brand" href="index.html">
+      <span>AutoShine</span>
+    </a>
+    <nav class="main-nav">
+      <a href="index.html">Início</a>
+      <a href="favoritos.html">Favoritos</a>
+      <a href="mapa.html">Mapa</a>
+      <a href="meus-agendamentos.html">Agendamentos</a>
+      <a href="cadastro.html?mode=login">Acessar</a>
+    </nav>
+  </header>
+
+  <main class="container page-home reveal-root">
+    <section class="hero reveal-item">
+      <div>
+        <p class="eyebrow">Meus favoritos</p>
+        <h1>Lojas que você salvou</h1>
+        <p class="hero-text">Aqui estão as lojas que você marcou como favoritas. Toque na estrela para remover ou clique em uma loja para ver os detalhes.</p>
+      </div>
+    </section>
+
+    <section class="listing reveal-item">
+      <div class="section-head">
+        <h2>Lava jatos favoritos</h2>
+        <a href="index.html" class="link">Explorar lojas</a>
+      </div>
+
+      <div id="favorites-empty" class="empty-state hidden">
+        <h3>Nenhuma loja favorita ainda</h3>
+        <p>Salve seus lava jatos preferidos pela estrela dos cards para encontrá-los rapidamente aqui.</p>
+      </div>
+
+      <div id="favorites-grid" class="shop-grid"></div>
+    </section>
+  </main>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

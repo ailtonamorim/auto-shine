@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoShine — Painel Admin</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body data-page="admin">
+  <div class="bg-decor"></div>
+
+  <!-- AUTH SHELL -->
+  <div id="admin-auth-shell" class="admin-auth-wrap">
+    <div class="admin-login-card panel">
+      <div class="admin-login-header">
+        <h1>AutoShine <span class="admin-badge">Admin</span></h1>
+        <p class="empty-copy">Acesso restrito a administradores do sistema.</p>
+      </div>
+      <form id="admin-login-form" class="booking-form" novalidate>
+        <div class="field">
+          <label for="admin-login-input">Login</label>
+          <input id="admin-login-input" name="login" type="text" required placeholder="Login de administrador" autocomplete="username" />
+        </div>
+        <div class="field">
+          <label for="admin-senha-input">Senha</label>
+          <input id="admin-senha-input" name="senha" type="password" required placeholder="Senha" autocomplete="current-password" />
+        </div>
+        <p id="admin-login-error" class="field-error hidden"></p>
+        <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MANAGEMENT SHELL -->
+  <div id="admin-management-shell" class="hidden">
+    <header class="admin-topbar">
+      <div class="admin-topbar-brand">
+        <span class="admin-topbar-title">AutoShine <span class="admin-badge">Admin</span></span>
+      </div>
+      <div class="admin-topbar-actions">
+        <span id="admin-session-label" class="empty-copy"></span>
+        <button id="admin-logout-btn" class="btn btn-ghost" type="button">Sair</button>
+      </div>
+    </header>
+
+    <main class="container admin-main">
+      <section class="admin-stats-grid" aria-label="Resumo do sistema">
+        <article class="admin-stat-card">
+          <span>Lojas</span>
+          <strong id="admin-stat-shops">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Bloqueadas</span>
+          <strong id="admin-stat-blocked">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Parceiros</span>
+          <strong id="admin-stat-owners">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Clientes</span>
+          <strong id="admin-stat-users">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Agendamentos</span>
+          <strong id="admin-stat-bookings">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Agendamentos Pendentes</span>
+          <strong id="admin-stat-pending">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Avaliações</span>
+          <strong id="admin-stat-reviews">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Denúncias</span>
+          <strong id="admin-stat-reports">0</strong>
+        </article>
+        <article class="admin-stat-card">
+          <span>Denúncias Abertas</span>
+          <strong id="admin-stat-open-reports">0</strong>
+        </article>
+      </section>
+
+      <nav class="panel admin-tabs" aria-label="Seções administrativas">
+        <button class="admin-tab active" type="button" data-admin-tab="lojas">Lojas</button>
+        <button class="admin-tab" type="button" data-admin-tab="favoritos">Favoritos</button>
+        <button class="admin-tab" type="button" data-admin-tab="usuarios">Usuários</button>
+        <button class="admin-tab" type="button" data-admin-tab="donos">Parceiros</button>
+        <button class="admin-tab" type="button" data-admin-tab="agendamentos">Agendamentos</button>
+        <button class="admin-tab" type="button" data-admin-tab="avaliacoes">Avaliações</button>
+        <button class="admin-tab" type="button" data-admin-tab="denuncias">Denúncias</button>
+      </nav>
+
+      <section class="admin-section active" data-admin-section="lojas">
+      <section id="admin-edit-panel" class="panel admin-form hidden" aria-label="Editar loja selecionada">
+        <div class="section-head section-head-compact">
+          <div>
+            <h2 id="admin-form-title">Editar loja</h2>
+            <p class="empty-copy">Altere os dados da loja selecionada, do parceiro e dos serviços cadastrados.</p>
+          </div>
+        </div>
+
+        <form id="admin-shop-form" novalidate>
+          <input id="admin-shop-id" type="hidden" />
+
+          <div class="admin-form-section">
+            <h3>Dados do parceiro</h3>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-owner-name">Nome do parceiro</label>
+                <input id="admin-owner-name" type="text" autocomplete="name" required />
+              </div>
+              <div class="field">
+                <label for="admin-owner-login">Login</label>
+                <input id="admin-owner-login" type="text" autocomplete="username" required />
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-owner-cnpj">CNPJ</label>
+                <input id="admin-owner-cnpj" type="text" inputmode="numeric" placeholder="Somente números" />
+              </div>
+              <div class="field">
+                <label for="admin-owner-password">Nova senha do parceiro</label>
+                <input id="admin-owner-password" type="password" autocomplete="new-password" placeholder="Deixe em branco para manter" />
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-form-section">
+            <h3>Dados da loja</h3>
+            <div class="field">
+              <label for="admin-shop-name">Nome do lava jato</label>
+              <input id="admin-shop-name" type="text" required />
+            </div>
+            <div class="field">
+              <label for="admin-shop-summary">Descrição</label>
+              <textarea id="admin-shop-summary" rows="3" required></textarea>
+            </div>
+            <div class="field">
+              <label for="admin-shop-address">Endereço</label>
+              <input id="admin-shop-address" type="text" required />
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-shop-latitude">Latitude</label>
+                <input id="admin-shop-latitude" type="number" step="any" required />
+              </div>
+              <div class="field">
+                <label for="admin-shop-longitude">Longitude</label>
+                <input id="admin-shop-longitude" type="number" step="any" required />
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-shop-category">Categoria</label>
+                <input id="admin-shop-category" type="text" placeholder="Ex: lavagem completa" />
+              </div>
+              <div class="field">
+                <label for="admin-shop-price">Preço médio</label>
+                <input id="admin-shop-price" type="number" min="0" step="0.01" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="admin-shop-photo">Foto principal (URL ou arquivo local)</label>
+              <input id="admin-shop-photo" type="text" required placeholder="https://... ou assets/img/foto.png" />
+            </div>
+            <div class="field">
+              <label for="admin-shop-cover">Capa (URL ou arquivo local)</label>
+              <input id="admin-shop-cover" type="text" placeholder="https://... ou assets/img/capa.png" />
+            </div>
+            <div class="field">
+              <label for="admin-shop-gallery">Fotos adicionais</label>
+              <textarea id="admin-shop-gallery" rows="3" placeholder="Uma URL por linha para a galeria"></textarea>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-shop-payments">Formas de pagamento</label>
+                <input id="admin-shop-payments" type="text" placeholder="Pix, cartão, dinheiro" />
+              </div>
+              <div class="field">
+                <label for="admin-shop-cancellation">Política de cancelamento</label>
+                <textarea id="admin-shop-cancellation" rows="3" placeholder="Ex: cancelamentos até 2 horas antes."></textarea>
+              </div>
+            </div>
+            <label class="admin-checkbox">
+              <input id="admin-shop-blocked" type="checkbox" />
+              <span>Loja bloqueada</span>
+            </label>
+          </div>
+
+          <div class="admin-form-section">
+            <div class="admin-section-row">
+              <h3>Serviços</h3>
+              <button id="admin-add-service" class="btn btn-ghost admin-action-btn" type="button">Adicionar serviço</button>
+            </div>
+            <div id="admin-services-list" class="admin-service-list"></div>
+          </div>
+
+          <p id="admin-form-feedback" class="admin-feedback" role="status"></p>
+          <div class="admin-form-actions">
+            <button id="admin-submit-btn" class="btn btn-primary" type="submit">Salvar alterações</button>
+            <button id="admin-cancel-edit" class="btn btn-ghost" type="button">Cancelar edição</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="admin-list-panel">
+        <div class="section-head">
+          <div>
+            <h2>Lava jatos cadastrados</h2>
+            <p id="admin-shops-count" class="empty-copy"></p>
+          </div>
+          <button id="admin-refresh-btn" class="btn btn-ghost" type="button">Atualizar</button>
+        </div>
+
+        <div class="admin-table-wrap panel">
+          <table class="admin-table" id="admin-shops-table">
+            <thead>
+              <tr>
+                <th>Lava jato</th>
+                <th>Dono</th>
+                <th>Serviços</th>
+                <th>Avaliação</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="admin-shops-tbody"></tbody>
+          </table>
+          <p id="admin-empty" class="empty-copy hidden">Nenhum lava jato cadastrado ainda.</p>
+        </div>
+      </section>
+      </section>
+
+      <section class="admin-section hidden" data-admin-section="favoritos">
+        <section class="panel admin-favorites-card" aria-label="Lojas favoritadas">
+          <div class="section-head section-head-compact">
+            <div>
+              <h2>Lojas favoritadas</h2>
+              <p id="admin-favorites-summary" class="empty-copy">Carregando favoritos...</p>
+            </div>
+          </div>
+          <ul id="admin-favorites-list" class="admin-favorites-list"></ul>
+          <p id="admin-favorites-empty" class="empty-copy hidden">Nenhuma loja foi favoritada ate agora.</p>
+        </section>
+      </section>
+
+      <section class="admin-section hidden" data-admin-section="usuarios">
+        <div class="section-head">
+          <div>
+            <h2>Usuários cadastrados</h2>
+            <p id="admin-users-count" class="empty-copy"></p>
+          </div>
+        </div>
+        <section id="admin-user-edit-panel" class="panel admin-form hidden" aria-label="Editar usuario selecionado">
+          <div class="section-head section-head-compact">
+            <div>
+              <h2 id="admin-user-form-title">Editar usuario</h2>
+              <p class="empty-copy">Atualize dados do cliente. A nova senha e opcional.</p>
+            </div>
+          </div>
+          <form id="admin-user-form" novalidate>
+            <input id="admin-user-id" type="hidden" />
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-user-name">Nome</label>
+                <input id="admin-user-name" type="text" autocomplete="name" required />
+              </div>
+              <div class="field">
+                <label for="admin-user-email">Email</label>
+                <input id="admin-user-email" type="email" autocomplete="email" required />
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-user-cpf">CPF</label>
+                <input id="admin-user-cpf" type="text" inputmode="numeric" placeholder="Somente números" />
+              </div>
+              <div class="field">
+                <label for="admin-user-phone">Telefone</label>
+                <input id="admin-user-phone" type="text" inputmode="tel" placeholder="Somente números" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="admin-user-password">Nova senha</label>
+              <input id="admin-user-password" type="password" autocomplete="new-password" placeholder="Deixe em branco para manter" />
+            </div>
+            <p id="admin-user-feedback" class="admin-feedback" role="status"></p>
+            <div class="admin-form-actions">
+              <button id="admin-user-submit" class="btn btn-primary" type="submit">Salvar usuario</button>
+              <button id="admin-user-cancel" class="btn btn-ghost" type="button">Cancelar</button>
+            </div>
+          </form>
+        </section>
+        <div class="admin-table-wrap panel">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Usuário</th>
+                <th>Contato</th>
+                <th>Histórico</th>
+                <th>Cadastro</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="admin-users-tbody"></tbody>
+          </table>
+          <p id="admin-users-empty" class="empty-copy hidden">Nenhum usuário cadastrado.</p>
+        </div>
+      </section>
+
+      <section class="admin-section hidden" data-admin-section="donos">
+        <div class="section-head">
+          <div>
+            <h2>Donos e Parceiros</h2>
+            <p id="admin-owners-count" class="empty-copy"></p>
+          </div>
+        </div>
+        <section id="admin-owner-edit-panel" class="panel admin-form hidden" aria-label="Editar parceiro selecionado">
+          <div class="section-head section-head-compact">
+            <div>
+              <h2 id="admin-owner-form-title">Editar Parceiros</h2>
+              <p class="empty-copy">Atualize nome, login, CNPJ e senha do dono.</p>
+            </div>
+          </div>
+          <form id="admin-owner-form" novalidate>
+            <input id="admin-owner-edit-id" type="hidden" />
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-owner-edit-name">Nome</label>
+                <input id="admin-owner-edit-name" type="text" autocomplete="name" required />
+              </div>
+              <div class="field">
+                <label for="admin-owner-edit-login">Login</label>
+                <input id="admin-owner-edit-login" type="text" autocomplete="username" required />
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-owner-edit-cnpj">CNPJ</label>
+                <input id="admin-owner-edit-cnpj" type="text" inputmode="numeric" placeholder="Somente números" />
+              </div>
+              <div class="field">
+                <label for="admin-owner-edit-password">Nova senha</label>
+                <input id="admin-owner-edit-password" type="password" autocomplete="new-password" placeholder="Deixe em branco para manter" />
+              </div>
+            </div>
+            <p id="admin-owner-feedback" class="admin-feedback" role="status"></p>
+            <div class="admin-form-actions">
+              <button id="admin-owner-submit" class="btn btn-primary" type="submit">Salvar parceiro</button>
+              <button id="admin-owner-cancel" class="btn btn-ghost" type="button">Cancelar</button>
+            </div>
+          </form>
+        </section>
+        <div class="admin-table-wrap panel">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Dono</th>
+                <th>Login/CNPJ</th>
+                <th>Lojas</th>
+                <th>Cadastro</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="admin-owners-tbody"></tbody>
+          </table>
+          <p id="admin-owners-empty" class="empty-copy hidden">Nenhum dono cadastrado.</p>
+        </div>
+      </section>
+
+      <section class="admin-section hidden" data-admin-section="agendamentos">
+        <div class="section-head">
+          <div>
+            <h2>Agendamentos</h2>
+            <p id="admin-bookings-count" class="empty-copy"></p>
+          </div>
+        </div>
+        <div class="admin-table-wrap panel">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Lava jato</th>
+                <th>Serviço</th>
+                <th>Data</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="admin-bookings-tbody"></tbody>
+          </table>
+          <p id="admin-bookings-empty" class="empty-copy hidden">Nenhum agendamento encontrado.</p>
+        </div>
+      </section>
+
+      <section class="admin-section hidden" data-admin-section="avaliacoes">
+        <div class="section-head">
+          <div>
+            <h2>Avaliações</h2>
+            <p id="admin-reviews-count" class="empty-copy"></p>
+          </div>
+        </div>
+        <section id="admin-review-edit-panel" class="panel admin-form hidden" aria-label="Editar avaliação selecionada">
+          <div class="section-head section-head-compact">
+            <div>
+              <h2 id="admin-review-form-title">Editar avaliação</h2>
+              <p id="admin-review-context" class="empty-copy"></p>
+            </div>
+          </div>
+          <form id="admin-review-form" novalidate>
+            <input id="admin-review-id" type="hidden" />
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-review-rating">Nota</label>
+                <input id="admin-review-rating" type="number" min="1" max="5" step="1" required />
+              </div>
+              <div class="field">
+                <label for="admin-review-customer-name">Nome exibido</label>
+                <input id="admin-review-customer-name" type="text" placeholder="Cliente sem conta" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="admin-review-photo">Foto da avaliação</label>
+              <input id="admin-review-photo" type="text" placeholder="https://... ou assets/uploads/foto.png" />
+            </div>
+            <div class="field">
+              <label for="admin-review-comment">Comentário</label>
+              <textarea id="admin-review-comment" rows="4"></textarea>
+            </div>
+            <p id="admin-review-feedback" class="admin-feedback" role="status"></p>
+            <div class="admin-form-actions">
+              <button id="admin-review-submit" class="btn btn-primary" type="submit">Salvar avaliação</button>
+              <button id="admin-review-cancel" class="btn btn-ghost" type="button">Cancelar</button>
+            </div>
+          </form>
+        </section>
+        <div class="admin-table-wrap panel">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Lava jato</th>
+                <th>Nota</th>
+                <th>Comentário</th>
+                <th>Denúncias</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="admin-reviews-tbody"></tbody>
+          </table>
+          <p id="admin-reviews-empty" class="empty-copy hidden">Nenhuma avaliação encontrada.</p>
+        </div>
+      </section>
+
+      <section class="admin-section hidden" data-admin-section="denuncias">
+        <div class="section-head">
+          <div>
+            <h2>Denúncias</h2>
+            <p id="admin-reports-count" class="empty-copy"></p>
+          </div>
+        </div>
+        <div class="admin-table-wrap panel">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Origem</th>
+                <th>Alvo</th>
+                <th>Motivo</th>
+                <th>Detalhes</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="admin-reports-tbody"></tbody>
+          </table>
+          <p id="admin-reports-empty" class="empty-copy hidden">Nenhuma denúncia registrada.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
+
+

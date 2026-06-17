@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id           Int           @id @default(autoincrement())
+  nome         String
+  email        String        @unique
+  cpf          String?       @unique
+  telefone     String?
+  senha        String?
+  googleId     String?       @unique
+  createdAt    DateTime      @default(now())
+  agendamentos Agendamento[]
+  avaliacoes   Avaliacao[]
+  denuncias    Denuncia[]
+  favoritos    Favorito[]
+}
+
+model Dono {
+  id        Int      @id @default(autoincrement())
+  nome      String
+  login     String   @unique
+  cnpj      String?
+  senha     String?
+  googleId  String?  @unique
+  createdAt DateTime @default(now())
+  lojas     Loja[]
+}
+
+model Loja {
+  id           Int           @id @default(autoincrement())
+  nome         String
+  descricao    String
+  endereco     String
+  latitude     Float
+  longitude    Float
+  precoMedio   Float         @default(0)
+  categoria    String        @default("serviços gerais")
+  fotoUrl      String
+  capaUrl      String?
+  fotosAdicionais String?
+  formasPagamento String @default("Pix, Cartão, Dinheiro")
+  politicaCancelamento String @default("Cancelamentos e reagendamentos podem ser feitos até 2 horas antes do horário marcado.")
+  agendaDias   String        @default("1,2,3,4,5,6")
+  agendaHorarios String      @default("08:00,09:30,11:00,13:30,15:00,16:30")
+  bloqueado    Boolean       @default(false)
+  donoId       Int
+  dono         Dono          @relation(fields: [donoId], references: [id])
+  servicos     ServicoLoja[]
+  agendamentos Agendamento[]
+  avaliacoes   Avaliacao[]
+  denuncias    Denuncia[]
+  favoritos    Favorito[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model ServicoLoja {
+  id           Int           @id @default(autoincrement())
+  nome         String
+  descricao    String
+  preco        Float
+  duracao      String
+  lojaId       Int
+  loja         Loja          @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  agendamentos Agendamento[]
+  createdAt    DateTime      @default(now())
+}
+
+model Agendamento {
+  id           Int          @id @default(autoincrement())
+  data         String
+  hora         String
+  veiculo      String       @default("Carro")
+  notas        String?
+  status       String       @default("pendente")
+  nomeCliente  String?
+  emailCliente String?
+  usuarioId    Int?
+  lojaId       Int
+  servicoId    Int
+  usuario      Usuario?     @relation(fields: [usuarioId], references: [id])
+  loja         Loja         @relation(fields: [lojaId], references: [id])
+  servico      ServicoLoja  @relation(fields: [servicoId], references: [id])
+  avaliacao    Avaliacao?
+  denuncias    Denuncia[]
+  createdAt    DateTime     @default(now())
+}
+
+model Avaliacao {
+  id            Int          @id @default(autoincrement())
+  nota          Int
+  comentario    String?
+  fotoUrl       String?
+  nomeCliente   String?
+  usuarioId     Int?
+  lojaId        Int
+  agendamentoId Int?         @unique
+  usuario       Usuario?     @relation(fields: [usuarioId], references: [id])
+  loja          Loja         @relation(fields: [lojaId], references: [id])
+  agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
+  denuncias     Denuncia[]
+  createdAt     DateTime     @default(now())
+}
+
+model Denuncia {
+  id            Int          @id @default(autoincrement())
+  tipo          String
+  motivo        String
+  detalhes      String?
+  status        String       @default("aberta")
+  usuarioId     Int?
+  lojaId        Int?
+  avaliacaoId   Int?
+  agendamentoId Int?
+  usuario       Usuario?     @relation(fields: [usuarioId], references: [id])
+  loja          Loja?        @relation(fields: [lojaId], references: [id])
+  avaliacao     Avaliacao?   @relation(fields: [avaliacaoId], references: [id])
+  agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Favorito {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int
+  lojaId    Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  loja      Loja     @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([usuarioId, lojaId])
+}

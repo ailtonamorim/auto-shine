@@ -1,0 +1,38 @@
+{
+  "name": "autoshine-marketplace",
+  "version": "1.0.0",
+  "description": "Marketplace web responsivo para lava jato e estetica automotiva",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "prisma generate && prisma migrate deploy",
+    "check": "node scripts/check.js",
+    "seed": "prisma db seed",
+    "migrate": "prisma migrate dev"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "express-session": "^1.18.2",
+    "jsonwebtoken": "^9.0.3",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "prisma": "^6.19.3"
+  },
+  "keywords": [
+    "marketplace",
+    "lava-jato",
+    "html",
+    "css",
+    "javascript",
+    "node"
+  ],
+  "author": "",
+  "license": "MIT"
+}

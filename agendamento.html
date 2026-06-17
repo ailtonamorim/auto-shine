@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoShine — Agendamento</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body data-page="agendamento">
+  <div class="bg-decor"></div>
+  <header class="topbar container">
+    <a class="brand" href="index.html">
+      <span>AutoShine</span>
+    </a>
+    <nav class="main-nav">
+      <a href="index.html">Início</a>
+      <a href="favoritos.html">Favoritos</a>
+      <a href="mapa.html">Mapa</a>
+      <a href="meus-agendamentos.html">Agendamentos</a>
+      <a href="cadastro.html?mode=login">Acessar</a>
+    </nav>
+  </header>
+
+  <main class="container reveal-root">
+    <section class="booking-shell reveal-item">
+      <h1>Agendar serviço</h1>
+      <form id="booking-form" class="booking-form">
+        <div class="field">
+          <label for="servico">Serviço selecionado</label>
+          <input id="servico" name="servico" type="text" readonly />
+        </div>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="data">Escolha a data</label>
+            <input id="data" name="data" type="date" required />
+          </div>
+          <div class="field">
+            <label for="horario">Escolha o horário</label>
+            <select id="horario" name="horario" required>
+              <option value="">Selecione</option>
+              <option>08:00</option>
+              <option>09:30</option>
+              <option>11:00</option>
+              <option>13:30</option>
+              <option>15:00</option>
+              <option>16:30</option>
+            </select>
+            <p id="booking-availability-msg" class="empty-copy validation-msg"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Tipo de veículo</label>
+          <div class="vehicle-options">
+            <label><input type="radio" name="veiculo" value="carro" required /> Carro</label>
+            <label><input type="radio" name="veiculo" value="moto" /> Moto</label>
+            <label><input type="radio" name="veiculo" value="caminhonete" /> Caminhonete</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="obs">Observações</label>
+          <textarea id="obs" name="observacoes" rows="4" placeholder="Ex.: veículo com banco de couro, foco no acabamento interno."></textarea>
+        </div>
+
+        <button class="btn btn-primary btn-block" type="submit">Confirmar</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
+
+

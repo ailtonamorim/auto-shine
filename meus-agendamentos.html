@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoShine — Meus Agendamentos</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body data-page="meus-agendamentos">
+  <header class="topbar container">
+    <a class="brand" href="index.html">
+      <span>AutoShine</span>
+    </a>
+    <nav class="main-nav">
+      <a href="index.html">Início</a>
+      <a href="favoritos.html">Favoritos</a>
+      <a href="mapa.html">Mapa</a>
+      <a href="meus-agendamentos.html">Agendamentos</a>
+      <a href="cadastro.html?mode=login">Acessar</a>
+    </nav>
+  </header>
+
+  <main class="container reveal-root">
+    <section class="section-head reveal-item">
+      <div>
+        <p class="eyebrow">Sua conta</p>
+        <h1>Meus agendamentos</h1>
+      </div>
+      <a class="btn btn-secondary" href="index.html">Novo</a>
+    </section>
+
+    <section class="user-bookings-shell reveal-item">
+      <p id="user-bookings-empty" class="empty-copy hidden">Você ainda não possui agendamentos.</p>
+      <div id="user-bookings-list" class="user-bookings-list"></div>
+    </section>
+  </main>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
+
+

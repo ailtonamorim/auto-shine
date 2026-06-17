@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "PowerShell(Start-Sleep -Seconds 3; try { $r = Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 5; \"Status: $\\($r.StatusCode\\) — OK\" } catch { \"ERRO: $_\" })",
+      "PowerShell(Start-Process \"http://localhost:3000\")",
+      "PowerShell(Start-Process \"http://localhost:3000/mapa.html\")",
+      "PowerShell(Start-Process \"http://localhost:3000/cadastro.html\")",
+      "PowerShell(Start-Process \"http://localhost:3000/admin.html\")",
+      "PowerShell(ngrok version 2>$null)",
+      "PowerShell(if \\(-not $?\\) { \"ngrok: n�o instalado\" })",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git config *)",
+      "Bash(git commit *)"
+    ]
+  }
+}

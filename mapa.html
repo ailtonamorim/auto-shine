@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoShine — Mapa</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <link rel="stylesheet" href="assets/css/styles.css" />
+
+</head>
+
+<body data-page="mapa">
+
+  <div class="bg-decor"></div>
+
+  <header class="topbar container">
+
+    <a class="brand" href="index.html">
+      <span>AutoShine</span>
+    </a>
+
+    <nav class="main-nav">
+      <a href="index.html">Início</a>
+      <a href="favoritos.html">Favoritos</a>
+      <a href="mapa.html">Mapa</a>
+      <a href="meus-agendamentos.html">Agendamentos</a>
+      <a href="cadastro.html?mode=login">Acessar</a>
+    </nav>
+
+  </header>
+
+  <main class="container page-map reveal-root">
+
+    <section class="section-head reveal-item">
+      <h1>Lava jatos perto de você</h1>
+    </section>
+
+    <section class="chip-list reveal-item" id="map-filter-list">
+
+      <button class="chip active" data-filter="todos">Todos</button>
+      <button class="chip" data-filter="lavagem">Lavagem</button>
+      <button class="chip" data-filter="polimento">Polimento</button>
+      <button class="chip" data-filter="higienização">Higienização</button>
+      <button class="chip" data-filter="detalhamento">Detalhamento</button>
+      <button class="btn btn-ghost" id="map-locate-btn" type="button">Localização</button>
+
+    </section>
+
+    <section class="map-shell reveal-item">
+
+      <div id="map" class="map-canvas real-map" aria-label="Mapa com lava jatos próximos"></div>
+
+      <article class="map-bottom-card" id="map-selected-card">
+        <h3 id="shop-name">Selecione um lava jato</h3>
+        <p id="shop-info">Clique em um marcador no mapa</p>
+        <div class="map-action-row">
+          <a id="map-profile-btn" class="btn btn-primary" href="perfil.html">Ver serviços</a>
+          <button id="map-route-btn" class="btn btn-secondary" type="button">Caminho</button>
+          <a id="external-nav-btn" class="btn btn-ghost" href="https://www.google.com/maps" target="_blank" rel="noopener">Ir com GPS</a>
+        </div>
+      </article>
+
+    </section>
+
+  </main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="assets/js/app.js"></script>
+
+</body>
+</html>
+
+
