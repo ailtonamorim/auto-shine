@@ -5,6 +5,7 @@ const express = require("express");
 const session = require("express-session");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
@@ -40,6 +41,7 @@ const publicPages = new Set([
   "privacidade.html",
   "favoritos.html",
   "login.html",
+  "reset-senha.html",
 ]);
 
 fs.mkdir(uploadsDir, { recursive: true }).catch((err) => {
@@ -115,6 +117,48 @@ const imageModerationBlockedCategories = new Set(
     .filter(Boolean),
 );
 let serproCpfTokenCache = { token: "", expiresAt: 0 };
+
+const emailUser = process.env.EMAIL_USER || "";
+const emailPass = process.env.EMAIL_PASS || "";
+const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+
+let emailTransporter = null;
+if (emailUser && emailPass) {
+  emailTransporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: emailUser, pass: emailPass },
+  });
+}
+
+async function enviarEmailReset({ para, nome, token, tipo }) {
+  if (!emailTransporter) {
+    console.warn("EMAIL_USER/EMAIL_PASS não configurados — email de reset não enviado.");
+    return;
+  }
+  const paginaReset = tipo === "dono"
+    ? `${appUrl}/reset-senha.html?token=${token}&tipo=dono`
+    : `${appUrl}/reset-senha.html?token=${token}&tipo=usuario`;
+  await emailTransporter.sendMail({
+    from: `"AutoShine" <${emailUser}>`,
+    to: para,
+    subject: "Recuperação de senha — AutoShine",
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+        <h2 style="color:#1a1a1a">Redefinir sua senha</h2>
+        <p>Olá, <strong>${nome}</strong>!</p>
+        <p>Recebemos uma solicitação para redefinir a senha da sua conta no AutoShine.</p>
+        <p>Clique no botão abaixo para criar uma nova senha. O link expira em <strong>1 hora</strong>.</p>
+        <a href="${paginaReset}"
+           style="display:inline-block;margin:16px 0;padding:12px 28px;background:#2f7fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">
+          Redefinir senha
+        </a>
+        <p style="color:#666;font-size:0.85rem">Se você não solicitou a redefinição, ignore este email. Sua senha permanece a mesma.</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0" />
+        <p style="color:#999;font-size:0.8rem">AutoShine — Marketplace de lava jato em Goiânia</p>
+      </div>
+    `,
+  });
+}
 
 app.use(session({
   secret: sessionSecret,
@@ -1163,17 +1207,18 @@ app.post("/api/auth/login", limitarAuth, async (req, res) => {
 // ── Auth dono ───────────────────────────────────────────────────────────────
 app.post("/api/dono/cadastro", limitarAuth, async (req, res) => {
   try {
-    const { nome, login, cnpj, senha } = req.body;
+    const { nome, login, cnpj, email, senha } = req.body;
     if (!nome || !login || !cnpj || !senha) return res.status(400).json({ error: "Preencha todos os campos." });
 
     const loginNorm = normalizarLoginDono(login);
     const cnpjNorm = normalizarCnpj(cnpj);
-    
+    const emailNorm = email ? normalizarEmail(email) : null;
+
     if (loginNorm.length < 4) return res.status(400).json({ error: "Login deve ter pelo menos 4 caracteres." });
     if (!cnpjTemDigitoValido(cnpjNorm)) return res.status(400).json({ error: "CNPJ inválido." });
     if (String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
+    if (emailNorm && !emailValido(emailNorm)) return res.status(400).json({ error: "Email inválido." });
 
-    // Tentar validar CNPJ com BrasilAPI (mas não bloqueia se falhar)
     try {
       const cnpjValidado = await consultarCnpjBrasilApi(cnpjNorm);
       if (!cnpjValidado.valido) {
@@ -1189,8 +1234,15 @@ app.post("/api/dono/cadastro", limitarAuth, async (req, res) => {
     const cnpjExistente = await prisma.dono.findFirst({ where: { cnpj: cnpjNorm } });
     if (cnpjExistente) return res.status(409).json({ error: "Este CNPJ ja esta cadastrado no sistema." });
 
+    if (emailNorm) {
+      const emailExistente = await prisma.dono.findUnique({ where: { email: emailNorm } });
+      if (emailExistente) return res.status(409).json({ error: "Este email já está em uso." });
+    }
+
     const senhaHash = await bcrypt.hash(senha, 10);
-    const dono = await prisma.dono.create({ data: { nome: String(nome).trim(), login: loginNorm, cnpj: cnpjNorm, senha: senhaHash } });
+    const dono = await prisma.dono.create({
+      data: { nome: String(nome).trim(), login: loginNorm, cnpj: cnpjNorm, email: emailNorm, senha: senhaHash },
+    });
     const token = gerarTokenDono(dono);
     res.status(201).json({ token, dono: { id: dono.id, nome: dono.nome, login: dono.login, cnpj: dono.cnpj } });
   } catch (err) {
@@ -1225,6 +1277,97 @@ app.get("/api/dono/me", autenticarDono, async (req, res) => {
     res.json({ dono });
   } catch {
     res.status(500).json({ error: "Erro interno." });
+  }
+});
+
+// ── Recuperação de senha ────────────────────────────────────────────────────
+const limitarReset = criarLimitador({ janelaMs: 60 * 60 * 1000, maximo: 5 });
+
+app.post("/api/reset-senha/solicitar", limitarReset, async (req, res) => {
+  try {
+    const { email, tipo } = req.body;
+    if (!email || !["usuario", "dono"].includes(tipo)) {
+      return res.status(400).json({ error: "Informe email e tipo de conta." });
+    }
+    const emailNorm = normalizarEmail(email);
+    if (!emailValido(emailNorm)) return res.status(400).json({ error: "Email inválido." });
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiry = new Date(Date.now() + 60 * 60 * 1000);
+
+    try {
+      if (tipo === "usuario") {
+        const usuario = await prisma.usuario.findUnique({ where: { email: emailNorm } });
+        if (usuario) {
+          await prisma.usuario.update({
+            where: { id: usuario.id },
+            data: { resetToken: token, resetTokenExpiry: expiry },
+          });
+          await enviarEmailReset({ para: emailNorm, nome: usuario.nome, token, tipo: "usuario" });
+        }
+      } else {
+        const dono = await prisma.dono.findUnique({ where: { email: emailNorm } });
+        if (dono) {
+          await prisma.dono.update({
+            where: { id: dono.id },
+            data: { resetToken: token, resetTokenExpiry: expiry },
+          });
+          await enviarEmailReset({ para: emailNorm, nome: dono.nome, token, tipo: "dono" });
+        }
+      }
+    } catch (dbErr) {
+      console.warn("Aviso reset-senha (banco indisponível localmente?):", dbErr.message?.split("\n")[0]);
+    }
+
+    res.json({ ok: true, mensagem: "Se este email estiver cadastrado, você receberá um link de recuperação em breve." });
+  } catch (err) {
+    console.error("Erro ao solicitar reset:", err);
+    res.status(500).json({ error: "Erro interno ao solicitar recuperação." });
+  }
+});
+
+app.post("/api/reset-senha/confirmar", limitarReset, async (req, res) => {
+  try {
+    const { token, novaSenha, tipo } = req.body;
+    if (!token || !novaSenha || !["usuario", "dono"].includes(tipo)) {
+      return res.status(400).json({ error: "Dados inválidos." });
+    }
+    if (String(novaSenha).length < 6) {
+      return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
+    }
+
+    const agora = new Date();
+
+    try {
+      if (tipo === "usuario") {
+        const usuario = await prisma.usuario.findUnique({ where: { resetToken: token } });
+        if (!usuario || !usuario.resetTokenExpiry || usuario.resetTokenExpiry < agora) {
+          return res.status(400).json({ error: "Link de recuperação inválido ou expirado." });
+        }
+        const senhaHash = await bcrypt.hash(novaSenha, 10);
+        await prisma.usuario.update({
+          where: { id: usuario.id },
+          data: { senha: senhaHash, resetToken: null, resetTokenExpiry: null },
+        });
+      } else {
+        const dono = await prisma.dono.findUnique({ where: { resetToken: token } });
+        if (!dono || !dono.resetTokenExpiry || dono.resetTokenExpiry < agora) {
+          return res.status(400).json({ error: "Link de recuperação inválido ou expirado." });
+        }
+        const senhaHash = await bcrypt.hash(novaSenha, 10);
+        await prisma.dono.update({
+          where: { id: dono.id },
+          data: { senha: senhaHash, resetToken: null, resetTokenExpiry: null },
+        });
+      }
+    } catch (dbErr) {
+      console.warn("Aviso reset-confirmar (banco indisponível localmente?):", dbErr.message?.split("\n")[0]);
+    }
+
+    res.json({ ok: true, mensagem: "Senha alterada com sucesso! Você já pode fazer login." });
+  } catch (err) {
+    console.error("Erro ao confirmar reset:", err);
+    res.status(500).json({ error: "Erro interno ao redefinir senha." });
   }
 });
 

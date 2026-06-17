@@ -43,6 +43,7 @@
             <input id="dono-password-input" name="password" type="password" placeholder="Sua senha" required />
           </div>
           <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+          <p class="auth-forgot"><a href="reset-senha.html?tipo=dono">Esqueci minha senha</a></p>
         </form>
       </div>
 
@@ -59,6 +60,10 @@
           <div class="field">
             <label for="owner-register-login">Login da plataforma</label>
             <input id="owner-register-login" name="login" type="text" required placeholder="Ex: carlos.lavajato" />
+          </div>
+          <div class="field">
+            <label for="owner-register-email">Email <span class="field-hint">— para recuperação de senha</span></label>
+            <input id="owner-register-email" name="email" type="email" placeholder="Ex: carlos@seulavajato.com.br" />
           </div>
           <div class="field">
             <label for="owner-register-cnpj">CNPJ da empresa</label>
@@ -158,17 +163,6 @@
                   <label for="partner-summary">Descrição curta</label>
                   <textarea id="partner-summary" name="summary" rows="2" required placeholder="Ex: Especialistas em lavagem completa, polimento e higienização com mais de 10 anos de experiência."></textarea>
                 </div>
-                <div class="field">
-                  <label for="partner-category">Categoria principal</label>
-                  <select id="partner-category" name="category">
-                    <option value="">Selecione a categoria</option>
-                    <option value="lavagem simples">Lavagem Simples</option>
-                    <option value="lavagem completa">Lavagem Completa</option>
-                    <option value="polimento">Polimento</option>
-                    <option value="higienização interna">Higienização interna</option>
-                    <option value="detalhamento automotivo">Detalhamento Automotivo</option>
-                  </select>
-                </div>
               </div>
 
               <div class="partner-form-section">
@@ -191,21 +185,65 @@
               </div>
             </div>
 
-            <!-- ── Passo 2: Foto ────────────────────────────────── -->
+            <!-- ── Passo 2: Fotos ───────────────────────────────── -->
             <div class="wizard-panel hidden" data-wizard-panel="2">
               <div class="partner-form-section">
-                <h3 class="partner-form-section-title">Foto do seu lava jato</h3>
-                <p class="empty-copy partner-section-hint">Uma boa foto da fachada ou dos carros sendo lavados ajuda muito os clientes a escolherem seu estabelecimento.</p>
+                <h3 class="partner-form-section-title">Fotos do seu lava jato</h3>
+                <p class="empty-copy partner-section-hint">Adicione até 4 fotos — a <strong>foto principal</strong> é obrigatória. As fotos aparecem em carrossel automático para os clientes. Após enviar, clique em <strong>✂ Ajustar</strong> para enquadrar o melhor ângulo.</p>
 
-                <div id="partner-photo-zone" class="photo-upload-zone" role="button" tabindex="0" aria-label="Área de upload de foto">
-                  <div class="photo-upload-placeholder" id="partner-photo-placeholder">
-                    <span class="photo-upload-icon">📷</span>
-                    <strong>Clique para escolher a foto</strong>
-                    <span>ou arraste e solte aqui</span>
-                    <small>JPG, PNG ou WebP — máx. 5 MB</small>
+                <div class="photo-grid-upload">
+                  <!-- Foto principal (obrigatória) -->
+                  <div class="photo-grid-main">
+                    <div id="partner-photo-zone" class="photo-upload-zone" role="button" tabindex="0" aria-label="Foto principal — obrigatória">
+                      <div class="photo-upload-placeholder" id="partner-photo-placeholder">
+                        <span class="photo-upload-icon">📷</span>
+                        <strong>Foto principal</strong>
+                        <span>Clique ou arraste — obrigatória</span>
+                        <small>JPG, PNG ou WebP — máx. 5 MB</small>
+                      </div>
+                      <img id="partner-photo-preview" class="photo-upload-preview hidden" alt="Prévia da foto principal" />
+                      <input id="partner-photo-file" name="photoFile" type="file" accept="image/png,image/jpeg,image/webp" class="photo-upload-input" tabindex="-1" />
+                      <button class="photo-adjust-btn hidden" id="partner-photo-adjust-main" type="button" aria-label="Ajustar enquadramento">✂ Ajustar</button>
+                    </div>
+                    <span class="photo-grid-label">Foto 1 — principal</span>
                   </div>
-                  <img id="partner-photo-preview" class="photo-upload-preview hidden" alt="Prévia da foto" />
-                  <input id="partner-photo-file" name="photoFile" type="file" accept="image/png,image/jpeg,image/webp" class="photo-upload-input" tabindex="-1" />
+
+                  <!-- Fotos extras (opcionais) -->
+                  <div class="photo-grid-extras">
+                    <div>
+                      <div class="photo-upload-zone photo-upload-zone--small" id="partner-extra-zone-1" role="button" tabindex="0" aria-label="Foto 2 — opcional">
+                        <div class="photo-upload-placeholder">
+                          <span style="font-size:1.4rem;line-height:1;color:var(--muted)">+</span>
+                          <small>Foto 2</small>
+                        </div>
+                        <img class="photo-upload-preview hidden" alt="Prévia da foto 2" />
+                        <input type="file" accept="image/png,image/jpeg,image/webp" class="photo-upload-input" tabindex="-1" />
+                        <button class="photo-adjust-btn hidden" type="button" aria-label="Ajustar">✂</button>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="photo-upload-zone photo-upload-zone--small" id="partner-extra-zone-2" role="button" tabindex="0" aria-label="Foto 3 — opcional">
+                        <div class="photo-upload-placeholder">
+                          <span style="font-size:1.4rem;line-height:1;color:var(--muted)">+</span>
+                          <small>Foto 3</small>
+                        </div>
+                        <img class="photo-upload-preview hidden" alt="Prévia da foto 3" />
+                        <input type="file" accept="image/png,image/jpeg,image/webp" class="photo-upload-input" tabindex="-1" />
+                        <button class="photo-adjust-btn hidden" type="button" aria-label="Ajustar">✂</button>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="photo-upload-zone photo-upload-zone--small" id="partner-extra-zone-3" role="button" tabindex="0" aria-label="Foto 4 — opcional">
+                        <div class="photo-upload-placeholder">
+                          <span style="font-size:1.4rem;line-height:1;color:var(--muted)">+</span>
+                          <small>Foto 4</small>
+                        </div>
+                        <img class="photo-upload-preview hidden" alt="Prévia da foto 4" />
+                        <input type="file" accept="image/png,image/jpeg,image/webp" class="photo-upload-input" tabindex="-1" />
+                        <button class="photo-adjust-btn hidden" type="button" aria-label="Ajustar">✂</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <p id="partner-photo-feedback" class="empty-copy validation-msg"></p>
               </div>
@@ -234,22 +272,7 @@
               <div class="partner-form-section">
                 <h3 class="partner-form-section-title">Horários de atendimento</h3>
                 <p class="empty-copy partner-section-hint">Clique nos horários abaixo para ativar ou desativar. Os horários ativos aparecem em azul.</p>
-                <div class="schedule-time-presets chip-list">
-                  <button type="button" class="chip" data-add-time="07:00">07:00</button>
-                  <button type="button" class="chip" data-add-time="08:00">08:00</button>
-                  <button type="button" class="chip" data-add-time="09:00">09:00</button>
-                  <button type="button" class="chip" data-add-time="09:30">09:30</button>
-                  <button type="button" class="chip" data-add-time="10:00">10:00</button>
-                  <button type="button" class="chip" data-add-time="11:00">11:00</button>
-                  <button type="button" class="chip" data-add-time="13:00">13:00</button>
-                  <button type="button" class="chip" data-add-time="13:30">13:30</button>
-                  <button type="button" class="chip" data-add-time="14:00">14:00</button>
-                  <button type="button" class="chip" data-add-time="15:00">15:00</button>
-                  <button type="button" class="chip" data-add-time="16:00">16:00</button>
-                  <button type="button" class="chip" data-add-time="16:30">16:30</button>
-                  <button type="button" class="chip" data-add-time="17:00">17:00</button>
-                  <button type="button" class="chip" data-add-time="18:00">18:00</button>
-                </div>
+                <div class="schedule-time-presets" id="schedule-time-grid"></div>
                 <textarea id="partner-schedule-times" name="agendaHorarios" class="hidden">08:00, 09:30, 11:00, 13:30, 15:00, 16:30</textarea>
                 <p id="partner-schedule-feedback" class="empty-copy validation-msg"></p>
               </div>
@@ -328,8 +351,8 @@
     <article class="partner-service-item">
       <div class="field-grid">
         <div class="field">
-          <label>Nome do serviço</label>
-          <input type="text" data-service-field="name" required placeholder="Ex: Lavagem completa" />
+          <label>Nome do serviço <span class="field-hint">— pode criar combos, ex: Lavagem + Cera</span></label>
+          <input type="text" data-service-field="name" required placeholder="Ex: Lavagem completa ou Lavagem + Cera protetora" />
         </div>
         <div class="field">
           <label>Preço (R$)</label>
@@ -349,6 +372,29 @@
       <button type="button" class="btn btn-ghost remove-partner-service">Remover</button>
     </article>
   </template>
+
+  <!-- Modal de ajuste de foto -->
+  <div id="photo-crop-modal" class="crop-modal hidden" role="dialog" aria-modal="true" aria-label="Ajustar enquadramento da foto">
+    <div class="crop-modal-content">
+      <p class="crop-modal-title">Ajuste o enquadramento</p>
+      <p class="crop-modal-hint">Arraste a foto para mostrar o melhor ângulo. Use o scroll ou os botões para dar zoom.</p>
+      <div class="crop-viewport" id="crop-viewport">
+        <div class="crop-img-wrap" id="crop-img-wrap">
+          <img id="crop-source-img" alt="" draggable="false" />
+        </div>
+        <div class="crop-frame-border"></div>
+      </div>
+      <div class="crop-zoom-controls">
+        <button class="btn btn-ghost crop-zoom-btn" id="crop-zoom-out" type="button" aria-label="Diminuir zoom">−</button>
+        <span class="crop-zoom-label" id="crop-zoom-label">100%</span>
+        <button class="btn btn-ghost crop-zoom-btn" id="crop-zoom-in" type="button" aria-label="Aumentar zoom">+</button>
+      </div>
+      <div class="crop-modal-actions">
+        <button class="btn btn-ghost" id="crop-cancel-btn" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="crop-confirm-btn" type="button">Confirmar</button>
+      </div>
+    </div>
+  </div>
 
   <script src="assets/js/app.js"></script>
 </body>

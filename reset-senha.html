@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoShine — Recuperar senha</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body data-page="reset-senha">
+  <div class="bg-decor"></div>
+  <header class="topbar container">
+    <a class="brand" href="index.html">
+      <span>AutoShine</span>
+    </a>
+  </header>
+
+  <main class="container reveal-root">
+    <section class="auth-shell reveal-item">
+
+      <!-- Passo 1: solicitar link -->
+      <div id="reset-request-panel">
+        <div>
+          <p class="eyebrow">Recuperação de senha</p>
+          <h1>Esqueceu sua senha?</h1>
+          <p class="hero-text">Informe seu email cadastrado e enviaremos um link para criar uma nova senha.</p>
+        </div>
+
+        <form id="reset-request-form" class="booking-form" novalidate>
+          <div class="field">
+            <label for="reset-email">Email</label>
+            <input id="reset-email" name="email" type="email" placeholder="Ex.: voce@exemplo.com" required />
+          </div>
+          <div id="reset-tipo-field" class="field" style="display:none">
+            <input id="reset-tipo" name="tipo" type="hidden" value="usuario" />
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">Enviar link de recuperação</button>
+          <p class="auth-forgot"><a href="javascript:history.back()">← Voltar</a></p>
+        </form>
+
+        <div id="reset-request-success" class="hidden">
+          <div class="reset-success-box">
+            <p class="reset-success-icon">&#10003;</p>
+            <h2>Email enviado!</h2>
+            <p>Se este email estiver cadastrado, você receberá um link em breve. Verifique também a pasta de spam.</p>
+            <a href="index.html" class="btn btn-secondary">Ir para o início</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Passo 2: definir nova senha (exibido quando há token na URL) -->
+      <div id="reset-confirm-panel" class="hidden">
+        <div>
+          <p class="eyebrow">Recuperação de senha</p>
+          <h1>Criar nova senha</h1>
+          <p class="hero-text">Escolha uma senha segura com pelo menos 6 caracteres.</p>
+        </div>
+
+        <form id="reset-confirm-form" class="booking-form" novalidate>
+          <div class="field">
+            <label for="reset-new-password">Nova senha</label>
+            <input id="reset-new-password" name="novaSenha" type="password" minlength="6" placeholder="Mínimo de 6 caracteres" required />
+          </div>
+          <div class="field">
+            <label for="reset-confirm-password">Confirmar nova senha</label>
+            <input id="reset-confirm-password" name="novaSenhaConfirm" type="password" minlength="6" placeholder="Repita a nova senha" required />
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">Salvar nova senha</button>
+        </form>
+
+        <div id="reset-confirm-success" class="hidden">
+          <div class="reset-success-box">
+            <p class="reset-success-icon">&#10003;</p>
+            <h2>Senha alterada!</h2>
+            <p>Sua senha foi redefinida com sucesso. Você já pode fazer login.</p>
+            <a id="reset-login-link" href="cadastro.html?mode=login" class="btn btn-primary">Fazer login</a>
+          </div>
+        </div>
+
+        <div id="reset-invalid-token" class="hidden">
+          <div class="reset-success-box reset-error-box">
+            <p class="reset-success-icon">&#10005;</p>
+            <h2>Link inválido ou expirado</h2>
+            <p>Este link de recuperação não é mais válido. Solicite um novo link.</p>
+            <a href="reset-senha.html" class="btn btn-secondary">Solicitar novo link</a>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

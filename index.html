@@ -30,58 +30,17 @@
   </header>
 
   <main class="container page-home reveal-root">
-    <section class="hero reveal-item">
-      <div>
-        <p class="eyebrow">Marketplace de serviços automotivos</p>
-        <h1>Encontre o melhor lava jato para seu veículo em poucos cliques.</h1>
-        <p class="hero-text">Descubra serviços, compare avaliações e agende online com uma experiência rápida, visual e profissional.</p>
-      </div>
-
-      <form class="search-panel" action="mapa.html" method="get">
-        <div class="search-wrap">
-          <input type="search" name="q" placeholder="Encontrar lava jato perto de você" aria-label="Buscar lava jato" />
-          <button class="btn btn-primary" type="submit">Buscar</button>
-        </div>
-      </form>
-
-      <div class="hero-trust">
-        <span class="hero-trust-item">&#9733; Avaliações reais de clientes</span>
-        <span class="hero-trust-sep"></span>
-        <span class="hero-trust-item">Agendamento 100% online</span>
-        <span class="hero-trust-sep"></span>
-        <span class="hero-trust-item">Sem cadastro para buscar</span>
-      </div>
-    </section>
-
-    <section class="location-panel reveal-item">
-      <div class="location-copy">
-        <span class="location-kicker">Recomendação por proximidade</span>
-        <h2>Encontre lava jatos perto de você</h2>
-        <p>Use sua localização para ver primeiro os estabelecimentos mais próximos e escolher por serviço, avaliação e disponibilidade.</p>
-      </div>
-      <div class="location-actions">
-        <button id="use-location-btn" class="btn btn-primary" type="button">Localização</button>
-        <a class="btn btn-ghost" href="mapa.html">Abrir mapa</a>
-      </div>
-      <p class="location-status" id="location-status">Ative a localização para ordenar as recomendações pela distância.</p>
-    </section>
 
     <section class="categories reveal-item">
-      <h2>Categorias de serviço</h2>
-      <div class="chip-list" id="category-list">
-        <button class="chip active" data-category="todos">Todos</button>
-        <button class="chip" data-category="lavagem simples">Lavagem simples</button>
-        <button class="chip" data-category="lavagem completa">Lavagem completa</button>
-        <button class="chip" data-category="polimento">Polimento</button>
-        <button class="chip" data-category="higienização interna">Higienização interna</button>
-        <button class="chip" data-category="detalhamento automotivo">Detalhamento automotivo</button>
-      </div>
+      <p class="categories-label">Encontre o lava jato mais próximo de você <button class="label-location-cta chip chip-action" type="button" id="label-location-cta">clique aqui</button></p>
+      <button id="use-location-btn" type="button" aria-label="Usar minha localização" style="display:none"></button>
+      <p class="location-status" id="location-status"></p>
     </section>
 
     <section class="listing reveal-item">
       <div class="section-head">
         <h2 id="nearby-title">Lava jatos recomendados</h2>
-        <a href="mapa.html" class="link">Ver no mapa</a>
+        <a href="mapa.html" class="chip chip-action">&#128506; Ver no mapa</a>
       </div>
 
       <div id="shop-grid" class="shop-grid"></div>

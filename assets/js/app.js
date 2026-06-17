@@ -185,13 +185,16 @@ function initializePasswordVisibilityToggles(root = document) {
     button.className = "password-visibility-toggle";
     button.setAttribute("aria-controls", input.id || "");
 
+    const SVG_EYE = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+    const SVG_EYE_OFF = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
     const icon = document.createElement("span");
     icon.setAttribute("aria-hidden", "true");
     button.appendChild(icon);
 
     const refreshButtonState = () => {
       const visible = input.type === "text";
-      icon.textContent = visible ? "🙈" : "👁";
+      icon.innerHTML = visible ? SVG_EYE_OFF : SVG_EYE;
       button.setAttribute("aria-label", visible ? "Ocultar senha" : "Mostrar senha");
       button.setAttribute("aria-pressed", visible ? "true" : "false");
       button.title = visible ? "Ocultar senha" : "Mostrar senha";
@@ -686,6 +689,17 @@ function initializeReportActions() {
 
 let homeUserPosition = null;
 
+function loadSavedHomePosition() {
+  try {
+    const raw = sessionStorage.getItem(userLocationStorageKey);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const lat = Number(parsed.latitude);
+    const lng = Number(parsed.longitude);
+    if (coordinatesValid(lat, lng)) homeUserPosition = [lat, lng];
+  } catch {}
+}
+
 // ── Filtro de categoria (home) ───────────────────────────────────────────────
 function initCategoryFilter() {
   const categoryList = document.getElementById("category-list");
@@ -766,6 +780,8 @@ function initUseLocation() {
   const locationButton = document.getElementById("use-location-btn");
   if (!locationButton) return;
 
+  document.getElementById("label-location-cta")?.addEventListener("click", () => locationButton.click());
+
   locationButton.addEventListener("click", () => {
     if (!navigator.geolocation) {
       updateHomeLocationStatus("Geolocalização não suportada neste navegador.");
@@ -816,19 +832,24 @@ function buildHomeCard(loja) {
   const profileUrl = `perfil.html?shopId=${encodeURIComponent(loja.id)}`;
 
   const avaliacoes = loja.avaliacoes || [];
-  const metaHtml = avaliacoes.length
-    ? `<p class="meta"><span class="stars">&#9733; ${(avaliacoes.reduce((s, a) => s + a.nota, 0) / avaliacoes.length).toFixed(1)}</span></p>`
-    : `<p class="meta">Aguardando avaliações de clientes</p>`;
+  const avgRating = avaliacoes.length
+    ? (avaliacoes.reduce((s, a) => s + a.nota, 0) / avaliacoes.length).toFixed(1)
+    : null;
+  const metaHtml = avgRating
+    ? `<p class="meta shop-rating"><span class="stars">&#9733; ${avgRating}</span><span class="shop-rating-count">(${avaliacoes.length})</span></p>`
+    : `<p class="meta shop-no-rating">Sem avaliações ainda</p>`;
 
   article.innerHTML = `
     ${createFavoriteButtonHtml(isFavorited, loja.id)}
-    <img src="${safePhoto}" alt="Foto do lava jato ${safeName}" loading="lazy" />
+    <div class="shop-card-img-wrap">
+      <img src="${safePhoto}" alt="Foto do lava jato ${safeName}" loading="lazy" />
+    </div>
     <div class="shop-content">
       <h3>${safeName}</h3>
       ${metaHtml}
-      <p class="shop-address">${safeAddress}</p>
+      <p class="shop-address">&#128205; ${safeAddress}</p>
       <p class="shop-distance" data-shop-distance hidden></p>
-      <a class="btn btn-secondary" href="${profileUrl}">Serviços</a>
+      <a class="btn btn-secondary" href="${profileUrl}">Ver serviços</a>
     </div>
   `;
   return article;
@@ -837,6 +858,8 @@ function buildHomeCard(loja) {
 async function renderOwnerShopsOnHome() {
   const shopGrid = document.getElementById("shop-grid");
   if (!shopGrid) return;
+
+  loadSavedHomePosition();
 
   shopGrid.querySelectorAll('[data-owner-created="1"]').forEach((card) => card.remove());
 
@@ -849,8 +872,14 @@ async function renderOwnerShopsOnHome() {
       loja.isFavorited = favoriteIds.includes(loja.id);
       shopGrid.appendChild(buildHomeCard(loja));
     });
-    if (homeUserPosition) applyHomeLocationRanking();
-    else applyHomeFilters();
+    if (homeUserPosition) {
+      applyHomeLocationRanking();
+      const btn = document.getElementById("use-location-btn");
+      if (btn) btn.textContent = "Atualizar localização";
+      updateHomeLocationStatus("Mostrando os lava jatos mais próximos de você.");
+    } else {
+      applyHomeFilters();
+    }
   } catch {}
 }
 
@@ -928,6 +957,11 @@ async function initPartnerPage() {
   const cancelEditButton = document.getElementById("partner-cancel-edit");
   let wizardGoToStep = null;
   let syncTimeTags = null;
+  let extraPhotoSlots = [
+    { file: null, existingUrl: "" },
+    { file: null, existingUrl: "" },
+    { file: null, existingUrl: "" },
+  ];
 
   // loja em memória para edição rápida (evita fetch extra)
   let cachedShops = [];
@@ -1340,9 +1374,25 @@ async function initPartnerPage() {
     const photoPreview = document.getElementById("partner-photo-preview");
     const photoPlaceholder = document.getElementById("partner-photo-placeholder");
     const photoZone = document.getElementById("partner-photo-zone");
+    const mainAdjustBtn = document.getElementById("partner-photo-adjust-main");
     if (photoPreview) { photoPreview.src = ""; photoPreview.classList.add("hidden"); }
     if (photoPlaceholder) photoPlaceholder.classList.remove("hidden");
     if (photoZone) photoZone.classList.remove("has-preview");
+    if (mainAdjustBtn) mainAdjustBtn.classList.add("hidden");
+    extraPhotoSlots = [{ file: null, existingUrl: "" }, { file: null, existingUrl: "" }, { file: null, existingUrl: "" }];
+    [1, 2, 3].forEach((i) => {
+      const ez = document.getElementById(`partner-extra-zone-${i}`);
+      if (!ez) return;
+      const ep = ez.querySelector(".photo-upload-preview");
+      const epl = ez.querySelector(".photo-upload-placeholder");
+      const eab = ez.querySelector(".photo-adjust-btn");
+      const ei = ez.querySelector("input[type='file']");
+      if (ep) { ep.src = ""; ep.classList.add("hidden"); }
+      if (epl) epl.classList.remove("hidden");
+      if (eab) eab.classList.add("hidden");
+      if (ei) ei.value = "";
+      ez.classList.remove("has-preview");
+    });
     syncTimeTags?.();
     wizardGoToStep?.(1);
   }
@@ -1362,8 +1412,6 @@ async function initPartnerPage() {
     setPartnerFeedback(photoFeedback, "");
     setPartnerFeedback(coverFeedback, "");
     setPartnerFeedback(geocodeFeedback, "");
-    const categorySelect = document.getElementById("partner-category");
-    if (categorySelect) categorySelect.value = loja.categoria || "";
     latitudeInput.value = Number.isFinite(Number(loja.latitude)) ? loja.latitude : "";
     longitudeInput.value = Number.isFinite(Number(loja.longitude)) ? loja.longitude : "";
     setScheduleDays(loja.agendaDias || defaultScheduleDays);
@@ -1381,12 +1429,37 @@ async function initPartnerPage() {
     const photoPreview = document.getElementById("partner-photo-preview");
     const photoPlaceholder = document.getElementById("partner-photo-placeholder");
     const photoZone = document.getElementById("partner-photo-zone");
+    const mainAdjustBtn2 = document.getElementById("partner-photo-adjust-main");
     if (loja.fotoUrl && photoPreview) {
       photoPreview.src = loja.fotoUrl;
       photoPreview.classList.remove("hidden");
       if (photoPlaceholder) photoPlaceholder.classList.add("hidden");
       if (photoZone) photoZone.classList.add("has-preview");
+      if (mainAdjustBtn2) mainAdjustBtn2.classList.add("hidden");
     }
+    // Carregar fotos extras existentes nos slots
+    const existingExtraUrls = parseTextList(loja.fotosAdicionais).slice(0, 3);
+    extraPhotoSlots = [0, 1, 2].map((i) => ({ file: null, existingUrl: existingExtraUrls[i] || "" }));
+    [1, 2, 3].forEach((i) => {
+      const ez = document.getElementById(`partner-extra-zone-${i}`);
+      if (!ez) return;
+      const ep = ez.querySelector(".photo-upload-preview");
+      const epl = ez.querySelector(".photo-upload-placeholder");
+      const eab = ez.querySelector(".photo-adjust-btn");
+      const url = existingExtraUrls[i - 1] || "";
+      if (url && ep) {
+        ep.src = url;
+        ep.classList.remove("hidden");
+        if (epl) epl.classList.add("hidden");
+        if (eab) eab.classList.add("hidden");
+        ez.classList.add("has-preview");
+      } else {
+        if (ep) { ep.src = ""; ep.classList.add("hidden"); }
+        if (epl) epl.classList.remove("hidden");
+        if (eab) eab.classList.add("hidden");
+        ez.classList.remove("has-preview");
+      }
+    });
     syncTimeTags?.();
     switchTab("cadastro");
     wizardGoToStep?.(1);
@@ -1476,8 +1549,8 @@ async function initPartnerPage() {
                 <h4 data-inline-editor-title>Adicionar serviço</h4>
                 <div class="field-grid">
                   <div class="field">
-                    <label>Nome do serviço</label>
-                    <input type="text" data-inline-service-field="name" placeholder="Ex: Lavagem completa" />
+                    <label>Nome do serviço <span class="field-hint">— pode criar combos, ex: Lavagem + Cera</span></label>
+                    <input type="text" data-inline-service-field="name" placeholder="Ex: Lavagem completa ou Lavagem + Cera protetora" />
                   </div>
                   <div class="field">
                     <label>Preço (R$)</label>
@@ -1909,7 +1982,7 @@ async function initPartnerPage() {
     const coverFile = coverFileInput?.files?.[0] || null;
     const formasPagamento = parseTextList(formData.get("formasPagamento")).join(", ");
     const politicaCancelamento = String(formData.get("politicaCancelamento") || "").trim();
-    const fotosAdicionais = parseTextList(formData.get("fotosAdicionais")).join("\n");
+    let fotosAdicionais = parseTextList(formData.get("fotosAdicionais")).join("\n");
     const agendaDias = readScheduleDaysFromForm();
     const agendaHorarios = parseScheduleTimes(formData.get("agendaHorarios"));
     const servicos = readServicesFromForm();
@@ -1943,8 +2016,7 @@ async function initPartnerPage() {
     scheduleTimesInput.value = agendaHorarios.join(", ");
     setPartnerFeedback(scheduleFeedback, `${agendaHorarios.length} horário${agendaHorarios.length === 1 ? "" : "s"} configurado${agendaHorarios.length === 1 ? "" : "s"}.`, "valid");
 
-    const categorySelect = document.getElementById("partner-category");
-    const categoria = (categorySelect?.value || "").trim() || deriveCategoryFromServicos(servicos);
+    const categoria = deriveCategoryFromServicos(servicos);
     const editingId = form.dataset.editingShopId || "";
 
     submitButton.disabled = true;
@@ -1963,13 +2035,25 @@ async function initPartnerPage() {
         document.getElementById("partner-cover").value = capaUrl;
         setPartnerFeedback(coverFeedback, "Foto de capa enviada.", "valid");
       }
+      // Upload de fotos extras (slots 2, 3, 4)
+      const extraUploadedUrls = [];
+      for (let si = 0; si < extraPhotoSlots.length; si++) {
+        const slot = extraPhotoSlots[si];
+        if (slot?.file) {
+          setPartnerFeedback(photoFeedback, `Enviando foto ${si + 2}...`, "warning");
+          const extraUrl = await uploadImageFile(slot.file, "loja", donoFetch);
+          extraUploadedUrls.push(extraUrl);
+        } else if (slot?.existingUrl) {
+          extraUploadedUrls.push(slot.existingUrl);
+        }
+      }
+      if (extraUploadedUrls.length) {
+        fotosAdicionais = extraUploadedUrls.filter(Boolean).join("\n");
+        if (galleryInput) galleryInput.value = fotosAdicionais;
+        setPartnerFeedback(photoFeedback, "Fotos enviadas com sucesso.", "valid");
+      }
       if (!isValidShopImagePath(fotoUrl) || (capaUrl && !isValidShopImagePath(capaUrl))) {
         notify("As fotos precisam ser URLs http/https ou arquivos em assets/img ou assets/uploads.");
-        return;
-      }
-      const fotosExtrasInvalidas = parseTextList(fotosAdicionais).filter((foto) => !isValidShopImagePath(foto));
-      if (fotosExtrasInvalidas.length) {
-        notify("As fotos adicionais precisam ser URLs http/https ou arquivos em assets/img ou assets/uploads.");
         return;
       }
 
@@ -2119,47 +2203,241 @@ async function initPartnerPage() {
   }
 
   function initPhotoZone() {
-    const zone = document.getElementById("partner-photo-zone");
-    const preview = document.getElementById("partner-photo-preview");
-    const placeholder = document.getElementById("partner-photo-placeholder");
-    if (!zone || !photoFileInput) return;
+    const mainZone = document.getElementById("partner-photo-zone");
+    if (!mainZone) return;
 
-    zone.addEventListener("click", (e) => {
-      if (!e.target.closest("img")) photoFileInput.click();
-    });
+    const slotDefs = [
+      {
+        zone: mainZone,
+        input: document.getElementById("partner-photo-file"),
+        preview: document.getElementById("partner-photo-preview"),
+        placeholder: document.getElementById("partner-photo-placeholder"),
+        adjustBtn: document.getElementById("partner-photo-adjust-main"),
+        isMain: true,
+      },
+      ...[1, 2, 3].map((i) => {
+        const zone = document.getElementById(`partner-extra-zone-${i}`);
+        if (!zone) return null;
+        return {
+          zone,
+          input: zone.querySelector("input[type='file']"),
+          preview: zone.querySelector(".photo-upload-preview"),
+          placeholder: zone.querySelector(".photo-upload-placeholder"),
+          adjustBtn: zone.querySelector(".photo-adjust-btn"),
+          isMain: false,
+          extraIndex: i - 1,
+        };
+      }).filter(Boolean),
+    ];
 
-    zone.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); photoFileInput.click(); }
-    });
+    const cropModal = document.getElementById("photo-crop-modal");
+    const cropViewport = document.getElementById("crop-viewport");
+    const cropImgWrap = document.getElementById("crop-img-wrap");
+    const cropImg = document.getElementById("crop-source-img");
+    const cropConfirmBtn = document.getElementById("crop-confirm-btn");
+    const cropCancelBtn = document.getElementById("crop-cancel-btn");
+    const cropZoomInBtn = document.getElementById("crop-zoom-in");
+    const cropZoomOutBtn = document.getElementById("crop-zoom-out");
+    const cropZoomLabel = document.getElementById("crop-zoom-label");
 
-    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("is-dragover"); });
-    zone.addEventListener("dragleave", () => zone.classList.remove("is-dragover"));
-    zone.addEventListener("drop", (e) => {
-      e.preventDefault();
-      zone.classList.remove("is-dragover");
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith("image/")) showPreview(file);
-    });
+    let activeCropSlot = null;
+    let originalFile = null;
+    let dragStart = null;
+    let lastPinchDist = null;
+    let cropState = { x: 0, y: 0, scale: 1, minScale: 1, iw: 0, ih: 0 };
 
-    photoFileInput.addEventListener("change", () => {
-      const file = photoFileInput.files[0];
-      if (file) showPreview(file);
-    });
+    function applyTransform() {
+      if (!cropImgWrap || !cropImg) return;
+      cropImgWrap.style.left = `${cropState.x}px`;
+      cropImgWrap.style.top = `${cropState.y}px`;
+      cropImg.style.transform = `scale(${cropState.scale})`;
+      if (cropZoomLabel) {
+        cropZoomLabel.textContent = `${Math.round((cropState.scale / cropState.minScale) * 100)}%`;
+      }
+    }
 
-    function showPreview(file) {
+    function clampPosition() {
+      const vw = cropViewport.clientWidth;
+      const vh = cropViewport.clientHeight;
+      cropState.x = Math.min(0, Math.max(vw - cropState.iw * cropState.scale, cropState.x));
+      cropState.y = Math.min(0, Math.max(vh - cropState.ih * cropState.scale, cropState.y));
+    }
+
+    function zoomAround(newScale, cx, cy) {
+      newScale = Math.max(cropState.minScale, Math.min(cropState.minScale * 5, newScale));
+      const ratio = newScale / cropState.scale;
+      cropState.x = cx - (cx - cropState.x) * ratio;
+      cropState.y = cy - (cy - cropState.y) * ratio;
+      cropState.scale = newScale;
+      clampPosition();
+      applyTransform();
+    }
+
+    function openCropModal(slotDef, file) {
+      if (!cropModal || !cropImg || !cropViewport) { applyFileToSlot(slotDef, file); return; }
+      activeCropSlot = slotDef;
+      originalFile = file;
+      cropModal.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+      const objectUrl = URL.createObjectURL(file);
+      cropImg.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const vw = cropViewport.clientWidth;
+        const vh = cropViewport.clientHeight;
+        const iw = cropImg.naturalWidth;
+        const ih = cropImg.naturalHeight;
+        const minScale = Math.max(vw / iw, vh / ih);
+        cropState = { x: (vw - iw * minScale) / 2, y: (vh - ih * minScale) / 2, scale: minScale, minScale, iw, ih };
+        applyTransform();
+      };
+      cropImg.src = objectUrl;
+    }
+
+    function closeCropModal() {
+      if (cropModal) cropModal.classList.add("hidden");
+      document.body.style.overflow = "";
+      activeCropSlot = null;
+      originalFile = null;
+      dragStart = null;
+    }
+
+    function applyFileToSlot(slotDef, file) {
+      const { zone, preview, placeholder, adjustBtn, isMain, extraIndex } = slotDef;
+      if (!isMain && extraIndex !== undefined) {
+        extraPhotoSlots[extraIndex] = { file, existingUrl: "" };
+      }
+      if (isMain) {
+        try { const dt = new DataTransfer(); dt.items.add(file); photoFileInput.files = dt.files; } catch (e) {}
+      }
       const reader = new FileReader();
-      reader.onload = (e) => {
-        if (preview) { preview.src = e.target.result; preview.classList.remove("hidden"); }
+      reader.onload = (ev) => {
+        if (preview) { preview.src = ev.target.result; preview.classList.remove("hidden"); }
         if (placeholder) placeholder.classList.add("hidden");
         zone.classList.add("has-preview");
+        if (adjustBtn) adjustBtn.classList.remove("hidden");
       };
       reader.readAsDataURL(file);
     }
+
+    // Drag events on crop viewport
+    if (cropViewport) {
+      cropViewport.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        cropViewport.setPointerCapture(e.pointerId);
+        dragStart = { px: e.clientX, py: e.clientY, ox: cropState.x, oy: cropState.y };
+      });
+      cropViewport.addEventListener("pointermove", (e) => {
+        if (!dragStart) return;
+        cropState.x = dragStart.ox + (e.clientX - dragStart.px);
+        cropState.y = dragStart.oy + (e.clientY - dragStart.py);
+        clampPosition();
+        applyTransform();
+      });
+      cropViewport.addEventListener("pointerup", () => { dragStart = null; });
+      cropViewport.addEventListener("pointercancel", () => { dragStart = null; });
+      cropViewport.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const rect = cropViewport.getBoundingClientRect();
+        zoomAround(cropState.scale * (e.deltaY > 0 ? 0.91 : 1.10), e.clientX - rect.left, e.clientY - rect.top);
+      }, { passive: false });
+      cropViewport.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 2) {
+          lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        }
+      }, { passive: true });
+      cropViewport.addEventListener("touchmove", (e) => {
+        if (e.touches.length === 2 && lastPinchDist) {
+          e.preventDefault();
+          const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          const rect = cropViewport.getBoundingClientRect();
+          const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+          const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+          zoomAround(cropState.scale * (dist / lastPinchDist), cx, cy);
+          lastPinchDist = dist;
+        }
+      }, { passive: false });
+      cropViewport.addEventListener("touchend", () => { lastPinchDist = null; });
+    }
+
+    if (cropZoomInBtn) cropZoomInBtn.addEventListener("click", () => { zoomAround(cropState.scale * 1.15, cropViewport.clientWidth / 2, cropViewport.clientHeight / 2); });
+    if (cropZoomOutBtn) cropZoomOutBtn.addEventListener("click", () => { zoomAround(cropState.scale / 1.15, cropViewport.clientWidth / 2, cropViewport.clientHeight / 2); });
+    if (cropCancelBtn) cropCancelBtn.addEventListener("click", closeCropModal);
+    if (cropModal) cropModal.addEventListener("click", (e) => { if (e.target === cropModal) closeCropModal(); });
+
+    if (cropConfirmBtn) {
+      cropConfirmBtn.addEventListener("click", () => {
+        if (!activeCropSlot || !cropImg || !cropViewport) return;
+        const canvas = document.createElement("canvas");
+        const vw = cropViewport.clientWidth;
+        const vh = cropViewport.clientHeight;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = vw * dpr;
+        canvas.height = vh * dpr;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+        ctx.drawImage(cropImg, -cropState.x / cropState.scale, -cropState.y / cropState.scale, vw / cropState.scale, vh / cropState.scale, 0, 0, vw, vh);
+        canvas.toBlob((blob) => {
+          if (!blob) { closeCropModal(); return; }
+          const croppedFile = new File([blob], originalFile?.name || "photo.jpg", { type: "image/jpeg" });
+          applyFileToSlot(activeCropSlot, croppedFile);
+          closeCropModal();
+        }, "image/jpeg", 0.92);
+      });
+    }
+
+    // Setup each upload zone
+    slotDefs.forEach((slotDef) => {
+      const { zone, input, adjustBtn } = slotDef;
+      if (!zone || !input) return;
+      // Prevent the native input click from bubbling up and re-triggering input.click()
+      input.addEventListener("click", (e) => e.stopPropagation());
+      zone.addEventListener("click", (e) => {
+        if (e.target.closest(".photo-adjust-btn")) return;
+        if (e.target === input) return;
+        if (!e.target.closest("img")) input.click();
+      });
+      zone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); }
+      });
+      zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("is-dragover"); });
+      zone.addEventListener("dragleave", () => zone.classList.remove("is-dragover"));
+      zone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        zone.classList.remove("is-dragover");
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith("image/")) openCropModal(slotDef, file);
+      });
+      input.addEventListener("change", () => {
+        const file = input.files[0];
+        if (file) openCropModal(slotDef, file);
+      });
+      adjustBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const pendingFile = slotDef.isMain
+          ? (photoFileInput?.files?.[0] || null)
+          : (extraPhotoSlots[slotDef.extraIndex]?.file || null);
+        if (pendingFile) openCropModal(slotDef, pendingFile);
+      });
+    });
   }
 
   function initTimeTags() {
-    const presetBtns = form.querySelectorAll("[data-add-time]");
-    if (!scheduleTimesInput || !presetBtns.length) return;
+    const grid = document.getElementById("schedule-time-grid");
+    if (!scheduleTimesInput || !grid) return;
+
+    // Gera todos os horários de 00:00 até 23:30 (de 30 em 30 min)
+    const allSlots = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        allSlots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+      }
+    }
+
+    grid.innerHTML = allSlots
+      .map((t) => `<button type="button" class="time-chip" data-add-time="${t}">${t}</button>`)
+      .join("");
+
+    const btns = grid.querySelectorAll("[data-add-time]");
 
     function getActiveTimes() {
       return parseScheduleTimes(scheduleTimesInput.value);
@@ -2172,12 +2450,12 @@ async function initPartnerPage() {
 
     function refreshChips() {
       const active = getActiveTimes();
-      presetBtns.forEach((btn) => {
+      btns.forEach((btn) => {
         btn.classList.toggle("is-selected", active.includes(btn.dataset.addTime));
       });
     }
 
-    presetBtns.forEach((btn) => {
+    btns.forEach((btn) => {
       btn.addEventListener("click", () => {
         const time = btn.dataset.addTime;
         const times = getActiveTimes();
@@ -2450,6 +2728,7 @@ async function initOwnerRegisterPage() {
       const formData = new FormData(registerForm);
       const nome = String(formData.get("name") || "").trim();
       const login = normalizeOwnerLogin(formData.get("login"));
+      const email = String(formData.get("email") || "").trim().toLowerCase();
       const cnpj = String(formData.get("cnpj") || "").replace(/\D/g, "").trim();
       const senha = String(formData.get("password") || "");
       const senhaConfirm = String(formData.get("passwordConfirm") || "");
@@ -2495,7 +2774,7 @@ async function initOwnerRegisterPage() {
         const res = await fetch("/api/dono/cadastro", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nome, login, cnpj, senha }),
+          body: JSON.stringify({ nome, login, email: email || undefined, cnpj, senha }),
         });
         const data = await res.json();
         if (!res.ok) { notify(data.error || "Erro ao criar conta."); return; }
@@ -2542,7 +2821,7 @@ function setupProfileCarousel(container, photos, shopName) {
             class="profile-carousel-dot${index === 0 ? " is-active" : ""}"
             type="button"
             aria-label="Mostrar foto ${index + 1}"
-            ${index === 0 ? 'aria-current="true"' : ""}
+            aria-current="${index === 0 ? "true" : "false"}"
             data-profile-carousel-dot="${index}"
           ></button>
         `).join("")}
@@ -2554,30 +2833,29 @@ function setupProfileCarousel(container, photos, shopName) {
 
   const slides = [...container.querySelectorAll(".profile-carousel-slide")];
   const dots = [...container.querySelectorAll("[data-profile-carousel-dot]")];
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const INTERVAL = 2500;
   let activeIndex = 0;
   let timerId = null;
+  let hovering = false;
 
   const setActive = (nextIndex) => {
-    activeIndex = (nextIndex + slides.length) % slides.length;
-    slides.forEach((slide, index) => slide.classList.toggle("is-active", index === activeIndex));
-    dots.forEach((dot, index) => {
-      dot.classList.toggle("is-active", index === activeIndex);
-      if (index === activeIndex) dot.setAttribute("aria-current", "true");
-      else dot.removeAttribute("aria-current");
+    activeIndex = ((nextIndex % slides.length) + slides.length) % slides.length;
+    slides.forEach((s, i) => s.classList.toggle("is-active", i === activeIndex));
+    dots.forEach((d, i) => {
+      d.classList.toggle("is-active", i === activeIndex);
+      d.setAttribute("aria-current", i === activeIndex ? "true" : "false");
     });
   };
 
   const stop = () => {
-    if (timerId) window.clearInterval(timerId);
+    clearInterval(timerId);
     timerId = null;
   };
 
   const start = () => {
+    if (hovering || document.hidden) return;
     stop();
-    if (!reducedMotion.matches) {
-      timerId = window.setInterval(() => setActive(activeIndex + 1), 4200);
-    }
+    timerId = setInterval(() => setActive(activeIndex + 1), INTERVAL);
   };
 
   container.querySelector("[data-profile-carousel-prev]")?.addEventListener("click", () => {
@@ -2597,12 +2875,9 @@ function setupProfileCarousel(container, photos, shopName) {
     });
   });
 
-  container.addEventListener("mouseenter", stop);
-  container.addEventListener("mouseleave", start);
-  container.addEventListener("focusin", stop);
-  container.addEventListener("focusout", () => {
-    if (!container.contains(document.activeElement)) start();
-  });
+  container.addEventListener("mouseenter", () => { hovering = true; stop(); });
+  container.addEventListener("mouseleave", () => { hovering = false; start(); });
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stop();
     else start();
@@ -2654,7 +2929,7 @@ async function initProfilePage() {
       ? `${loja.latitude},${loja.longitude}`
       : (loja.endereco || loja.nome || "");
     const routeUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
-    const mapUrl = `mapa.html?shop=${encodeURIComponent(loja.nome)}`;
+    const mapUrl = `mapa.html?shop=${encodeURIComponent(loja.nome)}&shopId=${encodeURIComponent(loja.id)}`;
     const scheduleSummary = formatScheduleSummary(loja.agendaDias, loja.agendaHorarios);
     const payments = parseTextList(loja.formasPagamento || "Pix, Cartão, Dinheiro");
     const paymentChips = payments.length
@@ -2662,11 +2937,13 @@ async function initProfilePage() {
       : "<span>Consultar estabelecimento</span>";
     const cancellationPolicy = String(loja.politicaCancelamento || "").trim() ||
       "Cancelamentos e reagendamentos podem ser feitos até 2 horas antes do horário marcado.";
+    const avgPriceText = loja.precoMedio > 0
+      ? `R$ ${Number(loja.precoMedio).toFixed(0)}`
+      : "Consultar";
     profileInfo.innerHTML = `
       <h1>${escapeHtml(loja.nome)}</h1>
       ${ratingLine}
-      <p>${escapeHtml(loja.endereco || "Endereço não informado")}</p>
-      <p>${escapeHtml(loja.categoria || "categoria não informada")}</p>
+      <p class="profile-address">${escapeHtml(loja.endereco || "Endereço não informado")}</p>
       <div class="profile-actions">
         <a class="btn btn-primary" href="${routeUrl}" target="_blank" rel="noopener">Traçar rota</a>
         <a class="btn btn-ghost" href="${mapUrl}">Abrir no mapa</a>
@@ -2675,7 +2952,24 @@ async function initProfilePage() {
     `;
 
     if (detailsGrid) {
-      detailsGrid.innerHTML = "";
+      const [schedDays, schedTimes] = scheduleSummary.split(" - ");
+      detailsGrid.innerHTML = `
+        <div class="shop-info-bar">
+          <div class="shop-info-col">
+            <span class="shop-info-label">Horários</span>
+            <strong class="shop-info-value shop-info-days">${escapeHtml(schedDays || scheduleSummary)}</strong>
+            ${schedTimes ? `<p class="shop-info-times">${escapeHtml(schedTimes)}</p>` : ""}
+          </div>
+          <div class="shop-info-col">
+            <span class="shop-info-label">Formas de pagamento</span>
+            <div class="shop-info-chips">${paymentChips}</div>
+          </div>
+          <div class="shop-info-col">
+            <span class="shop-info-label">Cancelamento</span>
+            <p class="shop-info-value">${escapeHtml(cancellationPolicy)}</p>
+          </div>
+        </div>
+      `;
     }
 
     if (sectionHead) {
@@ -2722,6 +3016,19 @@ async function initMapInteractions() {
   const params = new URLSearchParams(window.location.search);
 
   if (!mapElement || !filterList || !shopName || !shopInfo) return;
+
+  const queryShopId = params.get("shopId");
+  if (queryShopId) {
+    const mainEl = document.querySelector("main.page-map");
+    if (mainEl) {
+      const backLink = document.createElement("a");
+      backLink.href = `perfil.html?shopId=${encodeURIComponent(queryShopId)}`;
+      backLink.className = "map-back-link";
+      backLink.innerHTML = "&#8592; Voltar ao perfil";
+      mainEl.prepend(backLink);
+    }
+  }
+
   if (typeof window.L === "undefined") {
     mapElement.classList.remove("real-map");
     mapElement.classList.add("map-fallback-canvas");
@@ -3044,6 +3351,11 @@ async function initMapInteractions() {
     const queryText = normalizeCategory(params.get("q") || "");
     const destination = params.get("dest");
 
+    if (queryShopId) {
+      const matchById = shops.find((s) => String(s.id) === String(queryShopId));
+      if (matchById) return matchById;
+    }
+
     if (queryShopName) {
       const matchByName = shops.find(
         (s) => s.name.toLowerCase() === queryShopName.toLowerCase(),
@@ -3141,6 +3453,12 @@ async function initBookingForm() {
         lojaData = loja;
         if (servicoId) {
           servicoData = (loja.servicos || []).find((s) => String(s.id) === String(servicoId));
+        }
+        const backLink = document.getElementById("booking-back-link");
+        if (backLink) {
+          backLink.href = `perfil.html?shopId=${encodeURIComponent(shopId)}`;
+          backLink.textContent = `← Voltar para ${loja.nome}`;
+          backLink.hidden = false;
         }
       }
     } catch {}
@@ -3532,6 +3850,13 @@ async function initReviewsPage() {
   const params = new URLSearchParams(window.location.search);
   const lojaId = params.get("lojaId") || "";
   const shopName = params.get("shop") || "AutoShine";
+
+  const reviewsBackLink = document.getElementById("reviews-back-link");
+  if (reviewsBackLink && lojaId) {
+    reviewsBackLink.href = `perfil.html?shopId=${encodeURIComponent(lojaId)}`;
+    reviewsBackLink.textContent = `← Voltar para ${shopName}`;
+    reviewsBackLink.hidden = false;
+  }
 
   const staticReviews = [
     {
@@ -4008,6 +4333,98 @@ function initAuthPage() {
 
 const adminTokenKey = "autoshine:admin-token";
 
+// ── Recuperação de senha ─────────────────────────────────────────────────────
+function initResetSenhaPage() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  const tipo = params.get("tipo") || "usuario";
+
+  const requestPanel = document.getElementById("reset-request-panel");
+  const confirmPanel = document.getElementById("reset-confirm-panel");
+  const requestForm = document.getElementById("reset-request-form");
+  const requestSuccess = document.getElementById("reset-request-success");
+  const confirmForm = document.getElementById("reset-confirm-form");
+  const confirmSuccess = document.getElementById("reset-confirm-success");
+  const invalidToken = document.getElementById("reset-invalid-token");
+  const loginLink = document.getElementById("reset-login-link");
+  const tipoInput = document.getElementById("reset-tipo");
+
+  if (token) {
+    requestPanel?.classList.add("hidden");
+    confirmPanel?.classList.remove("hidden");
+    if (tipoInput) tipoInput.value = tipo;
+    if (loginLink) {
+      loginLink.href = tipo === "dono" ? "cadastro-dono.html" : "cadastro.html?mode=login";
+    }
+
+    confirmForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const novaSenha = document.getElementById("reset-new-password")?.value || "";
+      const novaSenhaConfirm = document.getElementById("reset-confirm-password")?.value || "";
+      if (novaSenha.length < 6) { notify("A senha deve ter no mínimo 6 caracteres."); return; }
+      if (novaSenha !== novaSenhaConfirm) { notify("As senhas não coincidem."); return; }
+
+      const btn = confirmForm.querySelector("button[type=submit]");
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch("/api/reset-senha/confirmar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, novaSenha, tipo }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (res.status === 400 && data.error?.includes("inválido")) {
+            confirmForm.classList.add("hidden");
+            invalidToken?.classList.remove("hidden");
+          } else {
+            notify(data.error || "Erro ao redefinir senha.");
+          }
+          return;
+        }
+        confirmForm.classList.add("hidden");
+        confirmSuccess?.classList.remove("hidden");
+      } catch {
+        notify("Erro de conexão. Tente novamente.");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  } else {
+    if (tipoInput) tipoInput.value = tipo;
+
+    requestForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("reset-email")?.value.trim() || "";
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        notify("Informe um email válido.");
+        return;
+      }
+
+      const btn = requestForm.querySelector("button[type=submit]");
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch("/api/reset-senha/solicitar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, tipo }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          notify(data.error || "Erro ao enviar email.");
+          return;
+        }
+        requestForm.classList.add("hidden");
+        requestSuccess?.classList.remove("hidden");
+      } catch {
+        notify("Erro de conexão. Tente novamente.");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  }
+}
+
 // ── Inicialização por página ─────────────────────────────────────────────────
 if (page === "home") {
   renderOwnerShopsOnHome();
@@ -4054,6 +4471,10 @@ if (page === "admin") {
 
 if (page === "favoritos") {
   initFavoritesPage();
+}
+
+if (page === "reset-senha") {
+  initResetSenhaPage();
 }
 
 initializePasswordVisibilityToggles();

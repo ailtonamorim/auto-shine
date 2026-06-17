@@ -8,29 +8,34 @@ datasource db {
 }
 
 model Usuario {
-  id           Int           @id @default(autoincrement())
-  nome         String
-  email        String        @unique
-  cpf          String?       @unique
-  telefone     String?
-  senha        String?
-  googleId     String?       @unique
-  createdAt    DateTime      @default(now())
-  agendamentos Agendamento[]
-  avaliacoes   Avaliacao[]
-  denuncias    Denuncia[]
-  favoritos    Favorito[]
+  id                Int           @id @default(autoincrement())
+  nome              String
+  email             String        @unique
+  cpf               String?       @unique
+  telefone          String?
+  senha             String?
+  googleId          String?       @unique
+  resetToken        String?       @unique
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime      @default(now())
+  agendamentos      Agendamento[]
+  avaliacoes        Avaliacao[]
+  denuncias         Denuncia[]
+  favoritos         Favorito[]
 }
 
 model Dono {
-  id        Int      @id @default(autoincrement())
-  nome      String
-  login     String   @unique
-  cnpj      String?
-  senha     String?
-  googleId  String?  @unique
-  createdAt DateTime @default(now())
-  lojas     Loja[]
+  id               Int      @id @default(autoincrement())
+  nome             String
+  login            String   @unique
+  email            String?  @unique
+  cnpj             String?
+  senha            String?
+  googleId         String?  @unique
+  resetToken       String?  @unique
+  resetTokenExpiry DateTime?
+  createdAt        DateTime @default(now())
+  lojas            Loja[]
 }
 
 model Loja {
