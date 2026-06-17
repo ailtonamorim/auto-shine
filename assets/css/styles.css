@@ -47,7 +47,15 @@ h2,
 h3 {
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
   margin: 0;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: clamp(1.1rem, 2.8vw, 1.4rem);
+}
+
+h3 {
+  font-size: clamp(0.95rem, 2vw, 1.1rem);
 }
 
 p {
@@ -236,6 +244,35 @@ p {
   overflow-wrap: break-word;
 }
 
+.hero-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.hero-trust-item {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.hero-trust-sep {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+@media (max-width: 580px) {
+  .hero-trust-sep { display: none; }
+  .hero-trust { gap: 6px; }
+}
+
 .search-panel {
   margin-top: 18px;
   display: grid;
@@ -381,7 +418,14 @@ textarea:focus {
 .dashboard-layout,
 .profile-hero,
 .profile-details-grid {
-  margin-top: 24px;
+  margin-top: 28px;
+}
+
+.page-home,
+.page-map,
+main.container {
+  padding-top: 28px;
+  padding-bottom: 40px;
 }
 
 .section-head {
@@ -389,7 +433,7 @@ textarea:focus {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .link {
@@ -861,11 +905,17 @@ textarea:focus {
 }
 
 .service-card {
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 100%;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.service-card:hover {
+  border-color: rgba(47, 127, 255, 0.3);
+  transform: translateY(-2px);
 }
 
 .service-card .service-meta {
@@ -1294,9 +1344,14 @@ textarea:focus {
 }
 
 .review-card {
-  padding: 16px;
+  padding: 18px;
   display: grid;
   gap: 10px;
+  transition: border-color 0.2s ease;
+}
+
+.review-card:hover {
+  border-color: rgba(47, 127, 255, 0.2);
 }
 
 .review-card img {
@@ -2490,6 +2545,18 @@ a.owner-dashboard-nav {
   color: #6ee7a0;
 }
 
+.booking-status-confirmado {
+  background: rgba(47, 127, 255, 0.15);
+  border: 1px solid rgba(47, 127, 255, 0.35);
+  color: #80b8ff;
+}
+
+.booking-status-cancelado {
+  background: rgba(229, 62, 62, 0.15);
+  border: 1px solid rgba(229, 62, 62, 0.35);
+  color: #fc8181;
+}
+
 .booking-item-actions {
   margin-top: 10px;
   display: flex;
@@ -2895,11 +2962,46 @@ a.owner-dashboard-nav {
   }
 
   .hero h1 {
-    font-size: 1.45rem;
+    font-size: 1.35rem;
   }
 
   .map-bottom-card {
     width: calc(100% - 20px);
+  }
+}
+
+/* ── Breakpoint médio 580px ─────────────────────────────────────────────────── */
+@media (max-width: 580px) {
+  .owner-dashboard-metrics,
+  .owner-dashboard-grid,
+  .owner-dashboard-grid-charts {
+    grid-template-columns: 1fr;
+  }
+
+  .owner-dashboard-sidebar nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-sidebar nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .partner-tabs {
+    flex-direction: column;
+  }
+
+  .partner-tab {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .profile-carousel-track {
+    height: 200px;
+    min-height: 160px;
   }
 }
 
