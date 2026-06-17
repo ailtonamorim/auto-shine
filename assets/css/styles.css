@@ -2362,27 +2362,45 @@ a.owner-dashboard-nav {
 }
 
 .user-booking-card {
-  border: 1px solid #2f4f7a;
-  border-radius: 8px;
+  border: 1px solid rgba(47, 127, 255, 0.2);
+  border-radius: var(--radius);
   background: linear-gradient(150deg, rgba(13, 24, 41, 0.95), rgba(9, 15, 26, 0.95));
-  padding: 16px;
+  padding: 18px;
   display: grid;
   gap: 12px;
+  box-shadow: var(--shadow);
+  transition: border-color 0.2s ease;
+}
+
+.user-booking-card:hover {
+  border-color: rgba(47, 127, 255, 0.4);
 }
 
 .booking-status-canceled {
-  background: rgba(255, 255, 255, 0.08);
-  color: #aab8c9;
+  background: rgba(229, 62, 62, 0.13);
+  border: 1px solid rgba(229, 62, 62, 0.35);
+  color: #fc8181;
+}
+
+.booking-status-confirmado {
+  background: rgba(47, 127, 255, 0.13);
+  border: 1px solid rgba(47, 127, 255, 0.35);
+  color: #80b8ff;
 }
 
 .booking-received-item {
-  border: 1px solid #2f4f7a;
-  border-radius: 14px;
+  border: 1px solid rgba(47, 127, 255, 0.18);
+  border-radius: var(--radius);
   background: linear-gradient(150deg, rgba(13, 24, 41, 0.95), rgba(9, 15, 26, 0.95));
-  padding: 14px;
+  padding: 16px;
   display: grid;
-  gap: 7px;
-  box-shadow: inset 0 0 0 1px rgba(53, 92, 140, 0.18);
+  gap: 8px;
+  box-shadow: var(--shadow);
+  transition: border-color 0.2s ease;
+}
+
+.booking-received-item:hover {
+  border-color: rgba(47, 127, 255, 0.35);
 }
 
 .booking-received-item h3 {
