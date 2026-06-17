@@ -934,42 +934,52 @@ main.container {
 }
 
 .site-footer {
-  margin-top: 48px;
-  border-top: 1px solid rgba(157, 195, 255, 0.16);
+  margin-top: 60px;
+  border-top: 1px solid rgba(157, 195, 255, 0.1);
   background:
-    radial-gradient(circle at 90% 0%, rgba(47, 127, 255, 0.14), transparent 34%),
-    rgba(5, 7, 11, 0.86);
+    radial-gradient(circle at 90% 0%, rgba(47, 127, 255, 0.1), transparent 34%),
+    rgba(5, 7, 11, 0.92);
 }
 
 .site-footer-inner {
-  padding: 28px 0;
+  padding: 36px 0;
   display: grid;
   grid-template-columns: 1.35fr repeat(3, minmax(150px, 1fr));
-  gap: 22px;
+  gap: 28px;
 }
 
 .site-footer h2,
 .site-footer h3 {
-  margin: 0 0 8px;
-  font-size: 1rem;
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  color: var(--text);
 }
 
 .site-footer h2 {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
+  background: linear-gradient(120deg, #ffffff 30%, #9dc3ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .site-footer p {
-  max-width: 46ch;
+  max-width: 40ch;
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
 
 .footer-links {
   display: grid;
-  gap: 7px;
+  gap: 9px;
 }
 
 .footer-links a,
 .footer-small a {
   color: var(--muted);
+  font-size: 0.9rem;
+  transition: color 0.15s ease;
 }
 
 .footer-links a:hover,
@@ -1113,14 +1123,15 @@ main.container {
 
 .field {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   align-content: start;
   min-width: 0;
 }
 
 .field label {
-  color: #d3e2ff;
+  color: #c8daff;
   font-weight: 600;
+  font-size: 0.9rem;
 }
 
 .field-grid {
@@ -2419,8 +2430,11 @@ a.owner-dashboard-nav {
 
 .validation-msg {
   min-height: 18px;
-  margin-top: 4px;
-  font-size: 0.84rem;
+  margin-top: 2px;
+  font-size: 0.83rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .validation-msg.is-valid {
@@ -2428,7 +2442,18 @@ a.owner-dashboard-nav {
 }
 
 .validation-msg.is-invalid {
-  color: #e53e3e;
+  color: #fc6767;
+}
+
+input.is-invalid,
+select.is-invalid,
+textarea.is-invalid {
+  border-color: rgba(229, 62, 62, 0.6);
+}
+
+input.is-valid,
+select.is-valid {
+  border-color: rgba(56, 195, 120, 0.5);
 }
 
 .validation-msg.is-warning {
