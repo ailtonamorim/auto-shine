@@ -852,21 +852,27 @@ main.container {
 }
 
 .profile-detail-panel {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: linear-gradient(145deg, rgba(16, 24, 37, 0.96), rgba(9, 14, 24, 0.96));
-  padding: 16px;
+  border: 1px solid rgba(47, 127, 255, 0.15);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, rgba(14, 22, 37, 0.97), rgba(8, 13, 22, 0.97));
+  padding: 18px;
   display: grid;
   align-content: start;
   gap: 8px;
   min-height: 100%;
+  transition: border-color 0.2s ease;
+}
+
+.profile-detail-panel:hover {
+  border-color: rgba(47, 127, 255, 0.3);
 }
 
 .profile-detail-panel > span {
   color: #9dc3ff;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .profile-detail-panel h2,
@@ -890,12 +896,13 @@ main.container {
 }
 
 .profile-chip-list span {
-  border: 1px solid #2a3d5b;
+  border: 1px solid rgba(47, 127, 255, 0.2);
   border-radius: 999px;
-  background: #0d1728;
-  color: #dce9ff;
-  padding: 7px 10px;
-  font-size: 0.88rem;
+  background: rgba(47, 127, 255, 0.08);
+  color: #c8daff;
+  padding: 5px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .services-grid {
@@ -1240,14 +1247,15 @@ main.container {
   grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: start;
-  padding: 13px 14px;
+  padding: 14px 16px;
   border: 1px solid rgba(157, 195, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(12, 18, 30, 0.96);
-  box-shadow: var(--shadow);
+  border-radius: 14px;
+  background: rgba(10, 16, 26, 0.98);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
   color: var(--text);
   pointer-events: auto;
-  animation: toast-enter 0.18s ease-out;
+  animation: toast-enter 0.2s ease-out;
 }
 
 .app-toast span {
