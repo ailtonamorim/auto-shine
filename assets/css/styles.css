@@ -75,14 +75,21 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 0;
+  padding: 20px 0;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #ffffff 30%, #9dc3ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-decoration: none;
 }
 
 .main-nav {
@@ -103,6 +110,7 @@ p {
   justify-content: center;
   text-align: center;
   white-space: nowrap;
+  transition: background 0.18s ease, color 0.18s ease;
 }
 
 .nav-logout {
@@ -119,29 +127,108 @@ p {
   color: var(--white);
 }
 
+.main-nav a:focus-visible,
+.nav-logout:focus-visible {
+  outline: 2px solid rgba(47, 127, 255, 0.5);
+  outline-offset: 2px;
+}
+
+/* ── Hamburger menu ─────────────────────────────────────────── */
+.nav-toggle {
+  display: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.nav-toggle:hover {
+  background: rgba(47, 127, 255, 0.1);
+}
+
+.nav-toggle-bar {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: transform 0.25s ease, opacity 0.2s ease;
+}
+
+.nav-toggle[aria-expanded="true"] .nav-toggle-bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.nav-toggle[aria-expanded="true"] .nav-toggle-bar:nth-child(2) {
+  opacity: 0;
+}
+.nav-toggle[aria-expanded="true"] .nav-toggle-bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
 .hero {
   display: grid;
-  gap: 14px;
-  background: linear-gradient(145deg, rgba(18, 26, 40, 0.96), rgba(8, 13, 21, 0.96));
-  border: 1px solid var(--line);
+  gap: 16px;
+  background: linear-gradient(145deg, rgba(14, 22, 38, 0.97), rgba(6, 11, 20, 0.97));
+  border: 1px solid rgba(47, 127, 255, 0.18);
   border-radius: var(--radius);
-  padding: clamp(22px, 4vw, 40px);
-  box-shadow: var(--shadow);
+  padding: clamp(24px, 5vw, 48px);
+  box-shadow: var(--shadow), 0 0 80px rgba(47, 127, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -80px;
+  right: -80px;
+  width: 320px;
+  height: 320px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(47, 127, 255, 0.12), transparent 70%);
+  pointer-events: none;
 }
 
 .eyebrow {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #9dc3ff;
   text-transform: uppercase;
-  font-size: 0.78rem;
-  letter-spacing: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  opacity: 0.7;
 }
 
 .hero h1 {
-  font-size: 2.35rem;
+  font-size: clamp(1.5rem, 4.5vw, 2.35rem);
   line-height: 1.12;
   max-width: 100%;
   overflow-wrap: break-word;
+}
+
+::placeholder {
+  color: var(--muted);
+  opacity: 0.65;
 }
 
 .hero-text {
@@ -345,6 +432,20 @@ textarea:focus {
   background: #13253f;
 }
 
+.chip {
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.chip:focus-visible {
+  outline: 2px solid rgba(47, 127, 255, 0.5);
+  outline-offset: 2px;
+}
+
+.btn:focus-visible {
+  outline: 2px solid rgba(47, 127, 255, 0.5);
+  outline-offset: 2px;
+}
+
 .shop-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -370,6 +471,21 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  cursor: pointer;
+}
+
+.shop-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.shop-card img {
+  transition: transform 0.4s ease;
+}
+
+.shop-card:hover img {
+  transform: scale(1.03);
 }
 
 .shop-card img {
@@ -2532,22 +2648,77 @@ a.owner-dashboard-nav {
 
 @media (max-width: 760px) {
   .topbar {
-    flex-direction: column;
-    align-items: start;
-    gap: 12px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+    gap: 0;
+  }
+
+  .nav-toggle {
+    display: flex;
   }
 
   .main-nav {
-    width: 100%;
-    overflow-x: auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 300;
+    background: rgba(5, 7, 11, 0.97);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 80px 20px 32px;
+    gap: 6px;
+    overflow-y: auto;
     flex-wrap: nowrap;
-    gap: 8px;
-    padding-bottom: 2px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-8px);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+  }
+
+  .main-nav::before {
+    content: "AutoShine";
+    position: absolute;
+    top: 24px;
+    left: 24px;
+    font-weight: 800;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(120deg, #ffffff 30%, #9dc3ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .main-nav.is-open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
   }
 
   .main-nav a,
   .nav-logout {
-    flex: 0 0 auto;
+    font-size: 1.08rem;
+    padding: 14px 18px;
+    border-radius: 14px;
+    min-height: 52px;
+    flex: none;
+    width: 100%;
+    text-align: left;
+    justify-content: flex-start;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .main-nav a:hover,
+  .main-nav a.active,
+  .nav-logout:hover {
+    border-color: rgba(47, 127, 255, 0.2);
+    background: rgba(47, 127, 255, 0.1);
   }
 
   .site-footer-inner {
@@ -2706,11 +2877,11 @@ a.owner-dashboard-nav {
 
 @media (max-width: 420px) {
   .container {
-    width: min(100% - 24px, 1120px);
+    width: min(100% - 20px, 1120px);
   }
 
   .topbar {
-    padding: 16px 0;
+    padding: 14px 0;
   }
 
   .hero,

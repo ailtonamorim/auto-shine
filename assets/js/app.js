@@ -3910,6 +3910,46 @@ updateNavAuthState();
 initializeSiteFooter();
 initializeReportActions();
 initFavoriteButtonHandling();
+initHamburgerMenu();
+
+// ── Menu hamburger mobile ────────────────────────────────────────────────────
+function initHamburgerMenu() {
+  const toggle = document.querySelector(".nav-toggle");
+  const nav = document.querySelector(".main-nav");
+  if (!toggle || !nav) return;
+
+  function openMenu() {
+    nav.classList.add("is-open");
+    toggle.setAttribute("aria-expanded", "true");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeMenu() {
+    nav.classList.remove("is-open");
+    toggle.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = "";
+  }
+
+  toggle.addEventListener("click", () => {
+    nav.classList.contains("is-open") ? closeMenu() : openMenu();
+  });
+
+  nav.querySelectorAll("a, .nav-logout").forEach((el) => {
+    el.addEventListener("click", closeMenu);
+  });
+
+  nav.addEventListener("click", (e) => {
+    if (e.target === nav) closeMenu();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && nav.classList.contains("is-open")) closeMenu();
+  });
+
+  // Ensure toggle stays above overlay
+  toggle.style.position = "relative";
+  toggle.style.zIndex = "350";
+}
 
 // ── Painel Admin ─────────────────────────────────────────────────────────────
 function getAdminToken() { return localStorage.getItem(adminTokenKey); }
