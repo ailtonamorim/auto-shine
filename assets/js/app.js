@@ -918,7 +918,7 @@ async function initFavoritesPage() {
 async function initPartnerPage() {
   const authShell = document.getElementById("partner-auth-shell") || document.getElementById("dono-auth-shell");
   const managementShell = document.getElementById("partner-management-shell");
-  const loginForm = document.getElementById("owner-login-form");
+  const loginForm = document.getElementById("owner-login-form") || document.getElementById("dono-login-form");
   const ownerSessionLabel = document.getElementById("owner-session-label");
   const ownerLogoutButton = document.getElementById("owner-logout-btn");
   const form = document.getElementById("partner-form");
@@ -2631,31 +2631,7 @@ async function initOwnerRegisterPage() {
     return;
   }
 
-  // Login
-  if (loginForm) {
-    loginForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const formData = new FormData(loginForm);
-      const login = normalizeOwnerLogin(formData.get("login"));
-      const senha = String(formData.get("password") || "");
-
-      if (!login || !senha) { notify("Informe login e senha para entrar."); return; }
-
-      try {
-        const res = await fetch("/api/dono/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ login, senha }),
-        });
-        const data = await res.json();
-        if (!res.ok) { notify(data.error || "Login ou senha inválidos."); return; }
-        setDonoToken(data.token);
-        window.location.href = "cadastro-dono.html";
-      } catch {
-        notify("Erro de conexão. Tente novamente.");
-      }
-    });
-  }
+  // Login é tratado pelo initPartnerPage() que tem acesso ao showManagementArea
 
   // Cadastro
     if (registerForm) {
@@ -2789,6 +2765,15 @@ async function initOwnerRegisterPage() {
 }
 
 // ── Perfil da loja ───────────────────────────────────────────────────────────
+function probeImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
 function setupProfileCarousel(container, photos, shopName) {
   if (!container) return;
 
@@ -2897,21 +2882,20 @@ async function initProfilePage() {
     const { loja } = await res.json();
 
     const heroCarousel = document.querySelector(".profile-carousel");
-    const heroImage = document.querySelector(".profile-hero img");
     const profileInfo = document.querySelector(".profile-info");
     const servicesGrid = document.querySelector(".services-grid");
     const detailsGrid = document.getElementById("profile-details");
     const sectionHead = document.querySelector("section .section-head .link");
 
-    if ((!heroCarousel && !heroImage) || !profileInfo || !servicesGrid) return;
+    if (!profileInfo || !servicesGrid) return;
 
+    // Carousel — capa primeiro, depois fotos adicionais (filtra URLs quebradas)
     const extraPhotos = parseTextList(loja.fotosAdicionais).filter(isValidShopImagePath);
-    const carouselPhotos = [loja.capaUrl, loja.fotoUrl, ...extraPhotos];
+    const candidates = [loja.capaUrl, ...extraPhotos].filter((url) => url && isValidShopImagePath(url));
+    const checks = await Promise.all(candidates.map((url) => probeImage(url)));
+    const allPhotos = candidates.filter((_, i) => checks[i]);
     if (heroCarousel) {
-      setupProfileCarousel(heroCarousel, carouselPhotos, loja.nome);
-    } else if (heroImage) {
-      heroImage.src = loja.capaUrl || loja.fotoUrl;
-      heroImage.alt = `Capa do estabelecimento ${loja.nome}`;
+      setupProfileCarousel(heroCarousel, allPhotos, loja.nome);
     }
 
     const avaliacoes = loja.avaliacoes || [];

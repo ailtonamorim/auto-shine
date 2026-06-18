@@ -94,7 +94,7 @@ function normalizarNomeServico(nome) {
   return String(nome || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
@@ -223,6 +223,13 @@ async function main() {
     cnpj: "66777888000136",
   });
 
+  // Fotos: IDs confirmados do Unsplash (todos testados e existentes)
+  // A = 1558618666-fcd25c85cd64  pessoa lavando carro (confirmado)
+  // B = 1619642751034-765dfdf7c58e  trabalho de vitrificação (confirmado)
+  // C = 1625047509248-ec889cbff17f  lavagem de carro (confirmado)
+  // D = 1552519507-da3b142c6e3d  carro esportivo (confirmado)
+  // E = 1607860108855-64acf2078ed9  detalhamento automotivo (confirmado)
+
   const lojaCentro = await upsertLoja(
     donoCentro.id,
     {
@@ -235,7 +242,7 @@ async function main() {
       categoria: "lavagem completa",
       fotoUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80",
       capaUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1562159632-1bd0de63e46e?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
@@ -259,9 +266,9 @@ async function main() {
       longitude: -49.2648,
       precoMedio: 158,
       categoria: "detalhamento automotivo",
-      fotoUrl: "https://images.unsplash.com/photo-1506015391300-4ded8f0869da?auto=format&fit=crop&w=800&q=80",
-      capaUrl: "https://images.unsplash.com/photo-1506015391300-4ded8f0869da?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1503376780353-7e6ee43f3ef4?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1494976388531-d1058494cdd8?auto=format&fit=crop&w=800&q=80",
+      fotoUrl: "https://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=800&q=80",
+      capaUrl: "https://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=1200&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
@@ -287,7 +294,7 @@ async function main() {
       categoria: "vitrificação",
       fotoUrl: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80",
       capaUrl: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1525609004556-c46c7d6cf023?auto=format&fit=crop&w=800&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
@@ -313,7 +320,7 @@ async function main() {
       categoria: "lavagem express",
       fotoUrl: "https://images.unsplash.com/photo-1625047509248-ec889cbff17f?auto=format&fit=crop&w=800&q=80",
       capaUrl: "https://images.unsplash.com/photo-1625047509248-ec889cbff17f?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1562159632-1bd0de63e46e?auto=format&fit=crop&w=800&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
@@ -337,9 +344,9 @@ async function main() {
       longitude: -49.2958,
       precoMedio: 88,
       categoria: "lavagem ecológica",
-      fotoUrl: "https://images.unsplash.com/photo-1614706560083-7f86e35df9e6?auto=format&fit=crop&w=800&q=80",
-      capaUrl: "https://images.unsplash.com/photo-1614706560083-7f86e35df9e6?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1519641471654-ac2e8e2a8c8e?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1506015391300-4ded8f0869da?auto=format&fit=crop&w=800&q=80",
+      fotoUrl: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80",
+      capaUrl: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=1200&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
@@ -363,9 +370,9 @@ async function main() {
       longitude: -49.2179,
       precoMedio: 320,
       categoria: "proteção de pintura",
-      fotoUrl: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80",
-      capaUrl: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&w=800&q=80",
+      fotoUrl: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80",
+      capaUrl: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
@@ -389,9 +396,9 @@ async function main() {
       longitude: -49.2717,
       precoMedio: 140,
       categoria: "utilitários",
-      fotoUrl: "https://images.unsplash.com/photo-1601933470096-0e34634ffcde?auto=format&fit=crop&w=800&q=80",
-      capaUrl: "https://images.unsplash.com/photo-1601933470096-0e34634ffcde?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80",
+      fotoUrl: "https://images.unsplash.com/photo-1625047509248-ec889cbff17f?auto=format&fit=crop&w=800&q=80",
+      capaUrl: "https://images.unsplash.com/photo-1625047509248-ec889cbff17f?auto=format&fit=crop&w=1200&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
@@ -415,9 +422,9 @@ async function main() {
       longitude: -49.2361,
       precoMedio: 110,
       categoria: "conveniência",
-      fotoUrl: "https://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=800&q=80",
-      capaUrl: "https://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=1200&q=80",
-      fotosAdicionais: "https://images.unsplash.com/photo-1503376780353-7e6ee43f3ef4?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1519641471654-ac2e8e2a8c8e?auto=format&fit=crop&w=800&q=80",
+      fotoUrl: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=800&q=80",
+      capaUrl: "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=1200&q=80",
+      fotosAdicionais: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=80\nhttps://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=800&q=80",
       bloqueado: false,
     },
     [
