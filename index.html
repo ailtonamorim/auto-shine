@@ -32,15 +32,27 @@
   <main class="container page-home reveal-root">
 
     <section class="categories reveal-item">
-      <p class="categories-label">Encontre o lava jato mais próximo de você <button class="label-location-cta chip chip-action" type="button" id="label-location-cta">clique aqui</button></p>
+      <div class="categories-header">
+        <h1 class="categories-title">Lava-jatos perto de você</h1>
+        <div class="categories-actions">
+          <button class="label-location-cta chip chip-action" type="button" id="label-location-cta">📍 Detectar localização</button>
+          <a href="mapa.html" class="chip chip-action">&#128506; Ver no mapa</a>
+        </div>
+      </div>
+      <p class="categories-subtitle">Compare preços, avaliações e agende seu serviço em poucos cliques.</p>
       <button id="use-location-btn" type="button" aria-label="Usar minha localização" style="display:none"></button>
       <p class="location-status" id="location-status"></p>
     </section>
 
     <section class="listing reveal-item">
-      <div class="section-head">
-        <h2 id="nearby-title">Lava jatos recomendados</h2>
-        <a href="mapa.html" class="chip chip-action">&#128506; Ver no mapa</a>
+      <div class="sort-bar">
+        <span class="sort-bar-label">Ordenar por</span>
+        <div class="sort-bar-chips">
+          <button class="chip chip-action is-active" data-sort="default" id="sort-default">⭐ Relevância</button>
+          <button class="chip chip-action" data-sort="price" id="sort-price">💰 Mais baratos</button>
+          <button class="chip chip-action" data-sort="rating" id="sort-rating">🏆 Melhor avaliados</button>
+          <button class="chip chip-action" data-sort="distance" id="sort-distance" style="display:none">📍 Mais próximos</button>
+        </div>
       </div>
 
       <div id="shop-grid" class="shop-grid"></div>

@@ -767,6 +767,46 @@ function sortHomeShopsByDistance() {
     .forEach((card) => shopGrid.appendChild(card));
 }
 
+function sortHomeShopsByPrice() {
+  const shopGrid = document.getElementById("shop-grid");
+  if (!shopGrid) return;
+  [...shopGrid.querySelectorAll('[data-owner-created="1"]')]
+    .sort((a, b) => Number(a.dataset.precoMedio || 9999) - Number(b.dataset.precoMedio || 9999))
+    .forEach((card) => shopGrid.appendChild(card));
+}
+
+function sortHomeShopsByRating() {
+  const shopGrid = document.getElementById("shop-grid");
+  if (!shopGrid) return;
+  [...shopGrid.querySelectorAll('[data-owner-created="1"]')]
+    .sort((a, b) => Number(b.dataset.avgRating || 0) - Number(a.dataset.avgRating || 0))
+    .forEach((card) => shopGrid.appendChild(card));
+}
+
+function initSortBar() {
+  const sortBtns = document.querySelectorAll("[data-sort]");
+  if (!sortBtns.length) return;
+
+  sortBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      sortBtns.forEach((b) => b.classList.remove("is-active"));
+      btn.classList.add("is-active");
+
+      const sort = btn.dataset.sort;
+      if (sort === "price") sortHomeShopsByPrice();
+      else if (sort === "rating") sortHomeShopsByRating();
+      else if (sort === "distance" && homeUserPosition) sortHomeShopsByDistance();
+      else {
+        const shopGrid = document.getElementById("shop-grid");
+        if (shopGrid) [...shopGrid.querySelectorAll('[data-owner-created="1"]')]
+          .sort((a, b) => Number(a.dataset.shopId) - Number(b.dataset.shopId))
+          .forEach((card) => shopGrid.appendChild(card));
+      }
+      applyHomeFilters();
+    });
+  });
+}
+
 function applyHomeLocationRanking() {
   updateHomeDistances();
   sortHomeShopsByDistance();
@@ -825,6 +865,12 @@ function buildHomeCard(loja) {
   article.dataset.shopId = String(loja.id);
   article.dataset.latitude = String(loja.latitude ?? "");
   article.dataset.longitude = String(loja.longitude ?? "");
+  article.dataset.precoMedio = String(loja.precoMedio ?? 9999);
+  const avaliacoesSort = loja.avaliacoes || [];
+  const avgRatingSort = avaliacoesSort.length
+    ? avaliacoesSort.reduce((s, a) => s + Number(a.nota || 0), 0) / avaliacoesSort.length
+    : 0;
+  article.dataset.avgRating = String(avgRatingSort);
 
   const safeName = escapeHtml(loja.nome);
   const safePhoto = escapeHtml(loja.fotoUrl);
@@ -876,6 +922,8 @@ async function renderOwnerShopsOnHome() {
       applyHomeLocationRanking();
       const btn = document.getElementById("use-location-btn");
       if (btn) btn.textContent = "Atualizar localização";
+      const sortDistBtn = document.getElementById("sort-distance");
+      if (sortDistBtn) sortDistBtn.style.display = "";
       updateHomeLocationStatus("Mostrando os lava jatos mais próximos de você.");
     } else {
       applyHomeFilters();
@@ -4414,6 +4462,7 @@ if (page === "home") {
   renderOwnerShopsOnHome();
   initCategoryFilter();
   initUseLocation();
+  initSortBar();
 }
 
 if (page === "mapa") {
