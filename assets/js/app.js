@@ -873,8 +873,8 @@ function buildHomeCard(loja) {
   article.dataset.avgRating = String(avgRatingSort);
 
   const safeName = escapeHtml(loja.nome);
-  const cardPhoto = loja.fotoUrl || loja.capaUrl || "";
-  const safePhoto = escapeHtml(cardPhoto);
+  const safePhoto = escapeHtml(loja.fotoUrl || "");
+  const safeCapaFallback = escapeHtml(loja.capaUrl || "assets/img/detalhe-premium-estetica.png");
   const safeAddress = escapeHtml(loja.endereco || "Endereço não informado");
   const profileUrl = `perfil.html?shopId=${encodeURIComponent(loja.id)}`;
 
@@ -889,7 +889,7 @@ function buildHomeCard(loja) {
   article.innerHTML = `
     ${createFavoriteButtonHtml(isFavorited, loja.id)}
     <div class="shop-card-img-wrap">
-      <img src="${safePhoto}" alt="Foto do lava jato ${safeName}" loading="lazy" onerror="this.src='assets/img/detalhe-premium-estetica.png';this.onerror=null" />
+      <img src="${safePhoto}" alt="Foto do lava jato ${safeName}" loading="lazy" onerror="if(this.dataset.capa&&this.src!==this.dataset.capa){this.src=this.dataset.capa;}else{this.src='assets/img/detalhe-premium-estetica.png';this.onerror=null;}" data-capa="${safeCapaFallback}" />
     </div>
     <div class="shop-content">
       <h3>${safeName}</h3>
