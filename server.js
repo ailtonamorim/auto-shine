@@ -10,8 +10,16 @@ const dotenv = require("dotenv");
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const cloudinaryV2 = require("cloudinary").v2;
 
 dotenv.config();
+
+cloudinaryV2.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+const cloudinaryAtivo = !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
 
 const prisma = new PrismaClient();
 const requiredConfig = ["JWT_SECRET", "SESSION_SECRET", "ADMIN_LOGIN", "ADMIN_SENHA"];
@@ -674,6 +682,18 @@ async function salvarImagemUpload({ imagem, nomeArquivo = "imagem", escopo = "ge
   const upload = prepararImagemUpload({ imagem, nomeArquivo, escopo });
   const moderacao = await exigirImagemPermitida(upload);
   const escopoSeguro = String(escopo || "geral").toLowerCase().replace(/[^a-z0-9-]/g, "") || "geral";
+
+  if (cloudinaryAtivo) {
+    const resultado = await new Promise((resolve, reject) => {
+      const stream = cloudinaryV2.uploader.upload_stream(
+        { folder: `autoshine/${escopoSeguro}`, resource_type: "image" },
+        (error, result) => (error ? reject(error) : resolve(result))
+      );
+      stream.end(upload.buffer);
+    });
+    return { url: resultado.secure_url, moderacao };
+  }
+
   const baseSeguro = path.basename(String(nomeArquivo || "imagem")).replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 48) || "imagem";
   const nomeFinal = `${escopoSeguro}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${baseSeguro}.${upload.extensao}`;
   const destino = path.join(uploadsDir, nomeFinal);

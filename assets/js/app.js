@@ -2107,7 +2107,7 @@ async function initPartnerPage() {
       }
 
       let res;
-      const lojaPayload = { nome, descricao, endereco, latitude, longitude, precoMedio, categoria, fotoUrl, capaUrl: capaUrl || null, fotosAdicionais, formasPagamento, politicaCancelamento, agendaDias, agendaHorarios };
+      const lojaPayload = { nome, descricao, endereco, latitude, longitude, precoMedio, categoria, fotoUrl, capaUrl: capaUrl || fotoUrl, fotosAdicionais, formasPagamento, politicaCancelamento, agendaDias, agendaHorarios };
       if (editingId) {
         res = await donoFetch(`/api/lojas/${editingId}`, {
           method: "PUT",
@@ -2938,9 +2938,9 @@ async function initProfilePage() {
 
     if (!profileInfo || !servicesGrid) return;
 
-    // Carousel — capa primeiro, depois fotos adicionais (filtra URLs quebradas)
+    // Carousel — foto principal primeiro, depois capa e fotos adicionais (deduplica e filtra quebradas)
     const extraPhotos = parseTextList(loja.fotosAdicionais).filter(isValidShopImagePath);
-    const candidates = [loja.capaUrl, ...extraPhotos].filter((url) => url && isValidShopImagePath(url));
+    const candidates = [...new Set([loja.fotoUrl, loja.capaUrl, ...extraPhotos].filter((url) => url && isValidShopImagePath(url)))];
     const checks = await Promise.all(candidates.map((url) => probeImage(url)));
     const allPhotos = candidates.filter((_, i) => checks[i]);
     if (heroCarousel) {
