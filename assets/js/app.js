@@ -1374,7 +1374,7 @@ async function initPartnerPage() {
     return Array.from(servicesList.querySelectorAll(".partner-service-item"))
       .map((row) => ({
         nome: row.querySelector('[data-service-field="name"]').value.trim(),
-        preco: Number(row.querySelector('[data-service-field="price"]').value),
+        preco: Number(String(row.querySelector('[data-service-field="price"]').value || "").replace(",", ".")),
         duracao: row.querySelector('[data-service-field="duration"]').value.trim(),
         descricao: row.querySelector('[data-service-field="description"]').value.trim(),
       }))
@@ -2036,7 +2036,7 @@ async function initPartnerPage() {
     const agendaHorarios = parseScheduleTimes(formData.get("agendaHorarios"));
     const servicos = readServicesFromForm();
     const precoMedio = servicos.length
-      ? Math.round(servicos.reduce((acc, s) => acc + s.preco, 0) / servicos.length)
+      ? parseFloat((servicos.reduce((acc, s) => acc + s.preco, 0) / servicos.length).toFixed(2))
       : 0;
 
     if (!nome || !descricao || !endereco || (!fotoUrl && !photoFile)) {
