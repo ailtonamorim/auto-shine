@@ -23,7 +23,29 @@
       "PowerShell(if \\(-not $?\\) { \"GitHub CLI: n�o instalado\" })",
       "Bash(git remote *)",
       "Bash(git branch *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(node --check assets/js/app.js)",
+      "Bash(grep -v \"//\\\\|escapeHtml\\\\|encodeURI\\\\|dataset\\\\|normaliz\\\\|String\\\\|param\")",
+      "PowerShell(New-Item -ItemType Directory -Path \"c:\\\\Users\\\\Amori\\\\OneDrive\\\\Documentos\\\\auto shine\\\\auto shine\\\\prisma\\\\migrations\\\\20260617000000_add_email_dono_reset_tokens\" -Force)",
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue | Select-Object Id, CPU, StartTime, @{N='Args';E={$_.MainWindowTitle}} | Format-Table -AutoSize)",
+      "PowerShell(Stop-Process -Id 30668 -Force)",
+      "PowerShell(Start-Sleep -Seconds 2; Invoke-WebRequest -Uri \"http://localhost:3000/reset-senha.html\" -UseBasicParsing -TimeoutSec 5 | Select-Object StatusCode, @{N='FirstLine';E={\\($_.Content -split \"`n\"\\)[0]}} 2>&1)",
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell(cd \"c:\\\\Users\\\\Amori\\\\OneDrive\\\\Documentos\\\\auto shine\\\\auto shine\"; $env:DATABASE_URL=\"file:./data/dev.db\"; $proc = Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"c:\\\\Users\\\\Amori\\\\OneDrive\\\\Documentos\\\\auto shine\\\\auto shine\" -RedirectStandardOutput \"C:\\\\Users\\\\Amori\\\\server-out.txt\" -RedirectStandardError \"C:\\\\Users\\\\Amori\\\\server-err.txt\" -PassThru -NoNewWindow; Start-Sleep -Seconds 3; Get-Content \"C:\\\\Users\\\\Amori\\\\server-out.txt\",\"C:\\\\Users\\\\Amori\\\\server-err.txt\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"c:\\\\Users\\\\Amori\\\\OneDrive\\\\Documentos\\\\auto shine\\\\auto shine\" -WindowStyle Normal)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:3000/\" -UseBasicParsing -TimeoutSec 5)",
+      "Bash(node -e ' *)",
+      "Bash(node server.js)",
+      "Bash(curl -s http://localhost:3000/api/lojas)",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const j=JSON.parse\\(d\\); console.log\\('Lojas:', j.lojas?.length\\)\")",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:3000/api/lojas\" -UseBasicParsing)",
+      "PowerShell(cd \"c:\\\\Users\\\\Amori\\\\OneDrive\\\\Documentos\\\\auto shine\\\\auto shine\"; node -e \"const { PrismaClient } = require\\('@prisma/client'\\); require\\('dotenv'\\).config\\(\\); const prisma = new PrismaClient\\(\\); prisma.loja.updateMany\\({ where: { nome: { contains: 'Mall Auto Spa' } }, data: { capaUrl: 'https://res.cloudinary.com/dc7inkmxk/image/upload/v1781998995/autoshine/loja/bnqkslgp6edr74rhb0n6.jpg' } }\\).then\\(function\\(r\\){ console.log\\('Atualizado:', r.count, 'loja\\(s\\)'\\); return prisma['$disconnect']\\(\\); }\\);\")",
+      "Bash(ls \"C:/Users/Amori/Downloads/fotocard\")",
+      "Read(//c/Users/Amori/Downloads/fotocard/**)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:3000/api/lojas\" -UseBasicParsing 2>&1)",
+      "PowerShell(cd \"c:\\\\Users\\\\Amori\\\\OneDrive\\\\Documentos\\\\auto shine\\\\auto shine\"; $proc = Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -PassThru -RedirectStandardOutput \"server-out.txt\" -RedirectStandardError \"server-err.txt\" -NoNewWindow; Start-Sleep -Seconds 4; Invoke-WebRequest -Uri \"http://localhost:3000/api/lojas\" -UseBasicParsing 2>&1 | Out-Null; Start-Sleep -Seconds 1; Get-Content \"server-err.txt\" | Select-Object -Last 20; $proc.Kill\\(\\); Remove-Item \"server-out.txt\",\"server-err.txt\" -ErrorAction SilentlyContinue)",
+      "PowerShell(cd \"c:\\\\Users\\\\Amori\\\\OneDrive\\\\Documentos\\\\auto shine\\\\auto shine\"; node -e \"require\\('dotenv'\\).config\\(\\); const { PrismaClient } = require\\('@prisma/client'\\); const p = new PrismaClient\\(\\); p.loja.count\\(\\).then\\(function\\(n\\){ console.log\\('Lojas no banco:', n\\); }\\).catch\\(function\\(e\\){ console.error\\('Erro DB:', e.message\\); }\\).finally\\(function\\(\\){ p['$disconnect']\\(\\); }\\);\")"
     ]
   }
 }

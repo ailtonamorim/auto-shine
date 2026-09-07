@@ -1,5 +1,6 @@
 node_modules/
 .env
+env.txt
 *.db
 *.db-journal
 prisma/data/
