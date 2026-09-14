@@ -4,6 +4,8 @@ const express = require("express");
 const session = require("express-session");
 const passport = require("passport");
 const dotenv = require("dotenv");
+const rateLimit = require("express-rate-limit");
+const cors = require("cors");
 
 dotenv.config();
 
@@ -45,6 +47,18 @@ fs.mkdir(uploadsDir, { recursive: true }).catch((err) => {
 
 app.disable("x-powered-by");
 app.use(aplicarHeadersSeguranca);
+app.use(cors());
+
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: "Muitas requisições criadas a partir deste IP. Tente novamente em 15 minutos." }
+});
+
+app.use("/api/", apiLimiter);
 
 app.use(session({
   secret: process.env.SESSION_SECRET,
