@@ -313,6 +313,32 @@ p {
   margin: 0 0 4px;
 }
 
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.filter-bar .filter-search,
+.filter-bar .filter-price {
+  width: auto;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
+.filter-bar .filter-search {
+  flex: 2 1 200px;
+  min-width: 0;
+}
+
+.filter-bar .filter-price {
+  flex: 1 1 140px;
+  min-width: 0;
+  cursor: pointer;
+}
+
 .sort-bar {
   display: flex;
   align-items: center;
