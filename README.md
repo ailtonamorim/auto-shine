@@ -34,6 +34,7 @@ SESSION_SECRET=troque-para-uma-chave-segura
 JWT_SECRET=troque-para-uma-chave-jwt-segura
 ADMIN_LOGIN=admin-local
 ADMIN_SENHA=troque-esta-senha
+DATA_ENCRYPTION_KEY=chave-base64-de-32-bytes
 GOOGLE_CLIENT_ID=seu-google-client-id
 GOOGLE_CLIENT_SECRET=seu-google-client-secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
@@ -58,6 +59,7 @@ IMAGE_MAX_PIXELS=25000000
 ```bash
 npm install
 npm run migrate
+npm run migrate:sensitive-data
 npm run seed
 npm run dev
 ```

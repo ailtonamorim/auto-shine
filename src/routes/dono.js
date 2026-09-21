@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const prisma = require("../config/database");
 const { gerarTokenDono } = require("../utils/tokens");
+const { criptografar, criarIndice } = require("../utils/crypto");
 const { normalizarLoginDono, normalizarCnpj, normalizarEmail, emailValido, cnpjTemDigitoValido } = require("../utils/validators");
 const { consultarCnpjBrasilApi } = require("../utils/geocode");
 const { autenticarDono } = require("../middlewares/auth");
@@ -28,16 +29,18 @@ router.post("/cadastro", limitarAuth, async (req, res) => {
     }
     const existente = await prisma.dono.findUnique({ where: { login: loginNorm } });
     if (existente) return res.status(409).json({ error: "Este login ja esta em uso." });
-    const cnpjExistente = await prisma.dono.findFirst({ where: { cnpj: cnpjNorm } });
+    const cnpjExistente = await prisma.dono.findFirst({ where: { cnpjIndex: criarIndice(cnpjNorm) } });
     if (cnpjExistente) return res.status(409).json({ error: "Este CNPJ ja esta cadastrado no sistema." });
     if (emailNorm) {
-      const emailExistente = await prisma.dono.findUnique({ where: { email: emailNorm } });
+      const emailExistente = await prisma.dono.findUnique({ where: { emailIndex: criarIndice(emailNorm) } });
       if (emailExistente) return res.status(409).json({ error: "Este email já está em uso." });
     }
     const senhaHash = await bcrypt.hash(senha, 10);
-    const dono = await prisma.dono.create({ data: { nome: String(nome).trim(), login: loginNorm, cnpj: cnpjNorm, email: emailNorm, senha: senhaHash } });
+    const cnpjCipher = criptografar(cnpjNorm);
+    const emailCipher = emailNorm ? criptografar(emailNorm) : null;
+    const dono = await prisma.dono.create({ data: { nome: String(nome).trim(), login: loginNorm, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpjNorm), email: emailCipher, emailCipher, emailIndex: emailNorm ? criarIndice(emailNorm) : null, senha: senhaHash } });
     const token = gerarTokenDono(dono);
-    res.status(201).json({ token, dono: { id: dono.id, nome: dono.nome, login: dono.login, cnpj: dono.cnpj } });
+    res.status(201).json({ token, dono: { id: dono.id, nome: dono.nome, login: dono.login, cnpj: cnpjNorm } });
   } catch (err) {
     console.error("Erro no cadastro do dono:", err);
     res.status(500).json({ error: "Erro interno." });

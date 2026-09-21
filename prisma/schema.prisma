@@ -11,11 +11,19 @@ model Usuario {
   id                Int           @id @default(autoincrement())
   nome              String
   email             String        @unique
+  emailCipher       String?
+  emailIndex        String?       @unique
   cpf               String?       @unique
+  cpfCipher         String?
+  cpfIndex          String?       @unique
   telefone          String?
+  telefoneCipher    String?
   senha             String?
   googleId          String?       @unique
+  googleIdCipher    String?
+  googleIdIndex     String?       @unique
   resetToken        String?       @unique
+  resetTokenHash    String?       @unique
   resetTokenExpiry  DateTime?
   createdAt         DateTime      @default(now())
   agendamentos      Agendamento[]
@@ -29,10 +37,17 @@ model Dono {
   nome             String
   login            String   @unique
   email            String?  @unique
+  emailCipher      String?
+  emailIndex       String?  @unique
   cnpj             String?
+  cnpjCipher       String?
+  cnpjIndex        String?  @unique
   senha            String?
   googleId         String?  @unique
+  googleIdCipher   String?
+  googleIdIndex    String?  @unique
   resetToken       String?  @unique
+  resetTokenHash   String?  @unique
   resetTokenExpiry DateTime?
   createdAt        DateTime @default(now())
   lojas            Loja[]
@@ -84,9 +99,12 @@ model Agendamento {
   hora         String
   veiculo      String       @default("Carro")
   notas        String?
+  notasCipher  String?
   status       String       @default("pendente")
   nomeCliente  String?
+  nomeClienteCipher String?
   emailCliente String?
+  emailClienteCipher String?
   usuarioId    Int?
   lojaId       Int
   servicoId    Int
@@ -119,6 +137,7 @@ model Denuncia {
   tipo          String
   motivo        String
   detalhes      String?
+  detalhesCipher String?
   status        String       @default("aberta")
   usuarioId     Int?
   lojaId        Int?

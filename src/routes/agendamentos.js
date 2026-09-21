@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../config/database");
 const { autenticarUsuario, autenticarDono } = require("../middlewares/auth");
 const { dataEhPassado } = require("../utils/validators");
+const { criptografar, descriptografarSeNecessario } = require("../utils/crypto");
 const { horarioOcupado, montarDisponibilidadeLoja, statusValidos, statusBloqueiamHorario, erroHorarioReservado } = require("../utils/agenda");
 
 const router = express.Router();
@@ -20,10 +21,10 @@ router.post("/", autenticarUsuario, async (req, res) => {
     if (!servico) return res.status(404).json({ error: "Serviço não encontrado nesta loja." });
     if (await horarioOcupado({ lojaId, data, hora })) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     const agendamento = await prisma.agendamento.create({
-      data: { data, hora, veiculo: veiculo || "Carro", notas: notas || null, nomeCliente: nomeCliente || null, emailCliente: emailCliente || null, usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId) },
+      data: { data, hora, veiculo: veiculo || "Carro", notas: criptografar(notas), notasCipher: criptografar(notas), nomeCliente: criptografar(nomeCliente), nomeClienteCipher: criptografar(nomeCliente), emailCliente: criptografar(emailCliente), emailClienteCipher: criptografar(emailCliente), usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId) },
       include: { loja: { select: { nome: true } }, servico: { select: { nome: true } } },
     });
-    res.status(201).json({ agendamento });
+    res.status(201).json({ agendamento: { ...agendamento, notas: descriptografarSeNecessario(agendamento.notas), nomeCliente: descriptografarSeNecessario(agendamento.nomeCliente), emailCliente: descriptografarSeNecessario(agendamento.emailCliente) } });
   } catch (err) {
     if (erroHorarioReservado(err)) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     console.error("Erro ao criar agendamento:", err);
@@ -44,7 +45,7 @@ router.get("/dono", autenticarDono, async (req, res) => {
       },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ agendamentos });
+    res.json({ agendamentos: agendamentos.map((item) => ({ ...item, nomeCliente: descriptografarSeNecessario(item.nomeCliente), emailCliente: descriptografarSeNecessario(item.emailCliente), usuario: item.usuario ? { ...item.usuario, email: descriptografarSeNecessario(item.usuario.email) } : null })) });
   } catch {
     res.status(500).json({ error: "Erro ao buscar agendamentos." });
   }
@@ -60,7 +61,7 @@ router.get("/me", autenticarUsuario, async (req, res) => {
       },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ agendamentos });
+    res.json({ agendamentos: agendamentos.map((item) => ({ ...item, notas: descriptografarSeNecessario(item.notas), nomeCliente: descriptografarSeNecessario(item.nomeCliente), emailCliente: descriptografarSeNecessario(item.emailCliente) })) });
   } catch {
     res.status(500).json({ error: "Erro ao buscar seus agendamentos." });
   }
@@ -82,10 +83,10 @@ router.put("/:id", autenticarUsuario, async (req, res) => {
     if (await horarioOcupado({ lojaId: agendamento.lojaId, data, hora, ignorarId: id })) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     const atualizado = await prisma.agendamento.update({
       where: { id },
-      data: { data, hora, veiculo: veiculo || agendamento.veiculo, notas: notas === undefined ? agendamento.notas : notas || null, status: "pendente" },
+      data: { data, hora, veiculo: veiculo || agendamento.veiculo, notas: notas === undefined ? agendamento.notas : criptografar(notas), notasCipher: notas === undefined ? agendamento.notasCipher : criptografar(notas), status: "pendente" },
       include: { loja: { select: { id: true, nome: true, endereco: true } }, servico: { select: { id: true, nome: true, preco: true, duracao: true } } },
     });
-    res.json({ agendamento: atualizado });
+    res.json({ agendamento: { ...atualizado, notas: descriptografarSeNecessario(atualizado.notas) } });
   } catch (err) {
     if (erroHorarioReservado(err)) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     res.status(500).json({ error: "Erro ao atualizar agendamento." });

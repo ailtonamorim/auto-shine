@@ -5,6 +5,7 @@ const prisma = require("../config/database");
 const { enviarEmailReset } = require("../config/email");
 const { normalizarEmail, emailValido } = require("../utils/validators");
 const { limitarReset } = require("../middlewares/security");
+const { criarIndice, criarHashToken } = require("../utils/crypto");
 
 const router = express.Router();
 
@@ -18,15 +19,15 @@ router.post("/solicitar", limitarReset, async (req, res) => {
     const expiry = new Date(Date.now() + 60 * 60 * 1000);
     try {
       if (tipo === "usuario") {
-        const usuario = await prisma.usuario.findUnique({ where: { email: emailNorm } });
+        const usuario = await prisma.usuario.findUnique({ where: { emailIndex: criarIndice(emailNorm) } });
         if (usuario) {
-          await prisma.usuario.update({ where: { id: usuario.id }, data: { resetToken: token, resetTokenExpiry: expiry } });
+          await prisma.usuario.update({ where: { id: usuario.id }, data: { resetTokenHash: criarHashToken(token), resetToken: null, resetTokenExpiry: expiry } });
           await enviarEmailReset({ para: emailNorm, nome: usuario.nome, token, tipo: "usuario" });
         }
       } else {
-        const dono = await prisma.dono.findUnique({ where: { email: emailNorm } });
+        const dono = await prisma.dono.findUnique({ where: { emailIndex: criarIndice(emailNorm) } });
         if (dono) {
-          await prisma.dono.update({ where: { id: dono.id }, data: { resetToken: token, resetTokenExpiry: expiry } });
+          await prisma.dono.update({ where: { id: dono.id }, data: { resetTokenHash: criarHashToken(token), resetToken: null, resetTokenExpiry: expiry } });
           await enviarEmailReset({ para: emailNorm, nome: dono.nome, token, tipo: "dono" });
         }
       }
@@ -48,13 +49,13 @@ router.post("/confirmar", limitarReset, async (req, res) => {
     const agora = new Date();
     try {
       if (tipo === "usuario") {
-        const usuario = await prisma.usuario.findUnique({ where: { resetToken: token } });
+        const usuario = await prisma.usuario.findUnique({ where: { resetTokenHash: criarHashToken(token) } });
         if (!usuario || !usuario.resetTokenExpiry || usuario.resetTokenExpiry < agora) return res.status(400).json({ error: "Link de recuperação inválido ou expirado." });
-        await prisma.usuario.update({ where: { id: usuario.id }, data: { senha: await bcrypt.hash(novaSenha, 10), resetToken: null, resetTokenExpiry: null } });
+        await prisma.usuario.update({ where: { id: usuario.id }, data: { senha: await bcrypt.hash(novaSenha, 10), resetToken: null, resetTokenHash: null, resetTokenExpiry: null } });
       } else {
-        const dono = await prisma.dono.findUnique({ where: { resetToken: token } });
+        const dono = await prisma.dono.findUnique({ where: { resetTokenHash: criarHashToken(token) } });
         if (!dono || !dono.resetTokenExpiry || dono.resetTokenExpiry < agora) return res.status(400).json({ error: "Link de recuperação inválido ou expirado." });
-        await prisma.dono.update({ where: { id: dono.id }, data: { senha: await bcrypt.hash(novaSenha, 10), resetToken: null, resetTokenExpiry: null } });
+        await prisma.dono.update({ where: { id: dono.id }, data: { senha: await bcrypt.hash(novaSenha, 10), resetToken: null, resetTokenHash: null, resetTokenExpiry: null } });
       }
     } catch (dbErr) {
       console.warn("Aviso reset-confirmar:", dbErr.message?.split("\n")[0]);

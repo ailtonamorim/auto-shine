@@ -4,7 +4,7 @@ const jwtSecret = process.env.JWT_SECRET;
 const jwtExpiresIn = "7d";
 
 function gerarTokenUsuario(usuario) {
-  return jwt.sign({ id: usuario.id, nome: usuario.nome, email: usuario.email }, jwtSecret, { expiresIn: jwtExpiresIn });
+  return jwt.sign({ id: usuario.id, nome: usuario.nome }, jwtSecret, { expiresIn: jwtExpiresIn });
 }
 
 function gerarTokenDono(dono) {

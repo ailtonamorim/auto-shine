@@ -4,6 +4,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const prisma = require("../config/database");
 const { gerarTokenUsuario, gerarTokenDono } = require("../utils/tokens");
+const { criptografar, criarIndice } = require("../utils/crypto");
 const { normalizarEmail, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
 const { limitarAuth } = require("../middlewares/security");
 
@@ -58,13 +59,14 @@ router.get("/auth/google/callback", (req, res, next) => {
     if (parceiro) {
       (async () => {
         try {
-          let dono = await prisma.dono.findFirst({ where: { googleId: user.id } });
+          let dono = await prisma.dono.findFirst({ where: { googleIdIndex: criarIndice(user.id) } });
           if (!dono) {
             const base = String(user.email || user.name || "dono").split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 20) || "dono";
             let login = base;
             let i = 1;
             while (await prisma.dono.findUnique({ where: { login } })) login = `${base}${i++}`;
-            dono = await prisma.dono.create({ data: { nome: user.name || "Parceiro Google", login, senha: null, googleId: user.id } });
+            const googleIdCipher = criptografar(user.id);
+            dono = await prisma.dono.create({ data: { nome: user.name || "Parceiro Google", login, senha: null, googleId: googleIdCipher, googleIdCipher, googleIdIndex: criarIndice(user.id) } });
           }
           const token = gerarTokenDono(dono);
           const next = encodeURIComponent(returnTo);
@@ -81,15 +83,17 @@ router.get("/auth/google/callback", (req, res, next) => {
       try {
         const email = normalizarEmail(user.email);
         if (!email) return res.redirect("/cadastro.html?mode=login&auth=google_failed");
-        let usuario = await prisma.usuario.findFirst({ where: { OR: [{ googleId: user.id }, { email }] } });
+        let usuario = await prisma.usuario.findFirst({ where: { OR: [{ googleIdIndex: criarIndice(user.id) }, { emailIndex: criarIndice(email) }] } });
         if (!usuario) {
-          usuario = await prisma.usuario.create({ data: { nome: user.name || email.split("@")[0] || "Usuario Google", email, googleId: user.id } });
-        } else if (!usuario.googleId) {
-          usuario = await prisma.usuario.update({ where: { id: usuario.id }, data: { googleId: user.id } });
+          const emailCipher = criptografar(email);
+          const googleIdCipher = criptografar(user.id);
+          usuario = await prisma.usuario.create({ data: { nome: user.name || email.split("@")[0] || "Usuario Google", email: emailCipher, emailCipher, emailIndex: criarIndice(email), googleId: googleIdCipher, googleIdCipher, googleIdIndex: criarIndice(user.id) } });
+        } else if (!usuario.googleIdIndex) {
+          usuario = await prisma.usuario.update({ where: { id: usuario.id }, data: { googleId: criptografar(user.id), googleIdIndex: criarIndice(user.id) } });
         }
         const token = gerarTokenUsuario(usuario);
         const name = encodeURIComponent(usuario.nome);
-        const emailParam = encodeURIComponent(usuario.email);
+        const emailParam = encodeURIComponent(email);
         const next = encodeURIComponent(returnTo);
         res.redirect(`/cadastro.html?mode=login&auth=success&provider=google&token=${encodeURIComponent(token)}&name=${name}&email=${emailParam}&next=${next}`);
       } catch (err) {
@@ -119,12 +123,15 @@ router.post("/api/auth/signup", limitarAuth, async (req, res) => {
     const telefoneNorm = String(telefone).replace(/\D/g, "");
     if (!cpfTemDigitoValido(cpfNorm)) return res.status(400).json({ error: "CPF invalido." });
     if (String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
-    const existente = await prisma.usuario.findFirst({ where: { OR: [{ email: emailNorm }, { cpf: cpfNorm }] } });
+    const existente = await prisma.usuario.findFirst({ where: { OR: [{ emailIndex: criarIndice(emailNorm) }, { cpfIndex: criarIndice(cpfNorm) }] } });
     if (existente) return res.status(409).json({ error: "Ja existe um cadastro com este email ou CPF." });
     const senhaHash = await bcrypt.hash(senha, 10);
-    const usuario = await prisma.usuario.create({ data: { nome: String(nome).trim(), email: emailNorm, cpf: cpfNorm, telefone: telefoneNorm, senha: senhaHash } });
+    const emailCipher = criptografar(emailNorm);
+    const cpfCipher = criptografar(cpfNorm);
+    const telefoneCipher = criptografar(telefoneNorm);
+    const usuario = await prisma.usuario.create({ data: { nome: String(nome).trim(), email: emailCipher, emailCipher, emailIndex: criarIndice(emailNorm), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpfNorm), telefone: telefoneCipher, telefoneCipher, senha: senhaHash } });
     const token = gerarTokenUsuario(usuario);
-    res.status(201).json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
+    res.status(201).json({ token, user: { id: usuario.id, nome: usuario.nome, email: emailNorm } });
   } catch (err) {
     console.error("Erro no cadastro:", err);
     res.status(500).json({ error: "Erro interno ao criar conta." });
@@ -135,12 +142,12 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
   try {
     const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ error: "Informe email e senha." });
-    const usuario = await prisma.usuario.findUnique({ where: { email: normalizarEmail(email) } });
+    const usuario = await prisma.usuario.findUnique({ where: { emailIndex: criarIndice(normalizarEmail(email)) } });
     if (!usuario) return res.status(401).json({ error: "Email ou senha inválidos." });
     if (!usuario.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
     if (!(await bcrypt.compare(senha, usuario.senha))) return res.status(401).json({ error: "Email ou senha inválidos." });
     const token = gerarTokenUsuario(usuario);
-    res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
+    res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: normalizarEmail(email) } });
   } catch (err) {
     console.error("Erro no login:", err);
     res.status(500).json({ error: "Erro interno ao fazer login." });

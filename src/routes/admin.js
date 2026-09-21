@@ -8,6 +8,7 @@ const { gerarTokenAdmin } = require("../utils/tokens");
 const { normalizarLoginDono, normalizarCnpj, normalizarEmail, normalizarCpf, normalizarTelefone, emailValido, cnpjTemDigitoValido, cpfTemDigitoValido, fotoAvaliacaoValida, serializarFotosAdicionais, serializarListaTexto, coordenadasValidas, imagemLojaValida } = require("../utils/validators");
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("../utils/agenda");
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
+const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 
 const router = express.Router();
 
@@ -29,6 +30,16 @@ const avaliacaoAdminInclude = {
   loja: { select: { id: true, nome: true } },
   _count: { select: { denuncias: true } },
 };
+
+function usuarioProtegido(usuario) {
+  if (!usuario) return usuario;
+  return { ...usuario, email: descriptografarSeNecessario(usuario.email), cpf: descriptografarSeNecessario(usuario.cpf), telefone: descriptografarSeNecessario(usuario.telefone), googleId: undefined };
+}
+
+function donoProtegido(dono) {
+  if (!dono) return dono;
+  return { ...dono, email: descriptografarSeNecessario(dono.email), cnpj: descriptografarSeNecessario(dono.cnpj), googleId: undefined };
+}
 
 router.post("/login", limitarAuth, async (req, res) => {
   const { login, senha } = req.body || {};
@@ -212,7 +223,7 @@ router.get("/usuarios", autenticarAdmin, async (_req, res) => {
       select: { id: true, nome: true, email: true, cpf: true, telefone: true, googleId: true, createdAt: true, _count: { select: { agendamentos: true, avaliacoes: true, denuncias: true } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ usuarios });
+    res.json({ usuarios: usuarios.map(usuarioProtegido) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuários." });
   }
@@ -224,7 +235,7 @@ router.get("/usuarios/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const usuario = await prisma.usuario.findUnique({ where: { id }, select: usuarioAdminSelect });
     if (!usuario) return res.status(404).json({ error: "Usuario nao encontrado." });
-    res.json({ usuario });
+    res.json({ usuario: usuarioProtegido(usuario) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuario." });
   }
@@ -237,31 +248,37 @@ router.put("/usuarios/:id", autenticarAdmin, async (req, res) => {
     const atual = await prisma.usuario.findUnique({ where: { id } });
     if (!atual) return res.status(404).json({ error: "Usuario nao encontrado." });
     const nome = String(req.body?.nome ?? atual.nome).trim();
-    const email = normalizarEmail(req.body?.email ?? atual.email);
-    const cpf = req.body?.cpf === undefined ? atual.cpf : normalizarCpf(req.body.cpf);
-    const telefone = req.body?.telefone === undefined ? atual.telefone : normalizarTelefone(req.body.telefone);
+    const emailAtual = descriptografarSeNecessario(atual.email);
+    const cpfAtual = descriptografarSeNecessario(atual.cpf);
+    const telefoneAtual = descriptografarSeNecessario(atual.telefone);
+    const email = normalizarEmail(req.body?.email ?? emailAtual);
+    const cpf = req.body?.cpf === undefined ? cpfAtual : normalizarCpf(req.body.cpf);
+    const telefone = req.body?.telefone === undefined ? telefoneAtual : normalizarTelefone(req.body.telefone);
     const cpfAlterado = cpf !== (atual.cpf || "");
     const telefoneAlterado = telefone !== (atual.telefone || "");
     if (!nome || !email) return res.status(400).json({ error: "Informe nome e email." });
     if (!emailValido(email)) return res.status(400).json({ error: "Email invalido." });
     if (cpfAlterado && cpf && !cpfTemDigitoValido(cpf)) return res.status(400).json({ error: "CPF invalido." });
     if (telefoneAlterado && telefone && telefone.length < 10) return res.status(400).json({ error: "Telefone invalido." });
-    if (email !== atual.email) {
-      const emailExistente = await prisma.usuario.findUnique({ where: { email } });
+    if (email !== emailAtual) {
+      const emailExistente = await prisma.usuario.findUnique({ where: { emailIndex: criarIndice(email) } });
       if (emailExistente && emailExistente.id !== id) return res.status(409).json({ error: "Este email ja pertence a outro usuario." });
     }
     if (cpf && cpfAlterado) {
-      const cpfExistente = await prisma.usuario.findFirst({ where: { cpf } });
+      const cpfExistente = await prisma.usuario.findFirst({ where: { cpfIndex: criarIndice(cpf) } });
       if (cpfExistente && cpfExistente.id !== id) return res.status(409).json({ error: "Este CPF ja pertence a outro usuario." });
     }
-    const data = { nome, email, cpf: cpf || null, telefone: telefone || null };
+    const emailCipher = criptografar(email);
+    const cpfCipher = cpf ? criptografar(cpf) : null;
+    const telefoneCipher = telefone ? criptografar(telefone) : null;
+    const data = { nome, email: emailCipher, emailCipher, emailIndex: criarIndice(email), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpf), telefone: telefoneCipher, telefoneCipher };
     const novaSenha = String(req.body?.senha || "");
     if (novaSenha) {
       if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
       data.senha = await bcrypt.hash(novaSenha, 10);
     }
     const usuario = await prisma.usuario.update({ where: { id }, data, select: usuarioAdminSelect });
-    res.json({ usuario });
+    res.json({ usuario: usuarioProtegido(usuario) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar usuario." });
   }
@@ -289,7 +306,7 @@ router.get("/donos", autenticarAdmin, async (_req, res) => {
       select: { id: true, nome: true, login: true, cnpj: true, googleId: true, createdAt: true, _count: { select: { lojas: true } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ donos });
+    res.json({ donos: donos.map(donoProtegido) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiros." });
   }
@@ -301,7 +318,7 @@ router.get("/donos/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const dono = await prisma.dono.findUnique({ where: { id }, select: donoAdminSelect });
     if (!dono) return res.status(404).json({ error: "Parceiro nao encontrado." });
-    res.json({ dono });
+    res.json({ dono: donoProtegido(dono) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiro." });
   }
@@ -315,8 +332,9 @@ router.put("/donos/:id", autenticarAdmin, async (req, res) => {
     if (!atual) return res.status(404).json({ error: "Parceiro nao encontrado." });
     const nome = String(req.body?.nome ?? atual.nome).trim();
     const login = normalizarLoginDono(req.body?.login ?? atual.login);
-    const cnpj = req.body?.cnpj === undefined ? atual.cnpj : normalizarCnpj(req.body.cnpj);
-    const cnpjAlterado = cnpj !== (atual.cnpj || "");
+    const cnpjAtual = descriptografarSeNecessario(atual.cnpj);
+    const cnpj = req.body?.cnpj === undefined ? cnpjAtual : normalizarCnpj(req.body.cnpj);
+    const cnpjAlterado = cnpj !== (cnpjAtual || "");
     if (!nome || !login) return res.status(400).json({ error: "Informe nome e login do parceiro." });
     if (login.length < 4) return res.status(400).json({ error: "Login do parceiro deve ter pelo menos 4 caracteres." });
     if (cnpjAlterado && cnpj && !cnpjTemDigitoValido(cnpj)) return res.status(400).json({ error: "CNPJ invalido." });
@@ -325,17 +343,18 @@ router.put("/donos/:id", autenticarAdmin, async (req, res) => {
       if (loginExistente && loginExistente.id !== id) return res.status(409).json({ error: "Este login ja pertence a outro parceiro." });
     }
     if (cnpj && cnpjAlterado) {
-      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpj } });
+      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpjIndex: criarIndice(cnpj) } });
       if (cnpjExistente && cnpjExistente.id !== id) return res.status(409).json({ error: "Este CNPJ ja pertence a outro parceiro." });
     }
-    const data = { nome, login, cnpj: cnpj || null };
+    const cnpjCipher = cnpj ? criptografar(cnpj) : null;
+    const data = { nome, login, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpj) };
     const novaSenha = String(req.body?.senha || "");
     if (novaSenha) {
       if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
       data.senha = await bcrypt.hash(novaSenha, 10);
     }
     const dono = await prisma.dono.update({ where: { id }, data, select: donoAdminSelect });
-    res.json({ dono });
+    res.json({ dono: donoProtegido(dono) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar parceiro." });
   }
