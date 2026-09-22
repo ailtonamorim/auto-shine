@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../config/database");
 const { autenticarUsuario } = require("../middlewares/auth");
 const { fotoAvaliacaoValida } = require("../utils/validators");
+const { sanitizarTexto, removerIdsInternos, mascararNomeCliente } = require("../utils/masking");
 
 const router = express.Router();
 
@@ -9,7 +10,11 @@ router.get("/loja/:lojaId", async (req, res) => {
   try {
     const lojaId = Number(req.params.lojaId);
     const avaliacoes = await prisma.avaliacao.findMany({ where: { lojaId }, orderBy: { createdAt: "desc" } });
-    res.json({ avaliacoes });
+    res.json({ avaliacoes: avaliacoes.map((avaliacao) => ({
+      ...removerIdsInternos(avaliacao),
+      nomeCliente: mascararNomeCliente(avaliacao.nomeCliente, avaliacao.usuarioId),
+      comentario: sanitizarTexto(avaliacao.comentario),
+    })) });
   } catch {
     res.status(500).json({ error: "Erro ao buscar avaliações." });
   }
@@ -36,7 +41,7 @@ router.post("/", autenticarUsuario, async (req, res) => {
       data: {
         lojaId: Number(lojaId),
         nota: Number(nota),
-        comentario: String(comentario || "").trim(),
+        comentario: sanitizarTexto(String(comentario || "").trim()),
         fotoUrl: fotoUrl || null,
         nomeCliente: String(nomeCliente || "").trim() || null,
         usuarioId: req.usuario.id,

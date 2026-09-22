@@ -4,6 +4,7 @@ const { autenticarDono } = require("../middlewares/auth");
 const { coordenadasValidas, imagemLojaValida, serializarFotosAdicionais, serializarListaTexto, dataEhPassado } = require("../utils/validators");
 const { serializarAgendaDias, serializarAgendaHorarios, montarDisponibilidadeLoja } = require("../utils/agenda");
 const { deletarLojaComRelacionados } = require("../utils/loja");
+const { mascararListaLojas, mascararListaAvaliacoes, mascararEndereco, arredondarGPS } = require("../utils/masking");
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ router.get("/", async (_req, res) => {
       include: { servicos: true, avaliacoes: { select: { nota: true } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ lojas });
+    res.json({ lojas: mascararListaLojas(lojas) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao buscar lojas." });
@@ -46,7 +47,15 @@ router.get("/:id", async (req, res) => {
       include: { servicos: true, avaliacoes: { orderBy: { createdAt: "desc" } } },
     });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
-    res.json({ loja });
+    const coordenadas = arredondarGPS(loja.latitude, loja.longitude);
+    res.json({ loja: {
+      ...loja,
+      donoId: undefined,
+      endereco: mascararEndereco(loja.endereco),
+      latitude: coordenadas.latitude,
+      longitude: coordenadas.longitude,
+      avaliacoes: mascararListaAvaliacoes(loja.avaliacoes),
+    } });
   } catch {
     res.status(500).json({ error: "Erro interno." });
   }

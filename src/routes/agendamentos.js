@@ -2,8 +2,9 @@ const express = require("express");
 const prisma = require("../config/database");
 const { autenticarUsuario, autenticarDono } = require("../middlewares/auth");
 const { dataEhPassado } = require("../utils/validators");
-const { criptografar, descriptografarSeNecessario } = require("../utils/crypto");
+const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 const { horarioOcupado, montarDisponibilidadeLoja, statusValidos, statusBloqueiamHorario, erroHorarioReservado } = require("../utils/agenda");
+const { registrarAudit, TiposAcao } = require("../utils/audit");
 
 const router = express.Router();
 
@@ -21,9 +22,10 @@ router.post("/", autenticarUsuario, async (req, res) => {
     if (!servico) return res.status(404).json({ error: "Serviço não encontrado nesta loja." });
     if (await horarioOcupado({ lojaId, data, hora })) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     const agendamento = await prisma.agendamento.create({
-      data: { data, hora, veiculo: veiculo || "Carro", notas: criptografar(notas), notasCipher: criptografar(notas), nomeCliente: criptografar(nomeCliente), nomeClienteCipher: criptografar(nomeCliente), emailCliente: criptografar(emailCliente), emailClienteCipher: criptografar(emailCliente), usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId) },
+      data: { data, hora, veiculo: veiculo || "Carro", notas: criptografar(notas), notasCipher: criptografar(notas), nomeCliente: criptografar(nomeCliente), nomeClienteCipher: criptografar(nomeCliente), nomeClienteIndex: criarIndice(nomeCliente), emailCliente: criptografar(emailCliente), emailClienteCipher: criptografar(emailCliente), emailClienteIndex: criarIndice(emailCliente), usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId) },
       include: { loja: { select: { nome: true } }, servico: { select: { nome: true } } },
     });
+    await registrarAudit({ acao: TiposAcao.CRIAR, tabela: "Agendamento", recordId: agendamento.id, usuarioId: req.usuario.id, enderecoIp: req.ip, detalhes: { lojaId: Number(lojaId), servicoId: Number(servicoId) } });
     res.status(201).json({ agendamento: { ...agendamento, notas: descriptografarSeNecessario(agendamento.notas), nomeCliente: descriptografarSeNecessario(agendamento.nomeCliente), emailCliente: descriptografarSeNecessario(agendamento.emailCliente) } });
   } catch (err) {
     if (erroHorarioReservado(err)) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });

@@ -18,6 +18,7 @@ model Usuario {
   cpfIndex          String?       @unique
   telefone          String?
   telefoneCipher    String?
+  telefoneIndex     String?
   senha             String?
   googleId          String?       @unique
   googleIdCipher    String?
@@ -103,8 +104,10 @@ model Agendamento {
   status       String       @default("pendente")
   nomeCliente  String?
   nomeClienteCipher String?
+    nomeClienteIndex  String?
   emailCliente String?
   emailClienteCipher String?
+    emailClienteIndex String?
   usuarioId    Int?
   lojaId       Int
   servicoId    Int
@@ -136,6 +139,8 @@ model Denuncia {
   id            Int          @id @default(autoincrement())
   tipo          String
   motivo        String
+    motivoCipher   String?
+    motivoIndex    String?
   detalhes      String?
   detalhesCipher String?
   status        String       @default("aberta")
@@ -160,4 +165,22 @@ model Favorito {
   createdAt DateTime @default(now())
 
   @@unique([usuarioId, lojaId])
+}
+
+model AuditLog {
+  id           Int      @id @default(autoincrement())
+  acao         String   // CRIAR, ATUALIZAR, DELETAR, ACESSAR, EXPORTAR, LOGIN, etc
+  tabela       String   // Nome da tabela afetada
+  recordId     Int?     // ID do registro afetado
+  usuarioId    Int?     // ID do usuário que fez a ação
+  enderecoIp   String?  // IP da requisição
+  detalhes     String?  // JSON com detalhes adicionais
+  sucesso      Boolean  @default(true)
+  erro         String?  // Mensagem de erro se houver
+  createdAt    DateTime @default(now())
+
+  @@index([acao])
+  @@index([tabela])
+  @@index([usuarioId])
+  @@index([createdAt])
 }

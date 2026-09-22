@@ -9,6 +9,7 @@ const { normalizarLoginDono, normalizarCnpj, normalizarEmail, normalizarCpf, nor
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("../utils/agenda");
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
 const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
+const { buscarAudits, resumoSuspeitas } = require("../utils/audit");
 
 const router = express.Router();
 
@@ -64,6 +65,20 @@ router.get("/resumo", autenticarAdmin, async (_req, res) => {
     res.json({ resumo: { lojas, bloqueadas, donos, usuarios, agendamentos, pendentes, avaliacoes, denuncias, denunciasAbertas } });
   } catch {
     res.status(500).json({ error: "Erro ao carregar resumo admin." });
+  }
+});
+
+router.get("/auditoria", autenticarAdmin, async (req, res) => {
+  try {
+    const limite = Math.min(Math.max(Number(req.query.limite) || 100, 1), 1000);
+    const diasRetro = Math.min(Math.max(Number(req.query.diasRetro) || 30, 1), 365);
+    const [audits, suspeitas] = await Promise.all([
+      buscarAudits({ acao: req.query.acao || null, tabela: req.query.tabela || null, diasRetro, limite }),
+      resumoSuspeitas(diasRetro),
+    ]);
+    res.json({ audits, suspeitas });
+  } catch {
+    res.status(500).json({ error: "Erro ao carregar auditoria." });
   }
 });
 
