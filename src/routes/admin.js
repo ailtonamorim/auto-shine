@@ -9,7 +9,8 @@ const { normalizarLoginDono, normalizarCnpj, normalizarEmail, normalizarCpf, nor
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("../utils/agenda");
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
 const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
-const { buscarAudits, resumoSuspeitas } = require("../utils/audit");
+const { buscarAudits, resumoSuspeitas, registrarAudit, TiposAcao } = require("../utils/audit");
+const { removerCamposCriptografados } = require("../utils/masking");
 
 const router = express.Router();
 
@@ -40,6 +41,11 @@ function usuarioProtegido(usuario) {
 function donoProtegido(dono) {
   if (!dono) return dono;
   return { ...dono, email: descriptografarSeNecessario(dono.email), cnpj: descriptografarSeNecessario(dono.cnpj), googleId: undefined };
+}
+
+function avaliacaoProtegida(avaliacao) {
+  if (!avaliacao?.usuario) return avaliacao;
+  return { ...avaliacao, usuario: { ...avaliacao.usuario, email: descriptografarSeNecessario(avaliacao.usuario.email) } };
 }
 
 router.post("/login", limitarAuth, async (req, res) => {
@@ -232,12 +238,13 @@ router.delete("/lojas/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/usuarios", autenticarAdmin, async (_req, res) => {
+router.get("/usuarios", autenticarAdmin, async (req, res) => {
   try {
     const usuarios = await prisma.usuario.findMany({
       select: { id: true, nome: true, email: true, cpf: true, telefone: true, googleId: true, createdAt: true, _count: { select: { agendamentos: true, avaliacoes: true, denuncias: true } } },
       orderBy: { createdAt: "desc" },
     });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", enderecoIp: req.ip, detalhes: { quantidade: usuarios.length, ator: "admin" } });
     res.json({ usuarios: usuarios.map(usuarioProtegido) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuários." });
@@ -250,6 +257,7 @@ router.get("/usuarios/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const usuario = await prisma.usuario.findUnique({ where: { id }, select: usuarioAdminSelect });
     if (!usuario) return res.status(404).json({ error: "Usuario nao encontrado." });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
     res.json({ usuario: usuarioProtegido(usuario) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuario." });
@@ -286,7 +294,7 @@ router.put("/usuarios/:id", autenticarAdmin, async (req, res) => {
     const emailCipher = criptografar(email);
     const cpfCipher = cpf ? criptografar(cpf) : null;
     const telefoneCipher = telefone ? criptografar(telefone) : null;
-    const data = { nome, email: emailCipher, emailCipher, emailIndex: criarIndice(email), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpf), telefone: telefoneCipher, telefoneCipher };
+    const data = { nome, email: emailCipher, emailCipher, emailIndex: criarIndice(email), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpf), telefone: telefoneCipher, telefoneCipher, telefoneIndex: criarIndice(telefone) };
     const novaSenha = String(req.body?.senha || "");
     if (novaSenha) {
       if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
@@ -315,12 +323,13 @@ router.delete("/usuarios/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/donos", autenticarAdmin, async (_req, res) => {
+router.get("/donos", autenticarAdmin, async (req, res) => {
   try {
     const donos = await prisma.dono.findMany({
       select: { id: true, nome: true, login: true, cnpj: true, googleId: true, createdAt: true, _count: { select: { lojas: true } } },
       orderBy: { createdAt: "desc" },
     });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Dono", enderecoIp: req.ip, detalhes: { quantidade: donos.length, ator: "admin" } });
     res.json({ donos: donos.map(donoProtegido) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiros." });
@@ -333,6 +342,7 @@ router.get("/donos/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const dono = await prisma.dono.findUnique({ where: { id }, select: donoAdminSelect });
     if (!dono) return res.status(404).json({ error: "Parceiro nao encontrado." });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Dono", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
     res.json({ dono: donoProtegido(dono) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiro." });
@@ -388,14 +398,21 @@ router.delete("/donos/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/agendamentos", autenticarAdmin, async (_req, res) => {
+router.get("/agendamentos", autenticarAdmin, async (req, res) => {
   try {
     const agendamentos = await prisma.agendamento.findMany({
       include: { usuario: { select: { id: true, nome: true, email: true } }, loja: { select: { id: true, nome: true } }, servico: { select: { id: true, nome: true, preco: true } } },
       orderBy: { createdAt: "desc" },
       take: 300,
     });
-    res.json({ agendamentos });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Agendamento", enderecoIp: req.ip, detalhes: { quantidade: agendamentos.length, ator: "admin" } });
+    res.json({ agendamentos: agendamentos.map((item) => ({
+      ...removerCamposCriptografados(item),
+      notas: descriptografarSeNecessario(item.notas),
+      nomeCliente: descriptografarSeNecessario(item.nomeCliente),
+      emailCliente: descriptografarSeNecessario(item.emailCliente),
+      usuario: item.usuario ? { ...item.usuario, email: descriptografarSeNecessario(item.usuario.email) } : null,
+    })) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar agendamentos." });
   }
@@ -407,7 +424,13 @@ router.put("/agendamentos/:id/status", autenticarAdmin, async (req, res) => {
     const status = String(req.body?.status || "").trim().toLowerCase();
     if (!id || !["pendente", "finalizado", "cancelado"].includes(status)) return res.status(400).json({ error: "Status invalido." });
     const agendamento = await prisma.agendamento.update({ where: { id }, data: { status } });
-    res.json({ agendamento });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Agendamento", recordId: id, enderecoIp: req.ip, detalhes: { status, ator: "admin" } });
+    res.json({ agendamento: {
+      ...removerCamposCriptografados(agendamento),
+      notas: descriptografarSeNecessario(agendamento.notas),
+      nomeCliente: descriptografarSeNecessario(agendamento.nomeCliente),
+      emailCliente: descriptografarSeNecessario(agendamento.emailCliente),
+    } });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar agendamento." });
   }
@@ -426,14 +449,15 @@ router.delete("/agendamentos/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/avaliacoes", autenticarAdmin, async (_req, res) => {
+router.get("/avaliacoes", autenticarAdmin, async (req, res) => {
   try {
     const avaliacoes = await prisma.avaliacao.findMany({
       include: { usuario: { select: { id: true, nome: true, email: true } }, loja: { select: { id: true, nome: true } }, _count: { select: { denuncias: true } } },
       orderBy: { createdAt: "desc" },
       take: 300,
     });
-    res.json({ avaliacoes });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Avaliacao", enderecoIp: req.ip, detalhes: { quantidade: avaliacoes.length, ator: "admin" } });
+    res.json({ avaliacoes: avaliacoes.map(avaliacaoProtegida) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar avaliações." });
   }
@@ -445,7 +469,8 @@ router.get("/avaliacoes/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const avaliacao = await prisma.avaliacao.findUnique({ where: { id }, include: avaliacaoAdminInclude });
     if (!avaliacao) return res.status(404).json({ error: "Avaliacao nao encontrada." });
-    res.json({ avaliacao });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Avaliacao", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
+    res.json({ avaliacao: avaliacaoProtegida(avaliacao) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar avaliacao." });
   }
@@ -461,16 +486,30 @@ router.put("/avaliacoes/:id", autenticarAdmin, async (req, res) => {
     const comentario = req.body?.comentario === undefined ? atual.comentario : String(req.body.comentario || "").trim();
     const fotoUrl = req.body?.fotoUrl === undefined ? atual.fotoUrl : String(req.body.fotoUrl || "").trim();
     const nomeCliente = req.body?.nomeCliente === undefined ? atual.nomeCliente : String(req.body.nomeCliente || "").trim();
+    if (req.body?.aprovado !== undefined && typeof req.body.aprovado !== "boolean") return res.status(400).json({ error: "Estado de aprovação inválido." });
     if (!Number.isInteger(nota) || nota < 1 || nota > 5) return res.status(400).json({ error: "Nota deve ser um inteiro entre 1 e 5." });
     if (!fotoAvaliacaoValida(fotoUrl)) return res.status(400).json({ error: "Foto deve ser uma URL http/https ou imagem PNG, JPG ou WEBP de ate 2 MB." });
     const avaliacao = await prisma.avaliacao.update({
       where: { id },
-      data: { nota, comentario: comentario || null, fotoUrl: fotoUrl || null, nomeCliente: nomeCliente || null },
+      data: { nota, comentario: comentario || null, fotoUrl: fotoUrl || null, nomeCliente: nomeCliente || null, aprovado: req.body?.aprovado ?? atual.aprovado },
       include: avaliacaoAdminInclude,
     });
-    res.json({ avaliacao });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Avaliacao", recordId: id, enderecoIp: req.ip, detalhes: { aprovado: avaliacao.aprovado, ator: "admin" } });
+    res.json({ avaliacao: avaliacaoProtegida(avaliacao) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar avaliacao." });
+  }
+});
+
+router.patch("/avaliacoes/:id/aprovacao", autenticarAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id || typeof req.body?.aprovado !== "boolean") return res.status(400).json({ error: "Informe se a avaliação deve ser aprovada." });
+    const avaliacao = await prisma.avaliacao.update({ where: { id }, data: { aprovado: req.body.aprovado } });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Avaliacao", recordId: id, enderecoIp: req.ip, detalhes: { aprovado: avaliacao.aprovado } });
+    res.json({ avaliacao: { id: avaliacao.id, aprovado: avaliacao.aprovado } });
+  } catch {
+    res.status(500).json({ error: "Erro ao moderar avaliação." });
   }
 });
 
@@ -498,7 +537,13 @@ router.get("/denuncias", autenticarAdmin, async (_req, res) => {
       orderBy: { createdAt: "desc" },
       take: 300,
     });
-    res.json({ denuncias });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Denuncia", enderecoIp: _req.ip, detalhes: { quantidade: denuncias.length } });
+    res.json({ denuncias: denuncias.map(({ motivo, motivoCipher, detalhes, detalhesCipher, ...denuncia }) => ({
+      ...denuncia,
+      motivo: descriptografarSeNecessario(motivoCipher || motivo),
+      detalhes: descriptografarSeNecessario(detalhesCipher || detalhes),
+      usuario: denuncia.anonima || !denuncia.usuario ? null : { ...denuncia.usuario, email: descriptografarSeNecessario(denuncia.usuario.email) },
+    })) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar denúncias." });
   }
@@ -510,7 +555,9 @@ router.put("/denuncias/:id/status", autenticarAdmin, async (req, res) => {
     const status = String(req.body?.status || "").trim().toLowerCase();
     if (!id || !["aberta", "em_analise", "resolvida", "arquivada"].includes(status)) return res.status(400).json({ error: "Status invalido." });
     const denuncia = await prisma.denuncia.update({ where: { id }, data: { status } });
-    res.json({ denuncia });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Denuncia", recordId: id, enderecoIp: req.ip, detalhes: { status, ator: "admin" } });
+    const { motivoCipher, detalhesCipher, ...dadosDenuncia } = denuncia;
+    res.json({ denuncia: { ...dadosDenuncia, motivo: descriptografarSeNecessario(motivoCipher || denuncia.motivo), detalhes: descriptografarSeNecessario(detalhesCipher || denuncia.detalhes) } });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar denúncia." });
   }

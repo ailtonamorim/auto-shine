@@ -11,6 +11,7 @@ router.post("/", autenticarUsuario, async (req, res) => {
     const tipo = String(req.body?.tipo || "").trim().toLowerCase();
     const motivo = String(req.body?.motivo || "").trim();
     const detalhes = String(req.body?.detalhes || "").trim();
+    const anonima = req.body?.anonima === true;
     const lojaId = req.body?.lojaId ? Number(req.body.lojaId) : null;
     const avaliacaoId = req.body?.avaliacaoId ? Number(req.body.avaliacaoId) : null;
     const agendamentoId = req.body?.agendamentoId ? Number(req.body.agendamentoId) : null;
@@ -18,7 +19,7 @@ router.post("/", autenticarUsuario, async (req, res) => {
     if (!["loja", "avaliacao", "agendamento"].includes(tipo)) return res.status(400).json({ error: "Tipo de den�ncia inv�lido." });
     if (motivo.length < 4) return res.status(400).json({ error: "Informe um motivo para a den�ncia." });
 
-    const data = { tipo, motivo: motivo.slice(0, 120), motivoCipher: criptografar(motivo.slice(0, 120)), motivoIndex: criarIndice(motivo.slice(0, 120)), detalhes: detalhes ? detalhes.slice(0, 600) : null, detalhesCipher: detalhes ? criptografar(detalhes.slice(0, 600)) : null, usuarioId: req.usuario.id };
+    const data = { tipo, motivo: null, motivoCipher: criptografar(motivo.slice(0, 120)), motivoIndex: criarIndice(motivo.slice(0, 120)), detalhes: null, detalhesCipher: detalhes ? criptografar(detalhes.slice(0, 600)) : null, anonima, usuarioId: anonima ? null : req.usuario.id };
 
     if (tipo === "loja") {
       if (!lojaId) return res.status(400).json({ error: "Informe a loja denunciada." });
@@ -44,8 +45,8 @@ router.post("/", autenticarUsuario, async (req, res) => {
     }
 
     const denuncia = await prisma.denuncia.create({ data });
-    await registrarDenuncia({ denunciaId: denuncia.id, usuarioId: req.usuario.id, tipo, lojaId: data.lojaId, enderecoIp: req.ip });
-    res.status(201).json({ denuncia });
+    await registrarDenuncia({ denunciaId: denuncia.id, usuarioId: data.usuarioId, tipo, lojaId: data.lojaId, enderecoIp: anonima ? undefined : req.ip });
+    res.status(201).json({ denuncia: { id: denuncia.id, tipo: denuncia.tipo, status: denuncia.status, anonima: denuncia.anonima, createdAt: denuncia.createdAt } });
   } catch (err) {
     console.error("Erro ao criar den�ncia:", err);
     res.status(500).json({ error: "Erro ao criar den�ncia." });

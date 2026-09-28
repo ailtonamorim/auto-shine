@@ -31,6 +31,8 @@ model Usuario {
   avaliacoes        Avaliacao[]
   denuncias         Denuncia[]
   favoritos         Favorito[]
+
+  @@index([telefoneIndex])
 }
 
 model Dono {
@@ -117,6 +119,9 @@ model Agendamento {
   avaliacao    Avaliacao?
   denuncias    Denuncia[]
   createdAt    DateTime     @default(now())
+
+  @@index([nomeClienteIndex])
+  @@index([emailClienteIndex])
 }
 
 model Avaliacao {
@@ -125,6 +130,7 @@ model Avaliacao {
   comentario    String?
   fotoUrl       String?
   nomeCliente   String?
+  aprovado      Boolean      @default(true)
   usuarioId     Int?
   lojaId        Int
   agendamentoId Int?         @unique
@@ -133,16 +139,19 @@ model Avaliacao {
   agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
   denuncias     Denuncia[]
   createdAt     DateTime     @default(now())
+
+  @@index([aprovado])
 }
 
 model Denuncia {
   id            Int          @id @default(autoincrement())
   tipo          String
-  motivo        String
+  motivo        String?
     motivoCipher   String?
     motivoIndex    String?
   detalhes      String?
   detalhesCipher String?
+    anonima       Boolean      @default(false)
   status        String       @default("aberta")
   usuarioId     Int?
   lojaId        Int?
@@ -154,6 +163,8 @@ model Denuncia {
   agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+
+  @@index([motivoIndex])
 }
 
 model Favorito {

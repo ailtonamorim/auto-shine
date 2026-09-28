@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../config/database");
 const { autenticarUsuario } = require("../middlewares/auth");
+const { mascararListaLojas } = require("../utils/masking");
 
 const router = express.Router();
 
@@ -16,11 +17,11 @@ router.get("/", autenticarUsuario, async (req, res) => {
     `;
     const lojaIds = favoritos.map((item) => item.lojaId);
     const lojasEncontradas = lojaIds.length
-      ? await prisma.loja.findMany({ where: { id: { in: lojaIds }, bloqueado: false }, include: { servicos: true, avaliacoes: { select: { nota: true } } } })
+      ? await prisma.loja.findMany({ where: { id: { in: lojaIds }, bloqueado: false }, include: { servicos: true, avaliacoes: { where: { aprovado: true }, select: { nota: true } } } })
       : [];
     const lojasPorId = new Map(lojasEncontradas.map((loja) => [loja.id, loja]));
     const lojas = lojaIds.map((id) => lojasPorId.get(id)).filter(Boolean);
-    res.json({ lojas });
+    res.json({ lojas: mascararListaLojas(lojas) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao buscar favoritos." });

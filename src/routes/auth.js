@@ -4,7 +4,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const prisma = require("../config/database");
 const { gerarTokenUsuario, gerarTokenDono } = require("../utils/tokens");
-const { criptografar, criarIndice } = require("../utils/crypto");
+const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 const { normalizarEmail, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
 const { limitarAuth } = require("../middlewares/security");
 const { registrarLogin } = require("../utils/audit");
@@ -125,16 +125,22 @@ router.get("/api/meus-dados", autenticarUsuario, async (req, res) => {
         id: true, nome: true, email: true, cpf: true, telefone: true, createdAt: true,
         agendamentos: { select: { id: true, data: true, hora: true, status: true, lojaId: true, servicoId: true } },
         avaliacoes: { select: { id: true, nota: true, comentario: true, lojaId: true, createdAt: true } },
-        denuncias: { select: { id: true, tipo: true, motivo: true, detalhes: true, status: true, createdAt: true } },
+        denuncias: { select: { id: true, tipo: true, motivo: true, motivoCipher: true, detalhes: true, detalhesCipher: true, status: true, anonima: true, createdAt: true } },
       },
     });
     if (!usuario) return res.status(404).json({ error: "Usuário não encontrado." });
     await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", recordId: usuario.id, usuarioId: usuario.id, enderecoIp: req.ip });
+    const { denuncias, ...dadosUsuario } = usuario;
     res.json({ dados: {
-      ...usuario,
+      ...dadosUsuario,
       email: descriptografarSeNecessario(usuario.email),
       cpf: descriptografarSeNecessario(usuario.cpf),
       telefone: descriptografarSeNecessario(usuario.telefone),
+      denuncias: denuncias.map(({ motivo, motivoCipher, detalhes, detalhesCipher, ...denuncia }) => ({
+        ...denuncia,
+        motivo: descriptografarSeNecessario(motivoCipher || motivo),
+        detalhes: descriptografarSeNecessario(detalhesCipher || detalhes),
+      })),
     } });
   } catch (err) {
     console.error("Erro ao consultar dados do titular:", err);
@@ -229,9 +235,15 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
     const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ error: "Informe email e senha." });
     const usuario = await prisma.usuario.findUnique({ where: { emailIndex: criarIndice(normalizarEmail(email)) } });
-    if (!usuario) return res.status(401).json({ error: "Email ou senha inválidos." });
+    if (!usuario) {
+      await registrarLogin({ usuarioEmail: criarIndice(normalizarEmail(email)), sucesso: false, enderecoIp: req.ip, motivo: "Usuário não encontrado" });
+      return res.status(401).json({ error: "Email ou senha inválidos." });
+    }
     if (!usuario.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
-    if (!(await bcrypt.compare(senha, usuario.senha))) return res.status(401).json({ error: "Email ou senha inválidos." });
+    if (!(await bcrypt.compare(senha, usuario.senha))) {
+      await registrarLogin({ usuarioEmail: criarIndice(normalizarEmail(email)), usuarioId: usuario.id, sucesso: false, enderecoIp: req.ip, motivo: "Senha incorreta" });
+      return res.status(401).json({ error: "Email ou senha inválidos." });
+    }
     await registrarLogin({ usuarioEmail: criarIndice(normalizarEmail(email)), usuarioId: usuario.id, enderecoIp: req.ip });
     const token = gerarTokenUsuario(usuario);
     res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: normalizarEmail(email) } });

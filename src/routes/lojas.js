@@ -5,6 +5,7 @@ const { coordenadasValidas, imagemLojaValida, serializarFotosAdicionais, seriali
 const { serializarAgendaDias, serializarAgendaHorarios, montarDisponibilidadeLoja } = require("../utils/agenda");
 const { deletarLojaComRelacionados } = require("../utils/loja");
 const { mascararListaLojas, mascararListaAvaliacoes, mascararEndereco, arredondarGPS } = require("../utils/masking");
+const { descriptografarSeNecessario } = require("../utils/crypto");
 
 const router = express.Router();
 
@@ -12,7 +13,7 @@ router.get("/", async (_req, res) => {
   try {
     const lojas = await prisma.loja.findMany({
       where: { bloqueado: false },
-      include: { servicos: true, avaliacoes: { select: { nota: true } } },
+      include: { servicos: true, avaliacoes: { where: { aprovado: true }, select: { nota: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ lojas: mascararListaLojas(lojas) });
@@ -32,7 +33,13 @@ router.get("/minhas", autenticarDono, async (req, res) => {
       },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ lojas });
+    res.json({ lojas: lojas.map((loja) => ({
+      ...loja,
+      avaliacoes: loja.avaliacoes.map((avaliacao) => ({
+        ...avaliacao,
+        usuario: avaliacao.usuario ? { ...avaliacao.usuario, email: descriptografarSeNecessario(avaliacao.usuario.email) } : null,
+      })),
+    })) });
   } catch {
     res.status(500).json({ error: "Erro ao buscar lojas." });
   }
@@ -44,7 +51,7 @@ router.get("/:id", async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID de loja invalido." });
     const loja = await prisma.loja.findFirst({
       where: { id, bloqueado: false },
-      include: { servicos: true, avaliacoes: { orderBy: { createdAt: "desc" } } },
+      include: { servicos: true, avaliacoes: { where: { aprovado: true }, orderBy: { createdAt: "desc" } } },
     });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
     const coordenadas = arredondarGPS(loja.latitude, loja.longitude);

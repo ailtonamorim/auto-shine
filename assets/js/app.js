@@ -543,6 +543,10 @@ function initializeReportActions() {
           <label for="report-dialog-details">Detalhes</label>
           <textarea id="report-dialog-details" rows="4" maxlength="400" placeholder="Conte rapidamente o que aconteceu. Isso ajuda nossa equipe a analisar melhor."></textarea>
         </div>
+        <label class="admin-checkbox">
+          <input id="report-dialog-anonymous" type="checkbox" />
+          <span>Não vincular esta denúncia à minha conta</span>
+        </label>
         <p id="report-dialog-feedback" class="report-dialog-feedback" role="status"></p>
         <div class="report-dialog-actions">
           <button class="btn btn-ghost" type="button" data-report-close>Cancelar</button>
@@ -563,6 +567,7 @@ function initializeReportActions() {
   const copy = modal.querySelector("#report-dialog-copy");
   const reasonSelect = modal.querySelector("#report-dialog-reason");
   const detailsInput = modal.querySelector("#report-dialog-details");
+  const anonymousInput = modal.querySelector("#report-dialog-anonymous");
   const feedback = modal.querySelector("#report-dialog-feedback");
   const submitButton = modal.querySelector("#report-dialog-submit");
   const successBox = modal.querySelector("#report-dialog-success");
@@ -648,7 +653,7 @@ function initializeReportActions() {
     try {
       const res = await userFetch("/api/denuncias", {
         method: "POST",
-        body: JSON.stringify({ ...reportPayload, motivo, detalhes }),
+        body: JSON.stringify({ ...reportPayload, motivo, detalhes, anonima: anonymousInput?.checked === true }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -4660,6 +4665,7 @@ async function initAdminPage() {
   const reviewCustomerNameInput = document.getElementById("admin-review-customer-name");
   const reviewPhotoInput = document.getElementById("admin-review-photo");
   const reviewCommentInput = document.getElementById("admin-review-comment");
+  const reviewApprovedInput = document.getElementById("admin-review-approved");
   const reviewSubmitBtn = document.getElementById("admin-review-submit");
   const reviewCancelBtn = document.getElementById("admin-review-cancel");
   const reviewFeedback = document.getElementById("admin-review-feedback");
@@ -4915,6 +4921,7 @@ async function initAdminPage() {
     if (reviewCustomerNameInput) reviewCustomerNameInput.value = review.nomeCliente || "";
     if (reviewPhotoInput) reviewPhotoInput.value = review.fotoUrl || "";
     if (reviewCommentInput) reviewCommentInput.value = review.comentario || "";
+    if (reviewApprovedInput) reviewApprovedInput.checked = Boolean(review.aprovado);
     setResourceFeedback(reviewFeedback, "Editando avaliação selecionada.", "success");
     reviewEditPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -5132,10 +5139,11 @@ async function initAdminPage() {
         <tr>
           <td><strong>${escapeHtml(review.usuario?.nome || review.nomeCliente || "Cliente")}</strong><p class="empty-copy">${escapeHtml(review.usuario?.email || "-")}</p></td>
           <td>${escapeHtml(review.loja?.nome || "-")}</td>
-          <td><span class="stars">&#9733; ${Number(review.nota || 0).toFixed(1)}</span></td>
+          <td><span class="stars">&#9733; ${Number(review.nota || 0).toFixed(1)}</span><p class="empty-copy">${review.aprovado ? "Aprovada" : "Pendente"}</p></td>
           <td>${escapeHtml(review.comentario || "-")}</td>
           <td>${review._count?.denuncias || 0}</td>
           <td class="admin-actions">
+            <button class="btn ${review.aprovado ? "btn-ghost" : "btn-secondary"} admin-action-btn" data-admin-resource-action="review-approval" data-approved="${review.aprovado ? "false" : "true"}" data-id="${review.id}">${review.aprovado ? "Ocultar" : "Aprovar"}</button>
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="edit-review" data-id="${review.id}">Editar</button>
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-review" data-id="${review.id}">Excluir</button>
           </td>
@@ -5162,7 +5170,7 @@ async function initAdminPage() {
             : report.loja?.nome || "-";
         return `
         <tr>
-          <td><strong>${escapeHtml(report.tipo)}</strong><p class="empty-copy">${escapeHtml(report.usuario?.email || "sem usuário")}</p></td>
+          <td><strong>${escapeHtml(report.tipo)}</strong><p class="empty-copy">${report.anonima ? "Anônima" : escapeHtml(report.usuario?.email || "sem usuário")}</p></td>
           <td>${escapeHtml(target)}<p class="empty-copy">${escapeHtml(report.loja?.nome || "")}</p></td>
           <td>${escapeHtml(report.motivo)}</td>
           <td>${escapeHtml(report.detalhes || "-")}</td>
@@ -5465,7 +5473,7 @@ async function initAdminPage() {
     try {
       const res = await adminFetch(`/api/admin/avaliacoes/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ nota, nomeCliente, fotoUrl, comentario }),
+        body: JSON.stringify({ nota, nomeCliente, fotoUrl, comentario, aprovado: reviewApprovedInput?.checked === true }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -5551,6 +5559,14 @@ async function initAdminPage() {
     if (!(await confirmAction("Excluir esta avaliação permanentemente?", { danger: true, confirmLabel: "Excluir" }))) return;
         const res = await adminFetch(`/api/admin/avaliacoes/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error("Erro ao excluir avaliação.");
+      }
+
+      if (action === "review-approval") {
+        const res = await adminFetch(`/api/admin/avaliacoes/${id}/aprovacao`, {
+          method: "PATCH",
+          body: JSON.stringify({ aprovado: actionBtn.dataset.approved === "true" }),
+        });
+        if (!res.ok) throw new Error("Erro ao moderar avaliação.");
       }
 
       if (action === "report-status") {

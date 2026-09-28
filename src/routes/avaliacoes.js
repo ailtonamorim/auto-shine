@@ -9,7 +9,7 @@ const router = express.Router();
 router.get("/loja/:lojaId", async (req, res) => {
   try {
     const lojaId = Number(req.params.lojaId);
-    const avaliacoes = await prisma.avaliacao.findMany({ where: { lojaId }, orderBy: { createdAt: "desc" } });
+    const avaliacoes = await prisma.avaliacao.findMany({ where: { lojaId, aprovado: true }, orderBy: { createdAt: "desc" } });
     res.json({ avaliacoes: avaliacoes.map((avaliacao) => ({
       ...removerIdsInternos(avaliacao),
       nomeCliente: mascararNomeCliente(avaliacao.nomeCliente, avaliacao.usuarioId),
@@ -44,6 +44,7 @@ router.post("/", autenticarUsuario, async (req, res) => {
         comentario: sanitizarTexto(String(comentario || "").trim()),
         fotoUrl: fotoUrl || null,
         nomeCliente: String(nomeCliente || "").trim() || null,
+        aprovado: false,
         usuarioId: req.usuario.id,
         agendamentoId: agendamentoFinalizado.id,
       },

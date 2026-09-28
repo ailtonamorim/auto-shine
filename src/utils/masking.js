@@ -27,14 +27,12 @@ function mascararEndereco(endereco) {
   if (!endereco) return "Endereço";
   
   try {
-    const partes = endereco.split(",").map(p => p.trim());
-    
-    // Mantém apenas rua e cidade (primeira e última parte)
-    if (partes.length >= 2) {
-      return `${partes[0]}, ${partes[partes.length - 1]}`;
-    }
-    
-    return partes[0] || "Endereço";
+    const partes = endereco.split(",").map((parte) => parte.trim()).filter(Boolean);
+    const rua = partes[0] || "";
+    const localidade = partes.slice(1).filter((parte) =>
+      !/^(?:n(?:[ºo°])?\s*)?\d+[\w/-]*$/i.test(parte) && !/^(apto?\.?|apartamento|bloco|casa|sala|suite|conjunto|cj\.?|fundos)\b/i.test(parte)
+    );
+    return [rua, localidade[localidade.length - 1]].filter(Boolean).join(", ") || "Endereço";
   } catch {
     return "Endereço";
   }
@@ -135,6 +133,13 @@ function removerIdsInternos(objeto, camposRemover = ["donoId", "usuarioId", "ava
   return copia;
 }
 
+function removerCamposCriptografados(objeto) {
+  if (!objeto || typeof objeto !== "object") return objeto;
+  const copia = { ...objeto };
+  ["notasCipher", "nomeClienteCipher", "emailClienteCipher", "motivoCipher", "detalhesCipher"].forEach((campo) => delete copia[campo]);
+  return copia;
+}
+
 /**
  * Aplica mascaração completa a listagem de lojas públicas
  * @param {Array} lojas - Array de lojas
@@ -175,6 +180,7 @@ module.exports = {
   mascararDetalhes,
   mascararFoto,
   removerIdsInternos,
+  removerCamposCriptografados,
   mascararListaLojas,
   mascararListaAvaliacoes,
 };
