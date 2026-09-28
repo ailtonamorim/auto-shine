@@ -1,0 +1,100 @@
+LAVAJÁ / AUTOSHINE — PROJETO UNIFICADO
+Data: 28/09/2026
+
+BASE UTILIZADA
+Sua versão: auto-shine.zip.
+Versão do colega: auto-shine 2.zip.
+A integração foi feita sobre a sua versão. Não foi usada a pasta do colega
+para substituir o projeto inteiro.
+
+COMO ABRIR E EXECUTAR
+1. Guarde sua pasta atual como backup e extraia este ZIP em uma NOVA pasta.
+2. Copie o arquivo .env da SUA pasta atual para a pasta auto-shine extraída,
+   ao lado de package.json. As configurações do colega não foram importadas.
+3. Abra a pasta extraída no VS Code. No terminal dessa pasta, execute:
+
+   npm ci
+   npx prisma generate
+   npx prisma migrate deploy
+   npm run check
+   npm start
+
+4. Abra o endereço mostrado no terminal. A porta padrão continua sendo 3000,
+   a menos que seu .env defina outra porta.
+5. Entre com uma conta de CLIENTE e abra o menu com seu nome > Meu Perfil.
+6. Use o botão de sol/lua para alternar o tema. O perfil também possui esse
+   controle em Preferências. A escolha é mantida ao navegar e recarregar.
+
+BANCO DE DADOS
+O projeto continua usando PostgreSQL, como sua versão original.
+O DATABASE_URL do seu .env deve apontar para seu banco existente.
+As novas migrações adicionam fotoPerfilUrl em Usuario e criam EnderecoUsuario.
+As migrações anteriores e os campos de detalhes de serviços foram mantidos.
+Faça backup do banco antes de aplicar migrações em um ambiente com dados reais.
+Não execute prisma migrate reset: ele não é necessário para esta integração.
+Não é necessário executar seed para integrar o perfil.
+Se migrate deploy informar erro, pare nessa etapa e confira a mensagem antes
+de iniciar o servidor. Não use reset como solução automática.
+
+O QUE FOI INTEGRADO
+- Tema claro/escuro baseado no trabalho do colega, adaptado também à sua home,
+  página de serviços, detalhes do serviço e painel do parceiro.
+- Menu de conta com Meu Perfil, Meus Agendamentos, Favoritos e Sair.
+- Perfil de cliente com dados pessoais, foto, endereços, histórico, senha e tema.
+- Rotas autenticadas /api/profile e suporte correspondente no Prisma.
+- A nova página é perfil-usuario.html. A página perfil.html continua sendo
+  o perfil do estabelecimento.
+
+AJUSTES NECESSÁRIOS NA INTEGRAÇÃO
+- O perfil do colega continha o modelo de endereços, mas faltava a migração SQL
+  dessa tabela. A migração foi acrescentada.
+- O histórico do colega contava endereços como serviços. Agora usa agendamentos,
+  conta somente status finalizado e mostra o último agendamento criado.
+- Os controles de tema do cabeçalho e do perfil agora ficam sincronizados.
+- Contas sem senha (login social) recebem explicação na seção Segurança.
+- Foram removidos apenas os invólucros de cabeçalho duplicados de mapa.html e
+  servicos.html para permitir posicionar corretamente os novos controles.
+- O menu da conta usa texto escapado pelo DOM, fecha com Escape e não acumula
+  elementos após salvar dados pessoais.
+- O seletor de tema é aplicado antes do conteúdo da página ser exibido.
+- Em larguras intermediárias, os links do cabeçalho passam para uma segunda
+  linha para não sobrepor o botão de tema e o menu da conta.
+
+PRESERVADO DA SUA VERSÃO
+- Home com carro e imagem de fundo; assets e animação existentes.
+- Página de serviços, detalhes e regra de transparência.
+- Separação entre sessão de cliente e parceiro e indicação da página ativa.
+- Login unificado cliente/empresa e regras existentes do parceiro.
+- Rotas existentes de autenticação, lojas, parceiro, agendamentos e avaliações.
+- styles.css, index.css, index.js, package.json e package-lock.json mantidos
+  byte a byte. O CSS integrado está em arquivos adicionais.
+- Porta padrão 3000, configurações de upload e de autenticação Google da sua
+  base. Mudanças paralelas do colega nessas áreas não foram importadas.
+
+VALIDAÇÃO REALIZADA
+- Verificação de sintaxe JavaScript, referências locais HTML e schema Prisma.
+- 28 combinações de página/sessão em DOM: visitante, cliente, parceiro e ambos.
+- Testes HTTP das rotas reais de perfil com banco e upload simulados: exige
+  autenticação, edita dados, valida senha, gerencia endereços e rejeita alterações
+  em endereços de outro usuário.
+- Testes em Chromium com respostas de API simuladas: edição de nome, criação,
+  edição e exclusão de endereço, histórico e sincronização dos controles de tema.
+- Revisão de capturas em desktop/celular; larguras 390, 768, 1024 e 1440 px nas
+  telas principais da integração. Painel e detalhes do serviço em tema claro.
+- Os originais enviados não foram sobrescritos.
+
+LIMITES DA VALIDAÇÃO
+O banco real não foi conectado e as novas migrações não foram executadas nele.
+Upload real/Cloudinary, Google OAuth, envio de e-mail e mapas externos não foram
+validados contra serviços reais. Os testes visuais bloquearam fontes e recursos
+externos, portanto a tipografia nas capturas usa fontes alternativas.
+A home mantém a implementação mobile anterior, inclusive o botão de menu com
+alerta demonstrativo; esta integração não reimplementa esse menu nem o layout
+original do carro, que pode ultrapassar a largura em telas pequenas.
+
+CONTEÚDO DO ZIP
+Inclui código e imagens da sua base e os novos arquivos de integração.
+Não inclui node_modules, .git, .claude, .env, banco local do colega ou dados
+pessoais de exemplo dele. npm ci instala novamente as dependências.
+Ao incorporar esta versão ao seu repositório existente, preserve seu .git e .env.
+Se surgiram novos uploads na sua pasta depois do envio, preserve-os também.

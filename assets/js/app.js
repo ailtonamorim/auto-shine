@@ -62,10 +62,14 @@ function getDonoToken() {
 
 function setDonoToken(token) {
   localStorage.setItem(donoTokenKey, token);
+  updateNavAuthState();
+  updatePartnerNavState();
 }
 
 function clearDonoToken() {
   localStorage.removeItem(donoTokenKey);
+  updateNavAuthState();
+  updatePartnerNavState();
 }
 
 function getDonoFromToken() {
@@ -418,9 +422,11 @@ function setActiveNavLink() {
   const map = {
     home: "index.html",
     cadastro: "cadastro.html",
+    servicos: "servicos.html",
     mapa: "mapa.html",
     "meus-agendamentos": "meus-agendamentos.html",
     favoritos: "favoritos.html",
+    "perfil-usuario": "perfil-usuario.html",
   };
   const target = map[page];
   if (!target) return;
@@ -430,28 +436,100 @@ function setActiveNavLink() {
   });
 }
 
+// Função responsável por atualizar o menu com base no login do usuário
 function updateNavAuthState() {
-  const logged = Boolean(getCurrentUser() && getAuthToken());
+  const clientLogged = Boolean(getCurrentUser() && getAuthToken());
+  const partnerLogged = Boolean(getDonoFromToken());
+  const anyUserLogged = clientLogged || partnerLogged;
+  
+  // Pegamos os dois links restritos
+  const linkAgendamentos = document.getElementById("link-agendamentos");
+  const linkFavoritos = document.getElementById("link-favoritos");
 
-  document.querySelectorAll('nav a[href*="cadastro.html"]').forEach((link) => {
-    link.classList.toggle("hidden", logged);
+  // Esconde "Acessar" quando um cliente OU parceiro estiver autenticado.
+  document.querySelectorAll('header a[href*="cadastro.html"]').forEach((link) => {
+    link.classList.toggle("hidden", anyUserLogged);
   });
 
+  // Favoritos e Agendamentos pertencem somente à sessão do cliente.
+  if (linkAgendamentos) {
+    linkAgendamentos.classList.toggle("hidden", !clientLogged);
+  }
+  if (linkFavoritos) {
+    linkFavoritos.classList.toggle("hidden", !clientLogged);
+  }
+
+  // Remove os botões de "Sair" antigos antes de recriar para evitar duplicações
   document.querySelectorAll("[data-client-session-link]").forEach((item) => item.remove());
 
-  if (!logged) return;
+  // Se o usuário não está logado, a função para por aqui
+  if (!clientLogged) return;
 
+  // Se está logado, cria dinamicamente o botão "Sair"
   document.querySelectorAll(".topbar nav").forEach((nav) => {
-    const logoutButton = document.createElement("button");
-    logoutButton.type = "button";
-    logoutButton.className = "nav-logout";
-    logoutButton.dataset.clientSessionLink = "logout";
-    logoutButton.textContent = "Sair";
-    logoutButton.addEventListener("click", () => {
+    const profileMenu = window.createUserProfileMenu(getCurrentUser(), () => {
       clearCurrentUser();
       window.location.href = "index.html";
     });
-    nav.appendChild(logoutButton);
+    profileMenu.dataset.clientSessionLink = "profile";
+    // A conta fica à direita, sem ocupar o centro reservado aos links.
+    const header = nav.closest(".topbar");
+    const access = header?.querySelector(".header-access");
+    if (access) access.insertAdjacentElement("afterend", profileMenu);
+    else nav.appendChild(profileMenu);
+  });
+}
+
+// Mantém o acesso ao painel visível em todas as páginas enquanto uma empresa
+// estiver autenticada, sem precisar alterar o menu de cada arquivo HTML.
+function updatePartnerNavState() {
+  const partnerLogged = Boolean(getDonoFromToken());
+  const partnerPage = page === "cadastro-dono" || page === "parceiro";
+
+  document.querySelectorAll("[data-partner-session-link]").forEach((item) => item.remove());
+  if (!partnerLogged) return;
+
+  // Remove atalhos antigos posicionados fora da navegação principal. Assim o
+  // cabeçalho mantém apenas um botão "Painel do parceiro".
+  document.querySelectorAll('header a[href*="cadastro-dono.html"]').forEach((link) => {
+    if (!link.closest(".main-nav")) link.remove();
+  });
+
+  document.querySelectorAll(".topbar .main-nav").forEach((nav) => {
+    // Na página do parceiro, remove qualquer seleção deixada fixa no HTML,
+    // como class="active" no link de Serviços.
+    if (partnerPage) {
+      nav.querySelectorAll("a.active").forEach((link) => {
+        link.classList.remove("active");
+        link.removeAttribute("aria-current");
+      });
+    }
+
+    // Reutiliza o link caso ele já exista; cria somente quando necessário.
+    let partnerLink = nav.querySelector('a[href*="cadastro-dono.html"]');
+    if (!partnerLink) {
+      partnerLink = document.createElement("a");
+      partnerLink.href = "cadastro-dono.html";
+      partnerLink.textContent = "Painel do parceiro";
+
+      const servicesLink = Array.from(nav.querySelectorAll("a")).find((link) => {
+        const href = link.getAttribute("href") || "";
+        return href.includes("servicos.html");
+      });
+
+      if (servicesLink) servicesLink.insertAdjacentElement("afterend", partnerLink);
+      else nav.prepend(partnerLink);
+    }
+
+    partnerLink.dataset.partnerSessionLink = "panel";
+
+    if (partnerPage) {
+      partnerLink.classList.add("active");
+      partnerLink.setAttribute("aria-current", "page");
+    } else {
+      partnerLink.classList.remove("active");
+      partnerLink.removeAttribute("aria-current");
+    }
   });
 }
 
@@ -497,9 +575,9 @@ function initializeSiteFooter() {
       <section>
         <h3>Para Empresas</h3>
         <nav class="footer-links" aria-label="Links para parceiros">
-          <a href="cadastro-dono.html">Cadastrar lava jato</a>
-          <a href="cadastro-dono.html">Painel do parceiro</a>
-          <a href="cadastro.html?mode=login">Acessar conta</a>
+          
+          <a href="cadastro.html?perfil=empresa&mode=login">Painel do parceiro</a>
+          
         </nav>
       </section>
       <section>
@@ -1041,6 +1119,10 @@ async function initPartnerPage() {
   });
 
   function showAuthArea() {
+    if (page === "cadastro-dono") {
+      window.location.replace("cadastro.html?perfil=empresa&mode=login");
+      return;
+    }
     authShell.classList.remove("hidden");
     managementShell.classList.add("hidden");
   }
@@ -1346,12 +1428,22 @@ async function initPartnerPage() {
     const priceInput = fragment.querySelector('[data-service-field="price"]');
     const durationInput = fragment.querySelector('[data-service-field="duration"]');
     const descriptionInput = fragment.querySelector('[data-service-field="description"]');
+    const includedInput = fragment.querySelector('[data-service-field="included"]');
+    const stepsInput = fragment.querySelector('[data-service-field="steps"]');
+    const productsInput = fragment.querySelector('[data-service-field="products"]');
+    const guidanceInput = fragment.querySelector('[data-service-field="guidance"]');
+    const warrantyInput = fragment.querySelector('[data-service-field="warranty"]');
 
     if (initialData) {
       nameInput.value = initialData.nome || initialData.name || "";
       priceInput.value = initialData.preco ?? initialData.price ?? "";
       durationInput.value = initialData.duracao || initialData.duration || "";
       descriptionInput.value = initialData.descricao || initialData.description || "";
+      if (includedInput) includedInput.value = initialData.inclusos || "";
+      if (stepsInput) stepsInput.value = initialData.etapas || "";
+      if (productsInput) productsInput.value = initialData.produtos || "";
+      if (guidanceInput) guidanceInput.value = initialData.orientacoes || "";
+      if (warrantyInput) warrantyInput.value = initialData.garantia || "";
     }
 
     removeButton.addEventListener("click", () => {
@@ -1377,6 +1469,11 @@ async function initPartnerPage() {
         preco: Number(String(row.querySelector('[data-service-field="price"]').value || "").replace(",", ".")),
         duracao: row.querySelector('[data-service-field="duration"]').value.trim(),
         descricao: row.querySelector('[data-service-field="description"]').value.trim(),
+        inclusos: row.querySelector('[data-service-field="included"]')?.value.trim() || "",
+        etapas: row.querySelector('[data-service-field="steps"]')?.value.trim() || "",
+        produtos: row.querySelector('[data-service-field="products"]')?.value.trim() || "",
+        orientacoes: row.querySelector('[data-service-field="guidance"]')?.value.trim() || "",
+        garantia: row.querySelector('[data-service-field="warranty"]')?.value.trim() || "",
       }))
       .filter((s) => s.nome && s.descricao && s.duracao && Number.isFinite(s.preco));
   }
@@ -1615,6 +1712,30 @@ async function initPartnerPage() {
                     <label>Descrição</label>
                     <input type="text" data-inline-service-field="description" placeholder="Resumo rápido do serviço" />
                   </div>
+                </div>
+                <div class="field-grid service-detail-fields">
+                  <div class="field">
+                    <label>O que está incluído <span class="field-hint">— um item por linha</span></label>
+                    <textarea data-inline-service-field="included" rows="4" placeholder="Aspiração interna&#10;Limpeza dos vidros"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>Etapas <span class="field-hint">— uma etapa por linha</span></label>
+                    <textarea data-inline-service-field="steps" rows="4" placeholder="Inspeção inicial&#10;Execução do serviço&#10;Conferência final"></textarea>
+                  </div>
+                </div>
+                <div class="field-grid service-detail-fields">
+                  <div class="field">
+                    <label>Produtos e equipamentos</label>
+                    <textarea data-inline-service-field="products" rows="3" placeholder="Produtos profissionais utilizados"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>Garantia</label>
+                    <textarea data-inline-service-field="warranty" rows="3" placeholder="Política de garantia deste serviço"></textarea>
+                  </div>
+                </div>
+                <div class="field service-detail-fields">
+                  <label>Orientações ao cliente</label>
+                  <textarea data-inline-service-field="guidance" rows="3" placeholder="Cuidados antes ou depois do atendimento"></textarea>
                 </div>
                 <p class="empty-copy partner-inline-service-feedback" data-inline-service-feedback></p>
                 <div class="owned-shop-actions">
@@ -1909,6 +2030,11 @@ async function initPartnerPage() {
       editor.querySelector('[data-inline-service-field="price"]').value = servico.preco ?? "";
       editor.querySelector('[data-inline-service-field="duration"]').value = servico.duracao || "";
       editor.querySelector('[data-inline-service-field="description"]').value = servico.descricao || "";
+      editor.querySelector('[data-inline-service-field="included"]').value = servico.inclusos || "";
+      editor.querySelector('[data-inline-service-field="steps"]').value = servico.etapas || "";
+      editor.querySelector('[data-inline-service-field="products"]').value = servico.produtos || "";
+      editor.querySelector('[data-inline-service-field="guidance"]').value = servico.orientacoes || "";
+      editor.querySelector('[data-inline-service-field="warranty"]').value = servico.garantia || "";
       const fb = editor.querySelector("[data-inline-service-feedback]");
       if (fb) fb.textContent = "";
       editor.classList.remove("hidden");
@@ -1930,6 +2056,11 @@ async function initPartnerPage() {
       );
       const duracao = editor.querySelector('[data-inline-service-field="duration"]').value.trim();
       const descricao = editor.querySelector('[data-inline-service-field="description"]').value.trim();
+      const inclusos = editor.querySelector('[data-inline-service-field="included"]').value.trim();
+      const etapas = editor.querySelector('[data-inline-service-field="steps"]').value.trim();
+      const produtos = editor.querySelector('[data-inline-service-field="products"]').value.trim();
+      const orientacoes = editor.querySelector('[data-inline-service-field="guidance"]').value.trim();
+      const garantia = editor.querySelector('[data-inline-service-field="warranty"]').value.trim();
 
       if (!nome || !duracao || !descricao) {
         if (fb) fb.textContent = "Preencha nome, duração e descrição do serviço.";
@@ -1946,12 +2077,12 @@ async function initPartnerPage() {
         if (editingServiceId) {
           res = await donoFetch(`/api/lojas/${shopId}/servicos/${editingServiceId}`, {
             method: "PUT",
-            body: JSON.stringify({ nome, preco, duracao, descricao }),
+            body: JSON.stringify({ nome, preco, duracao, descricao, inclusos, etapas, produtos, orientacoes, garantia }),
           });
         } else {
           res = await donoFetch(`/api/lojas/${shopId}/servicos`, {
             method: "POST",
-            body: JSON.stringify({ nome, preco, duracao, descricao }),
+            body: JSON.stringify({ nome, preco, duracao, descricao, inclusos, etapas, produtos, orientacoes, garantia }),
           });
         }
         if (!res.ok) {
@@ -2813,6 +2944,94 @@ async function initOwnerRegisterPage() {
   }
 }
 
+// ── Acesso unificado: cliente ou empresa ───────────────────────────────────
+function initUnifiedOwnerLogin() {
+  const loginForm = document.getElementById("dono-login-form");
+  if (!loginForm || page !== "cadastro") return;
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(loginForm);
+    const login = normalizeOwnerLogin(formData.get("login"));
+    const senha = String(formData.get("password") || "");
+
+    if (!login || !senha) {
+      notify("Informe o login e a senha da empresa.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/dono/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login, senha }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify(data.error || "Login ou senha inválidos.");
+        return;
+      }
+
+      setDonoToken(data.token);
+      loginForm.reset();
+      window.location.href = "cadastro-dono.html";
+    } catch {
+      notify("Erro de conexão. Tente novamente.");
+    }
+  });
+}
+
+function initAccountTypeSelector() {
+  const clientButton = document.getElementById("select-client-account");
+  const companyButton = document.getElementById("select-company-account");
+  const clientContent = document.getElementById("client-account-content");
+  const companyContent = document.getElementById("company-account-content");
+
+  if (!clientButton || !companyButton || !clientContent || !companyContent) return;
+
+  const clientLoginButton = document.getElementById("switch-login");
+  const clientRegisterButton = document.getElementById("switch-signup");
+  const companyLoginButton = document.getElementById("dono-switch-login");
+  const companyRegisterButton = document.getElementById("dono-switch-register");
+  const params = new URLSearchParams(window.location.search);
+
+  function currentIntent() {
+    const mode = new URLSearchParams(window.location.search).get("mode");
+    return mode === "signup" || mode === "register" ? "register" : "login";
+  }
+
+  function updateUrl(type, intent) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("perfil", type);
+    url.searchParams.set("mode", type === "empresa" && intent === "register" ? "register" : type === "cliente" && intent === "register" ? "signup" : "login");
+    window.history.replaceState({}, "", url);
+  }
+
+  function selectAccountType(type, intent = currentIntent()) {
+    const isCompany = type === "empresa";
+    clientContent.classList.toggle("hidden", isCompany);
+    companyContent.classList.toggle("hidden", !isCompany);
+    clientButton.classList.toggle("active", !isCompany);
+    companyButton.classList.toggle("active", isCompany);
+    clientButton.setAttribute("aria-selected", String(!isCompany));
+    companyButton.setAttribute("aria-selected", String(isCompany));
+
+    if (isCompany) {
+      (intent === "register" ? companyRegisterButton : companyLoginButton)?.click();
+    } else {
+      (intent === "register" ? clientRegisterButton : clientLoginButton)?.click();
+    }
+    updateUrl(type, intent);
+  }
+
+  clientButton.addEventListener("click", () => selectAccountType("cliente"));
+  companyButton.addEventListener("click", () => selectAccountType("empresa"));
+
+  const initialType = params.get("perfil") === "empresa" ? "empresa" : "cliente";
+  const initialIntent = params.get("mode") === "signup" || params.get("mode") === "register" ? "register" : "login";
+  selectAccountType(initialType, initialIntent);
+}
+
 // ── Perfil da loja ───────────────────────────────────────────────────────────
 function probeImage(url) {
   return new Promise((resolve) => {
@@ -3011,6 +3230,136 @@ async function initProfilePage() {
     }
 
     const servicos = loja.servicos || [];
+    let serviceDetailModal = document.getElementById("service-detail-modal");
+    if (!serviceDetailModal) {
+      document.body.insertAdjacentHTML("beforeend", `
+        <div id="service-detail-modal" class="service-detail-modal hidden" aria-hidden="true">
+          <div class="service-detail-backdrop" data-close-service-detail></div>
+          <section class="service-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="service-detail-title">
+            <header class="service-detail-header">
+              <div>
+                <p class="eyebrow">Detalhes do serviço</p>
+                <h2 id="service-detail-title"></h2>
+                <p id="service-detail-description" class="hero-text"></p>
+              </div>
+              <button class="service-detail-close" type="button" aria-label="Fechar detalhes" data-close-service-detail>&times;</button>
+            </header>
+            <div class="service-detail-summary">
+              <div><span>Preço</span><strong id="service-detail-price"></strong></div>
+              <div><span>Duração</span><strong id="service-detail-duration"></strong></div>
+              <div><span>Garantia</span><strong id="service-detail-warranty-summary"></strong></div>
+            </div>
+            <div class="service-detail-tabs" role="tablist" aria-label="Informações do serviço">
+              <button class="active" type="button" role="tab" aria-selected="true" data-service-detail-tab="included">O que inclui</button>
+              <button type="button" role="tab" aria-selected="false" data-service-detail-tab="steps">Como funciona</button>
+              <button type="button" role="tab" aria-selected="false" data-service-detail-tab="trust">Confiança</button>
+            </div>
+            <div class="service-detail-content">
+              <div data-service-detail-panel="included"></div>
+              <div class="hidden" data-service-detail-panel="steps"></div>
+              <div class="hidden" data-service-detail-panel="trust"></div>
+            </div>
+            <footer class="service-detail-footer">
+              <a id="service-detail-booking" class="btn btn-primary requires-auth" data-auth-action="agendar" href="#">Agendar este serviço</a>
+            </footer>
+          </section>
+        </div>`);
+      serviceDetailModal = document.getElementById("service-detail-modal");
+    }
+
+    const detailTitle = serviceDetailModal.querySelector("#service-detail-title");
+    const detailDescription = serviceDetailModal.querySelector("#service-detail-description");
+    const detailPrice = serviceDetailModal.querySelector("#service-detail-price");
+    const detailDuration = serviceDetailModal.querySelector("#service-detail-duration");
+    const detailWarrantySummary = serviceDetailModal.querySelector("#service-detail-warranty-summary");
+    const detailBooking = serviceDetailModal.querySelector("#service-detail-booking");
+    const detailTabs = Array.from(serviceDetailModal.querySelectorAll("[data-service-detail-tab]"));
+    const detailPanels = Array.from(serviceDetailModal.querySelectorAll("[data-service-detail-panel]"));
+
+    function detailList(value, fallback) {
+      const items = parseTextList(value);
+      return items.length ? items : fallback;
+    }
+
+    function closeServiceDetail() {
+      serviceDetailModal.classList.add("hidden");
+      serviceDetailModal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("service-detail-open");
+    }
+
+    function selectServiceDetailTab(name) {
+      detailTabs.forEach((tab) => {
+        const active = tab.dataset.serviceDetailTab === name;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+      detailPanels.forEach((panel) => {
+        panel.classList.toggle("hidden", panel.dataset.serviceDetailPanel !== name);
+      });
+    }
+
+    function openServiceDetail(servico) {
+      const bookingUrl = `agendamento.html?servicoId=${servico.id}&shopId=${loja.id}&servico=${encodeURIComponent(servico.nome)}&shop=${encodeURIComponent(loja.nome)}`;
+      const included = detailList(servico.inclusos, [servico.descricao || "Serviço executado conforme a descrição apresentada."]);
+      const steps = detailList(servico.etapas, ["Recepção e inspeção inicial", "Execução do serviço", "Conferência final e entrega"]);
+      const products = String(servico.produtos || "Produtos profissionais selecionados pelo estabelecimento.").trim();
+      const guidance = String(servico.orientacoes || "Consulte o estabelecimento caso o veículo precise de alguma preparação especial.").trim();
+      const warranty = String(servico.garantia || "Consultar condições com o estabelecimento.").trim();
+
+      // O selo é concedido somente quando o estabelecimento preencheu todos os
+      // campos de transparência. Os textos automáticos acima continuam servindo
+      // apenas como orientação visual e não contam para a obtenção do selo.
+      const hasCompleteTransparency =
+        parseTextList(servico.inclusos).length > 0 &&
+        parseTextList(servico.etapas).length > 0 &&
+        String(servico.produtos || "").trim().length > 0 &&
+        String(servico.orientacoes || "").trim().length > 0 &&
+        String(servico.garantia || "").trim().length > 0;
+
+      const transparencyBadge = hasCompleteTransparency
+        ? `<div class="service-transparency-badge">
+            <strong>Serviço com informações completas</strong>
+            <span>O estabelecimento detalhou todas as informações importantes deste serviço.</span>
+          </div>`
+        : "";
+
+      detailTitle.textContent = servico.nome || "Serviço";
+      detailDescription.textContent = servico.descricao || "Conheça os detalhes deste serviço.";
+      detailPrice.textContent = `R$ ${Number(servico.preco || 0).toFixed(2).replace(".", ",")}`;
+      detailDuration.textContent = servico.duracao || "Consultar";
+      detailWarrantySummary.textContent = servico.garantia ? "Informada" : "Consultar";
+      detailBooking.href = bookingUrl;
+
+      serviceDetailModal.querySelector('[data-service-detail-panel="included"]').innerHTML = `
+        <ul class="service-detail-checklist">${included.map((item) => `<li><span aria-hidden="true">&#10003;</span>${escapeHtml(item)}</li>`).join("")}</ul>`;
+      serviceDetailModal.querySelector('[data-service-detail-panel="steps"]').innerHTML = `
+        <ol class="service-detail-steps">${steps.map((item) => `<li><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
+      serviceDetailModal.querySelector('[data-service-detail-panel="trust"]').innerHTML = `
+        ${transparencyBadge}
+        <dl class="service-detail-trust-list">
+          <div><dt>Produtos e equipamentos</dt><dd>${escapeHtml(products)}</dd></div>
+          <div><dt>Orientações</dt><dd>${escapeHtml(guidance)}</dd></div>
+          <div><dt>Garantia</dt><dd>${escapeHtml(warranty)}</dd></div>
+        </dl>`;
+
+      selectServiceDetailTab("included");
+      serviceDetailModal.classList.remove("hidden");
+      serviceDetailModal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("service-detail-open");
+      serviceDetailModal.querySelector(".service-detail-close")?.focus();
+    }
+
+    detailTabs.forEach((tab) => {
+      if (tab.dataset.serviceDetailBound === "1") return;
+      tab.dataset.serviceDetailBound = "1";
+      tab.addEventListener("click", () => selectServiceDetailTab(tab.dataset.serviceDetailTab));
+    });
+    serviceDetailModal.querySelectorAll("[data-close-service-detail]").forEach((button) => {
+      if (button.dataset.serviceDetailBound === "1") return;
+      button.dataset.serviceDetailBound = "1";
+      button.addEventListener("click", closeServiceDetail);
+    });
+
     servicesGrid.innerHTML = servicos.length
       ? servicos.map((servico) => {
         const nome = escapeHtml(servico.nome || "Serviço");
@@ -3026,11 +3375,25 @@ async function initProfilePage() {
               <strong>R$ ${preco}</strong>
               <span>${duracao}</span>
             </div>
-            <a class="btn btn-primary requires-auth" data-auth-action="agendar" href="${bookingUrl}">Agendar</a>
+            <div class="service-card-actions">
+              <button class="btn btn-secondary" type="button" data-service-detail="${servico.id}">Ver detalhes</button>
+              <a class="btn btn-primary requires-auth" data-auth-action="agendar" href="${bookingUrl}">Agendar</a>
+            </div>
           </article>`;
       })
       .join("")
       : '<article class="service-card"><p>Este estabelecimento ainda não cadastrou serviços.</p></article>';
+
+    servicesGrid.addEventListener("click", (event) => {
+      const detailButton = event.target.closest("[data-service-detail]");
+      if (!detailButton) return;
+      const servico = servicos.find((item) => String(item.id) === detailButton.dataset.serviceDetail);
+      if (servico) openServiceDetail(servico);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !serviceDetailModal.classList.contains("hidden")) closeServiceDetail();
+    });
 
     initializeAuthRequiredLinks();
   } catch {}
@@ -4303,7 +4666,7 @@ function initAuthPage() {
         data.token,
       );
       notify("Login realizado com sucesso.");
-      window.location.href = normalizedNextUrl();
+      window.location.href = "servicos.html";
     } catch {
       notify("Erro ao conectar com o servidor. Tente novamente.");
     }
@@ -4347,7 +4710,7 @@ function initAuthPage() {
       );
       notify("Cadastro realizado com sucesso. Bem-vindo ao AutoShine.");
       signupForm.reset();
-      window.location.href = normalizedNextUrl();
+      window.location.href = "servicos.html";
     } catch {
       notify("Erro ao conectar com o servidor. Tente novamente.");
     }
@@ -4358,7 +4721,10 @@ function initAuthPage() {
     window.location.href = `/auth/google?next=${nextUrl}`;
   }
 
-  googleSignupButton.addEventListener("click", startGoogleAuth);
+  googleSignupButton.addEventListener("click", () => {
+    const servicesUrl = encodeURIComponent("servicos.html");
+    window.location.href = `/auth/google?next=${servicesUrl}`;
+  });
   googleLoginButton.addEventListener("click", startGoogleAuth);
 
   handleAuthQueryFeedback();
@@ -4387,7 +4753,9 @@ function initResetSenhaPage() {
     confirmPanel?.classList.remove("hidden");
     if (tipoInput) tipoInput.value = tipo;
     if (loginLink) {
-      loginLink.href = tipo === "dono" ? "cadastro-dono.html" : "cadastro.html?mode=login";
+      loginLink.href = tipo === "dono"
+        ? "cadastro.html?perfil=empresa&mode=login"
+        : "cadastro.html?perfil=cliente&mode=login";
     }
 
     confirmForm?.addEventListener("submit", async (e) => {
@@ -4459,7 +4827,7 @@ function initResetSenhaPage() {
 }
 
 // ── Inicialização por página ─────────────────────────────────────────────────
-if (page === "home") {
+if (page === "home" || page === "servicos") {
   renderOwnerShopsOnHome();
   initCategoryFilter();
   initUseLocation();
@@ -4484,11 +4852,15 @@ if (page === "avaliacoes") {
 
 if (page === "cadastro") {
   initAuthPage();
+  initOwnerRegisterPage();
+  initUnifiedOwnerLogin();
+  initAccountTypeSelector();
 }
 
 if (page === "perfil") {
   initProfilePage();
 }
+if (page === "perfil-usuario") initUserProfilePage();
 
 if (page === "parceiro") {
   initPartnerPage();
@@ -4515,6 +4887,7 @@ initializePasswordVisibilityToggles();
 initializeAuthRequiredLinks();
 setActiveNavLink();
 updateNavAuthState();
+updatePartnerNavState();
 initializeSiteFooter();
 initializeReportActions();
 initFavoriteButtonHandling();
