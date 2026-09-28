@@ -797,12 +797,33 @@ function initCategoryFilter() {
 
 function applyHomeFilters() {
   const category = document.querySelector("#category-list .chip.active")?.dataset.category || "todos";
+  const searchQuery = (document.getElementById("search-input")?.value || "").toLowerCase().trim();
+  const priceFilter = document.getElementById("price-filter")?.value || "todos";
 
   document.querySelectorAll("#shop-grid .shop-card").forEach((card) => {
     const services = card.dataset.services || "";
     const matchesCategory = category === "todos" || services.includes(category);
-    card.style.display = matchesCategory ? "" : "none";
+
+    const name = card.dataset.name || "";
+    const matchesSearch = !searchQuery || name.includes(searchQuery) || services.includes(searchQuery);
+
+    const preco = parseFloat(card.dataset.precoMedio) || 0;
+    let matchesPrice = true;
+    if (priceFilter === "0-50") matchesPrice = preco <= 50;
+    else if (priceFilter === "50-100") matchesPrice = preco > 50 && preco <= 100;
+    else if (priceFilter === "100-200") matchesPrice = preco > 100 && preco <= 200;
+    else if (priceFilter === "200+") matchesPrice = preco > 200;
+
+    card.style.display = matchesCategory && matchesSearch && matchesPrice ? "" : "none";
   });
+}
+
+function initSearchFilter() {
+  const searchInput = document.getElementById("search-input");
+  const priceFilter = document.getElementById("price-filter");
+  if (!searchInput && !priceFilter) return;
+  searchInput?.addEventListener("input", applyHomeFilters);
+  priceFilter?.addEventListener("change", applyHomeFilters);
 }
 
 function updateHomeLocationStatus(message) {
@@ -949,6 +970,7 @@ function buildHomeCard(loja) {
     ? avaliacoesSort.reduce((s, a) => s + Number(a.nota || 0), 0) / avaliacoesSort.length
     : 0;
   article.dataset.avgRating = String(avgRatingSort);
+  article.dataset.name = (loja.nome || "").toLowerCase();
 
   const safeName = escapeHtml(loja.nome);
   const safePhoto = escapeHtml(loja.fotoUrl || "");
@@ -4832,6 +4854,7 @@ if (page === "home" || page === "servicos") {
   initCategoryFilter();
   initUseLocation();
   initSortBar();
+  initSearchFilter();
 }
 
 if (page === "mapa") {
