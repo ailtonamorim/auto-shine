@@ -9,6 +9,9 @@ const htmlPages = [
   "index.html",
   "mapa.html",
   "perfil.html",
+  "perfil-usuario.html",
+  "servicos.html",
+  "reset-senha.html",
   "agendamento.html",
   "meus-agendamentos.html",
   "avaliacoes.html",
@@ -86,7 +89,7 @@ function runCommand(label, command, args, options = {}) {
 }
 
 function checkJavaScriptSyntax() {
-  ["server.js", "database-admin.js", "assets/js/app.js", "prisma/seed.js"].forEach((relativePath) => {
+  ["server.js", "database-admin.js", "assets/js/app.js", "assets/js/tema.js", "assets/js/menu-perfil.js", "assets/js/perfil-usuario.js", "src/routes/profile.js", "prisma/seed.js"].forEach((relativePath) => {
     if (!fileExists(relativePath)) return;
     runCommand(`Sintaxe JS valida: ${relativePath}`, process.execPath, ["--check", fullPath(relativePath)]);
   });
@@ -102,7 +105,7 @@ function checkPrismaSchema() {
   runCommand("Schema Prisma valido", process.execPath, [prismaCli, "validate"], {
     env: {
       ...process.env,
-      DATABASE_URL: process.env.DATABASE_URL || "file:./data/dev.db",
+      DATABASE_URL: process.env.DATABASE_URL || "postgresql://validacao:validacao@localhost:5432/validacao",
     },
     timeout: 90000,
   });

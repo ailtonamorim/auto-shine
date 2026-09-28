@@ -1,0 +1,33 @@
+PRESERVADOS: 50
+ALTERADOS:
+perfil.html
+termos.html
+favoritos.html
+reset-senha.html
+cadastro.html
+index.html
+avaliacoes.html
+privacidade.html
+admin.html
+meus-agendamentos.html
+server.js
+mapa.html
+servicos.html
+agendamento.html
+cadastro-dono.html
+scripts/check.js
+prisma/schema.prisma
+assets/js/app.js
+NOVOS:
+perfil-usuario.html
+src/routes/profile.js
+assets/css/perfil-usuario.css
+assets/css/integracao.css
+assets/js/perfil-usuario.js
+assets/js/menu-perfil.js
+assets/js/tema.js
+prisma/migrations/20260618000000_add_usuario_foto_perfil/migration.sql
+prisma/migrations/20260928153000_create_enderecos_usuario/migration.sql
+
+Os HTMLs existentes receberam os includes de tema/menu. A home recebeu também
+data-page="landing" para diferenciar os estilos. Veja LEIA-ME_UNIFICACAO.txt.

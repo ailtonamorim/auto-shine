@@ -12,6 +12,7 @@ model Usuario {
   nome              String
   email             String        @unique
   cpf               String?       @unique
+  fotoPerfilUrl     String?
   telefone          String?
   senha             String?
   googleId          String?       @unique
@@ -22,6 +23,27 @@ model Usuario {
   avaliacoes        Avaliacao[]
   denuncias         Denuncia[]
   favoritos         Favorito[]
+  enderecos         EnderecoUsuario[]
+}
+
+model EnderecoUsuario {
+  id          Int      @id @default(autoincrement())
+  usuarioId    Int
+  nome        String
+  cep         String?
+  logradouro  String
+  numero      String
+  complemento String?
+  bairro      String
+  cidade      String
+  uf          String
+  referencia  String?
+  principal   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
 model Dono {
@@ -72,6 +94,11 @@ model ServicoLoja {
   descricao    String
   preco        Float
   duracao      String
+  inclusos     String?
+  etapas       String?
+  produtos     String?
+  orientacoes  String?
+  garantia     String?
   lojaId       Int
   loja         Loja          @relation(fields: [lojaId], references: [id], onDelete: Cascade)
   agendamentos Agendamento[]
