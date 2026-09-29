@@ -1,8 +1,6 @@
 const page = document.body.dataset.page;
-const usersStorageKey = "autoshine:users";
 const currentUserStorageKey = "autoshine:current-user";
-const authTokenStorageKey = "autoshine:token";
-const donoTokenKey = "autoshine:dono-token";
+const donoProfileStorageKey = "autoshine:owner-profile";
 const userLocationStorageKey = "autoshine:user-location";
 const defaultBookingTimes = ["08:00", "09:30", "11:00", "13:30", "15:00", "16:30"];
 const defaultScheduleDays = ["1", "2", "3", "4", "5", "6"];
@@ -16,77 +14,81 @@ const weekdayLabels = {
   6: "Sab",
 };
 
+localStorage.removeItem("autoshine:token");
+localStorage.removeItem("autoshine:dono-token");
+localStorage.removeItem("autoshine:admin-token");
+
 // ── Usuário (cliente) ───────────────────────────────────────────────────────
-function getUsersFromStorage() {
-  const raw = localStorage.getItem(usersStorageKey);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveUsersToStorage(users) {
-  localStorage.setItem(usersStorageKey, JSON.stringify(users));
-}
-
 function getCurrentUser() {
   const raw = localStorage.getItem(currentUserStorageKey);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-function setCurrentUser(user, token) {
+function setCurrentUser(user) {
   localStorage.setItem(currentUserStorageKey, JSON.stringify(user));
-  if (token) localStorage.setItem(authTokenStorageKey, token);
-  else localStorage.removeItem(authTokenStorageKey);
+  localStorage.removeItem("autoshine:token");
   updateNavAuthState();
 }
 
 function clearCurrentUser() {
   localStorage.removeItem(currentUserStorageKey);
-  localStorage.removeItem(authTokenStorageKey);
+  localStorage.removeItem("autoshine:token");
+  fetch("/api/auth/logout", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
   updateNavAuthState();
 }
 
-function getAuthToken() {
-  return localStorage.getItem(authTokenStorageKey);
+function hasCachedUserProfile() {
+  return Boolean(getCurrentUser());
 }
 
 // ── Dono (parceiro) ─────────────────────────────────────────────────────────
-function getDonoToken() {
-  return localStorage.getItem(donoTokenKey);
+function getDonoProfile() {
+  const raw = localStorage.getItem(donoProfileStorageKey);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
 }
 
-function setDonoToken(token) {
-  localStorage.setItem(donoTokenKey, token);
+function setDonoProfile(dono) {
+  if (!dono) {
+    localStorage.removeItem(donoProfileStorageKey);
+    localStorage.removeItem("autoshine:dono-token");
+    return;
+  }
+  localStorage.setItem(donoProfileStorageKey, JSON.stringify(dono));
+  localStorage.removeItem("autoshine:dono-token");
 }
 
-function clearDonoToken() {
-  localStorage.removeItem(donoTokenKey);
-}
-
-function getDonoFromToken() {
-  const token = getDonoToken();
-  if (!token) return null;
-  try { return JSON.parse(atob(token.split(".")[1])); } catch { return null; }
+function clearDonoSession() {
+  localStorage.removeItem(donoProfileStorageKey);
+  localStorage.removeItem("autoshine:dono-token");
+  fetch("/api/dono/logout", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
 }
 
 // ── Helpers de fetch autenticado ────────────────────────────────────────────
 function donoFetch(path, options = {}) {
-  const token = getDonoToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return fetch(path, { ...options, headers });
+  return fetch(path, { ...options, credentials: "same-origin", headers });
+}
+
+async function getDonoSession() {
+  try {
+    const response = await donoFetch("/api/dono/me");
+    if (!response.ok) {
+      localStorage.removeItem(donoProfileStorageKey);
+      return null;
+    }
+    const data = await response.json();
+    setDonoProfile(data.dono);
+    return data.dono;
+  } catch {
+    return null;
+  }
 }
 
 function userFetch(path, options = {}) {
-  const token = getAuthToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return fetch(path, { ...options, headers });
+  return fetch(path, { ...options, credentials: "same-origin", headers });
 }
 
 function readFileAsDataUrl(file) {
@@ -431,7 +433,7 @@ function setActiveNavLink() {
 }
 
 function updateNavAuthState() {
-  const logged = Boolean(getCurrentUser() && getAuthToken());
+  const logged = hasCachedUserProfile();
 
   document.querySelectorAll('nav a[href*="cadastro.html"]').forEach((link) => {
     link.classList.toggle("hidden", logged);
@@ -456,7 +458,7 @@ function updateNavAuthState() {
 }
 
 function requireAuth(reason = "login_required") {
-  if (getCurrentUser() && getAuthToken()) return true;
+  if (hasCachedUserProfile()) return true;
   clearCurrentUser();
   redirectToLogin(reason);
   return false;
@@ -465,7 +467,7 @@ function requireAuth(reason = "login_required") {
 function initializeAuthRequiredLinks() {
   document.querySelectorAll("a.requires-auth").forEach((link) => {
     link.addEventListener("click", (event) => {
-      if (getCurrentUser() && getAuthToken()) return;
+      if (hasCachedUserProfile()) return;
       event.preventDefault();
       clearCurrentUser();
       redirectToLogin(link.dataset.authAction || "login_required");
@@ -1098,7 +1100,7 @@ async function initPartnerPage() {
     }
 
     const loja = cachedShops.find((item) => String(item.id) === String(selectedDashboardShopId)) || cachedShops[0];
-    const dono = getDonoFromToken() || {};
+    const dono = getDonoProfile() || {};
     const lojaId = String(loja.id);
     const hoje = localDateKey();
     const ontem = shiftDateKey(hoje, -1);
@@ -1705,7 +1707,7 @@ async function initPartnerPage() {
   // Ações nos agendamentos recebidos
   if (bookingsList) {
     bookingsList.addEventListener("click", async (event) => {
-      if (!getDonoFromToken()) return;
+      if (!getDonoProfile()) return;
 
       const deleteBtn = event.target.closest("[data-delete-booking]");
       if (deleteBtn) {
@@ -1854,7 +1856,7 @@ async function initPartnerPage() {
 
   // Ações na lista de lojas próprias
   ownedList.addEventListener("click", async (event) => {
-    if (!getDonoFromToken()) { showAuthArea(); return; }
+    if (!getDonoProfile()) { showAuthArea(); return; }
 
     // Excluir loja
     const removeShopBtn = event.target.closest("[data-remove-owner-shop]");
@@ -2022,7 +2024,7 @@ async function initPartnerPage() {
   // Submeter formulário de loja
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!getDonoFromToken()) { showAuthArea(); notify("Faça login no painel do dono para continuar."); return; }
+    if (!getDonoProfile()) { showAuthArea(); notify("Faça login no painel do dono para continuar."); return; }
 
     const formData = new FormData(form);
     const nome = String(formData.get("shopName") || "").trim();
@@ -2166,7 +2168,7 @@ async function initPartnerPage() {
       const data = await res.json();
       if (!res.ok) { notify(data.error || "Login ou senha inválidos."); return; }
 
-      setDonoToken(data.token);
+      setDonoProfile(data.dono);
       loginForm.reset();
       resetPartnerForm();
       showManagementArea(data.dono);
@@ -2186,16 +2188,16 @@ async function initPartnerPage() {
     });
   }
 
-  // Callback Google OAuth → token na URL
+  // Retorno do OAuth: a sessão é criada pelo cookie HttpOnly do servidor.
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get("auth") === "dono_google_success" && urlParams.get("token")) {
-    setDonoToken(urlParams.get("token"));
-    window.history.replaceState({}, "", "cadastro-dono.html");
+  if (urlParams.get("auth") === "dono_google_success") {
+    setDonoProfile(await getDonoSession());
+    window.history.replaceState({}, "", urlParams.get("next") || "cadastro-dono.html");
   }
 
   // Logout do dono
   ownerLogoutButton.addEventListener("click", () => {
-    clearDonoToken();
+    clearDonoSession();
     cachedShops = [];
     cachedBookings = [];
     selectedDashboardShopId = "";
@@ -2529,8 +2531,8 @@ async function initPartnerPage() {
   initPhotoZone();
   initTimeTags();
 
-  // Verifica se já está logado via token
-  const dono = getDonoFromToken();
+  // Verifica a sessão no servidor; o perfil local nunca autentica por si só.
+  const dono = await getDonoSession();
   if (dono) {
     resetPartnerForm();
     showManagementArea(dono);
@@ -2658,13 +2660,11 @@ async function initOwnerRegisterPage() {
   if (googleLoginBtn) googleLoginBtn.addEventListener("click", startGoogleAuthDono);
   if (googleRegisterBtn) googleRegisterBtn.addEventListener("click", startGoogleAuthDono);
 
-  // Tratar retorno do callback Google
+  // Tratar retorno do callback Google, cuja sessão veio em cookie HttpOnly.
   function handleGoogleCallback() {
     const auth = params.get("auth");
-    const token = params.get("token");
-    if (auth === "dono_google_success" && token) {
-      setDonoToken(token);
-      window.history.replaceState({}, "", "cadastro-dono.html");
+    if (auth === "dono_google_success") {
+      window.history.replaceState({}, "", params.get("next") || "cadastro-dono.html");
       return true;
     }
     if (auth === "google_not_configured") {
@@ -2681,7 +2681,7 @@ async function initOwnerRegisterPage() {
   if (handleGoogleCallback()) return;
 
   // Se ja esta logado como dono, vai direto para o painel
-  if (getDonoFromToken()) {
+  if (await getDonoSession()) {
     return;
   }
 
@@ -2808,7 +2808,7 @@ async function initOwnerRegisterPage() {
         });
         const data = await res.json();
         if (!res.ok) { notify(data.error || "Erro ao criar conta."); return; }
-        setDonoToken(data.token);
+        setDonoProfile(data.dono);
         registerForm.reset();
         window.location.href = "cadastro-dono.html";
       } catch {
@@ -4082,7 +4082,7 @@ async function initReviewsPage() {
 }
 
 // ── Autenticação do cliente ──────────────────────────────────────────────────
-function initAuthPage() {
+async function initAuthPage() {
   const signupForm = document.getElementById("signup-form");
   const loginForm = document.getElementById("login-form");
   const googleSignupButton = document.getElementById("google-signup-btn");
@@ -4207,43 +4207,32 @@ function initAuthPage() {
     }
   }
 
-  function upsertGoogleUser(name, email, token) {
-    if (!email) return;
-    const users = getUsersFromStorage();
-    const existingIndex = users.findIndex((u) => u.email === email);
-    const payload = {
-      name: name || email.split("@")[0],
-      email,
-      cpf: "",
-      phone: "",
-      authProvider: "google",
-      createdAt: new Date().toISOString(),
-    };
-    if (existingIndex >= 0) {
-      users[existingIndex] = { ...users[existingIndex], ...payload };
-    } else {
-      users.push(payload);
-    }
-    saveUsersToStorage(users);
-    setCurrentUser({ name: payload.name, email: payload.email, authProvider: "google" }, token);
+  function upsertGoogleUser(user) {
+    const profile = { name: user.nome, email: user.email, authProvider: "google" };
+    setCurrentUser(profile);
   }
 
-  function handleAuthQueryFeedback() {
+  async function handleAuthQueryFeedback() {
     const auth = params.get("auth");
     if (!auth) return;
 
     if (auth === "success" && params.get("provider") === "google") {
-      const name = String(params.get("name") || "").trim() || "Usuário Google";
-      const email = String(params.get("email") || "").trim().toLowerCase();
-      const token = params.get("token");
-      if (!token) {
-        notify("Login com Google concluído sem token de acesso. Tente novamente.");
+      const next = normalizedNextUrl();
+      window.history.replaceState({}, "", "cadastro.html");
+      try {
+        const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+        const data = await response.json();
+        if (!response.ok || !data.authenticated || !data.user) {
+          notify("Não foi possível confirmar sua sessão Google. Tente novamente.");
+          return;
+        }
+        upsertGoogleUser(data.user);
+      } catch {
+        notify("Não foi possível confirmar sua sessão Google. Tente novamente.");
         return;
       }
-      upsertGoogleUser(name, email, token);
       notify("Login com Google realizado com sucesso.");
-      window.history.replaceState({}, "", "cadastro.html");
-      window.location.href = normalizedNextUrl();
+      window.location.href = next;
       return;
     }
 
@@ -4303,10 +4292,7 @@ function initAuthPage() {
       const data = await response.json();
       if (!response.ok) { notify(data.error || "E-mail ou senha inválidos."); return; }
 
-      setCurrentUser(
-        { name: data.user.nome, email: data.user.email, authProvider: "email" },
-        data.token,
-      );
+      setCurrentUser({ name: data.user.nome, email: data.user.email, authProvider: "email" });
       notify("Login realizado com sucesso.");
       window.location.href = normalizedNextUrl();
     } catch {
@@ -4346,10 +4332,7 @@ function initAuthPage() {
       const data = await response.json();
       if (!response.ok) { notify(data.error || "Erro ao criar conta."); return; }
 
-      setCurrentUser(
-        { name: data.user.nome, email: data.user.email, authProvider: "email" },
-        data.token,
-      );
+      setCurrentUser({ name: data.user.nome, email: data.user.email, authProvider: "email" });
       notify("Cadastro realizado com sucesso. Bem-vindo ao AutoShine.");
       signupForm.reset();
       window.location.href = normalizedNextUrl();
@@ -4366,10 +4349,10 @@ function initAuthPage() {
   googleSignupButton.addEventListener("click", startGoogleAuth);
   googleLoginButton.addEventListener("click", startGoogleAuth);
 
-  handleAuthQueryFeedback();
+  await handleAuthQueryFeedback();
 }
 
-const adminTokenKey = "autoshine:admin-token";
+let adminSessionActive = false;
 
 // ── Recuperação de senha ─────────────────────────────────────────────────────
 function initResetSenhaPage() {
@@ -4565,15 +4548,17 @@ function initHamburgerMenu() {
 }
 
 // ── Painel Admin ─────────────────────────────────────────────────────────────
-function getAdminToken() { return localStorage.getItem(adminTokenKey); }
-function setAdminToken(t) { localStorage.setItem(adminTokenKey, t); }
-function clearAdminToken() { localStorage.removeItem(adminTokenKey); }
+function getAdminToken() { return adminSessionActive; }
+function setAdminToken() { adminSessionActive = true; }
+function clearAdminToken() {
+  adminSessionActive = false;
+  localStorage.removeItem("autoshine:admin-token");
+  fetch("/api/admin/logout", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
+}
 
 function adminFetch(path, options = {}) {
-  const token = getAdminToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return fetch(path, { ...options, headers });
+  return fetch(path, { ...options, credentials: "same-origin", headers });
 }
 
 async function initAdminPage() {
@@ -5635,7 +5620,7 @@ async function initAdminPage() {
         }
         return;
       }
-      setAdminToken(data.token);
+      setAdminToken();
       showPanel();
       hideEditPanel();
       hideAdminResourcePanels();
@@ -5656,7 +5641,9 @@ async function initAdminPage() {
 
   hideEditPanel();
   hideAdminResourcePanels();
-  if (getAdminToken()) {
+  const sessionResponse = await adminFetch("/api/admin/session");
+  if (sessionResponse.ok) {
+    setAdminToken();
     showPanel();
     await refreshAdminData();
   } else {

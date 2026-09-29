@@ -4,7 +4,7 @@ const bcrypt = require("bcrypt");
 const prisma = require("../config/database");
 const { autenticarAdmin } = require("../middlewares/auth");
 const { limitarAuth } = require("../middlewares/security");
-const { gerarTokenAdmin } = require("../utils/tokens");
+const { gerarTokenAdmin, definirCookieAuth, limparCookieAuth } = require("../utils/tokens");
 const { normalizarLoginDono, normalizarCnpj, normalizarEmail, normalizarCpf, normalizarTelefone, emailValido, cnpjTemDigitoValido, cpfTemDigitoValido, fotoAvaliacaoValida, serializarFotosAdicionais, serializarListaTexto, coordenadasValidas, imagemLojaValida } = require("../utils/validators");
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("../utils/agenda");
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
@@ -58,7 +58,14 @@ router.post("/login", limitarAuth, async (req, res) => {
   } catch {
     return res.status(401).json({ error: "Login ou senha incorretos." });
   }
-  res.json({ token: gerarTokenAdmin() });
+  definirCookieAuth(res, "admin", gerarTokenAdmin());
+  res.json({ ok: true });
+});
+
+router.get("/session", autenticarAdmin, (_req, res) => res.json({ authenticated: true }));
+router.post("/logout", (_req, res) => {
+  limparCookieAuth(res, "admin");
+  res.json({ ok: true });
 });
 
 router.get("/resumo", autenticarAdmin, async (_req, res) => {

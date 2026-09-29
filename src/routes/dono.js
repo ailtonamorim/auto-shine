@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const prisma = require("../config/database");
-const { gerarTokenDono } = require("../utils/tokens");
+const { gerarTokenDono, definirCookieAuth, limparCookieAuth } = require("../utils/tokens");
 const { criptografar, criarIndice } = require("../utils/crypto");
 const { normalizarLoginDono, normalizarCnpj, normalizarEmail, emailValido, cnpjTemDigitoValido } = require("../utils/validators");
 const { consultarCnpjBrasilApi } = require("../utils/geocode");
@@ -40,7 +40,8 @@ router.post("/cadastro", limitarAuth, async (req, res) => {
     const emailCipher = emailNorm ? criptografar(emailNorm) : null;
     const dono = await prisma.dono.create({ data: { nome: String(nome).trim(), login: loginNorm, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpjNorm), email: emailCipher, emailCipher, emailIndex: emailNorm ? criarIndice(emailNorm) : null, senha: senhaHash } });
     const token = gerarTokenDono(dono);
-    res.status(201).json({ token, dono: { id: dono.id, nome: dono.nome, login: dono.login, cnpj: cnpjNorm } });
+    definirCookieAuth(res, "dono", token);
+    res.status(201).json({ dono: { id: dono.id, nome: dono.nome, login: dono.login, cnpj: cnpjNorm } });
   } catch (err) {
     console.error("Erro no cadastro do dono:", err);
     res.status(500).json({ error: "Erro interno." });
@@ -57,7 +58,8 @@ router.post("/login", limitarAuth, async (req, res) => {
     if (!dono.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
     if (!(await bcrypt.compare(senha, dono.senha))) return res.status(401).json({ error: "Login ou senha inválidos." });
     const token = gerarTokenDono(dono);
-    res.json({ token, dono: { id: dono.id, nome: dono.nome, login: dono.login } });
+    definirCookieAuth(res, "dono", token);
+    res.json({ dono: { id: dono.id, nome: dono.nome, login: dono.login } });
   } catch (err) {
     console.error("Erro no login do dono:", err);
     res.status(500).json({ error: "Erro interno." });
@@ -72,6 +74,11 @@ router.get("/me", autenticarDono, async (req, res) => {
   } catch {
     res.status(500).json({ error: "Erro interno." });
   }
+});
+
+router.post("/logout", (_req, res) => {
+  limparCookieAuth(res, "dono");
+  res.json({ ok: true });
 });
 
 module.exports = router;

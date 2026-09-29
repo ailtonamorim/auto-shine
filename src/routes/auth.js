@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const prisma = require("../config/database");
-const { gerarTokenUsuario, gerarTokenDono } = require("../utils/tokens");
+const { gerarTokenUsuario, gerarTokenDono, definirCookieAuth, limparCookieAuth } = require("../utils/tokens");
 const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 const { normalizarEmail, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
 const { limitarAuth } = require("../middlewares/security");
@@ -72,8 +72,9 @@ router.get("/auth/google/callback", (req, res, next) => {
             dono = await prisma.dono.create({ data: { nome: user.name || "Parceiro Google", login, senha: null, googleId: googleIdCipher, googleIdCipher, googleIdIndex: criarIndice(user.id) } });
           }
           const token = gerarTokenDono(dono);
+          definirCookieAuth(res, "dono", token);
           const next = encodeURIComponent(returnTo);
-          res.redirect(`/cadastro-dono.html?auth=dono_google_success&token=${token}&next=${next}`);
+          res.redirect(`/cadastro-dono.html?auth=dono_google_success&next=${next}`);
         } catch (err) {
           console.error("Erro no Google auth do dono:", err);
           res.redirect("/cadastro-dono.html?auth=google_failed");
@@ -95,10 +96,9 @@ router.get("/auth/google/callback", (req, res, next) => {
           usuario = await prisma.usuario.update({ where: { id: usuario.id }, data: { googleId: criptografar(user.id), googleIdIndex: criarIndice(user.id) } });
         }
         const token = gerarTokenUsuario(usuario);
-        const name = encodeURIComponent(usuario.nome);
-        const emailParam = encodeURIComponent(email);
+        definirCookieAuth(res, "usuario", token);
         const next = encodeURIComponent(returnTo);
-        res.redirect(`/cadastro.html?mode=login&auth=success&provider=google&token=${encodeURIComponent(token)}&name=${name}&email=${emailParam}&next=${next}`);
+        res.redirect(`/cadastro.html?mode=login&auth=success&provider=google&next=${next}`);
       } catch (err) {
         console.error("Erro no Google auth do cliente:", err);
         res.redirect("/cadastro.html?mode=login&auth=google_failed");
@@ -114,7 +114,19 @@ router.get("/auth/logout", (req, res, next) => {
   });
 });
 
-router.get("/api/auth/me", (req, res) => res.json({ authenticated: Boolean(req.user), user: req.user || null }));
+router.get("/api/auth/me", autenticarUsuario, async (req, res) => {
+  try {
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.usuario.id }, select: { id: true, nome: true, email: true } });
+    if (!usuario) return res.status(401).json({ authenticated: false, user: null });
+    res.json({ authenticated: true, user: { id: usuario.id, nome: usuario.nome, email: descriptografarSeNecessario(usuario.email) } });
+  } catch {
+    res.status(500).json({ error: "Erro ao consultar a sessão." });
+  }
+});
+router.post("/api/auth/logout", (_req, res) => {
+  limparCookieAuth(res, "usuario");
+  res.json({ ok: true });
+});
 router.get("/api/auth/config", (_req, res) => res.json({ googleOAuthConfigured }));
 
 router.get("/api/meus-dados", autenticarUsuario, async (req, res) => {
@@ -223,7 +235,8 @@ router.post("/api/auth/signup", limitarAuth, async (req, res) => {
     const telefoneCipher = criptografar(telefoneNorm);
     const usuario = await prisma.usuario.create({ data: { nome: String(nome).trim(), email: emailCipher, emailCipher, emailIndex: criarIndice(emailNorm), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpfNorm), telefone: telefoneCipher, telefoneCipher, telefoneIndex: criarIndice(telefoneNorm), senha: senhaHash } });
     const token = gerarTokenUsuario(usuario);
-    res.status(201).json({ token, user: { id: usuario.id, nome: usuario.nome, email: emailNorm } });
+    definirCookieAuth(res, "usuario", token);
+    res.status(201).json({ user: { id: usuario.id, nome: usuario.nome, email: emailNorm } });
   } catch (err) {
     console.error("Erro no cadastro:", err);
     res.status(500).json({ error: "Erro interno ao criar conta." });
@@ -246,7 +259,8 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
     }
     await registrarLogin({ usuarioEmail: criarIndice(normalizarEmail(email)), usuarioId: usuario.id, enderecoIp: req.ip });
     const token = gerarTokenUsuario(usuario);
-    res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: normalizarEmail(email) } });
+    definirCookieAuth(res, "usuario", token);
+    res.json({ user: { id: usuario.id, nome: usuario.nome, email: normalizarEmail(email) } });
   } catch (err) {
     console.error("Erro no login:", err);
     res.status(500).json({ error: "Erro interno ao fazer login." });
