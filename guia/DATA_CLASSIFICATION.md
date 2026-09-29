@@ -246,7 +246,9 @@ Campos Criptografados:
 
 ✅ IMPLEMENTADO
 - Usa HMAC-SHA256
+- Usa `DATA_INDEX_KEY`, independente de `DATA_ENCRYPTION_KEY`
 - Armazenado em campo separado com sufixo "Index"
+- Unicidade de PII é imposta no campo HMAC `*Index`, nunca no ciphertext aleatório
 - Nunca expor ao cliente
 
 Campos com Índice:
@@ -377,9 +379,10 @@ Campos:
 
 ### Gerenciamento de Chaves
 1. `DATA_ENCRYPTION_KEY` deve estar em variável de ambiente
-2. Nunca fazer hardcode da chave
-3. Rotacionar chaves periodicamente
-4. Manter backup da chave de forma segura
+2. `DATA_INDEX_KEY` deve ser outra chave aleatória de 32 bytes, também externa ao banco
+3. Nunca fazer hardcode ou reutilizar uma chave para criptografia e HMAC
+4. Ao trocar `DATA_INDEX_KEY`, manter `DATA_ENCRYPTION_KEY` original e recalcular todos os índices antes de reabrir o tráfego
+5. Manter backup das chaves de forma segura; perda da chave AES impede recuperar dados
 
 ---
 

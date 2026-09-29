@@ -10,17 +10,17 @@ datasource db {
 model Usuario {
   id                Int           @id @default(autoincrement())
   nome              String
-  email             String        @unique
+  email             String
   emailCipher       String?
   emailIndex        String?       @unique
-  cpf               String?       @unique
+  cpf               String?
   cpfCipher         String?
   cpfIndex          String?       @unique
   telefone          String?
   telefoneCipher    String?
   telefoneIndex     String?
   senha             String?
-  googleId          String?       @unique
+  googleId          String?
   googleIdCipher    String?
   googleIdIndex     String?       @unique
   resetToken        String?       @unique
@@ -39,14 +39,14 @@ model Dono {
   id               Int      @id @default(autoincrement())
   nome             String
   login            String   @unique
-  email            String?  @unique
+  email            String?
   emailCipher      String?
   emailIndex       String?  @unique
   cnpj             String?
   cnpjCipher       String?
   cnpjIndex        String?  @unique
   senha            String?
-  googleId         String?  @unique
+  googleId         String?
   googleIdCipher   String?
   googleIdIndex    String?  @unique
   resetToken       String?  @unique

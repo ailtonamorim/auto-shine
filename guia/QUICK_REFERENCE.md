@@ -27,6 +27,8 @@ Imprima este documento para manter na mesa!
 
 ## 🔐 Matriz de Decisão Rápida
 
+Para campos com busca ou unicidade, mantenha ciphertext e índice HMAC em colunas distintas. Use `DATA_ENCRYPTION_KEY` para AES e uma chave externa independente `DATA_INDEX_KEY` para HMAC; aplique `@unique` ao campo `*Index`, nunca ao ciphertext.
+
 ### Devo criptografar este campo?
 
 ```

@@ -7,7 +7,7 @@ const dotenv = require("dotenv");
 
 dotenv.config();
 
-const requiredConfig = ["JWT_SECRET", "SESSION_SECRET", "ADMIN_LOGIN", "ADMIN_SENHA", "DATA_ENCRYPTION_KEY"];
+const requiredConfig = ["JWT_SECRET", "SESSION_SECRET", "ADMIN_LOGIN", "ADMIN_SENHA", "DATA_ENCRYPTION_KEY", "DATA_INDEX_KEY"];
 const missingConfig = requiredConfig.filter((key) => !process.env[key]);
 if (missingConfig.length) {
   console.error(`Configuracao obrigatoria ausente: ${missingConfig.join(", ")}. Confira o arquivo .env.`);
@@ -16,6 +16,7 @@ if (missingConfig.length) {
 
 const { aplicarHeadersSeguranca } = require("./src/middlewares/security");
 const { garantirIndicesBanco } = require("./src/utils/loja");
+const { validarChavesCriptograficas } = require("./src/utils/crypto");
 
 const authRouter = require("./src/routes/auth");
 const donoRouter = require("./src/routes/dono");
@@ -84,6 +85,7 @@ app.use((_req, res) => {
 let server;
 
 async function iniciarServidor() {
+  validarChavesCriptograficas();
   await garantirIndicesBanco();
   server = app.listen(PORT, () => {
     console.log(`AutoShine ativo em http://localhost:${PORT}`);

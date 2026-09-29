@@ -35,6 +35,7 @@ JWT_SECRET=troque-para-uma-chave-jwt-segura
 ADMIN_LOGIN=admin-local
 ADMIN_SENHA=troque-esta-senha
 DATA_ENCRYPTION_KEY=chave-base64-de-32-bytes
+DATA_INDEX_KEY=outra-chave-base64-independente-de-32-bytes
 GOOGLE_CLIENT_ID=seu-google-client-id
 GOOGLE_CLIENT_SECRET=seu-google-client-secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
@@ -53,6 +54,10 @@ IMAGE_MODERATION_BLOCK_THRESHOLD=0.8
 IMAGE_MODERATION_BLOCK_CATEGORIES=adult,nudity,porn,sexual,violence,gore,hate,self-harm,weapon,drugs,illegal,child-safety
 IMAGE_MAX_PIXELS=25000000
 ```
+
+`DATA_ENCRYPTION_KEY` protege os valores com AES-256-GCM; `DATA_INDEX_KEY` é uma chave distinta usada somente nos índices HMAC de busca/unicidade. Gere um valor com `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` e execute o comando novamente para obter a outra chave. Guarde ambas em um gerenciador de segredos. Nunca reutilize a chave AES como chave de índice.
+
+Ao adotar `DATA_INDEX_KEY` numa instalação existente, mantenha inalterada a `DATA_ENCRYPTION_KEY` original e execute a migration do schema seguida de `npm run migrate:sensitive-data` antes de reabrir o tráfego. O backfill recalcula os índices HMAC; em produção, planeje uma janela de manutenção, pois a aplicação antiga usa os índices derivados da chave anterior.
 
 ## Comandos
 

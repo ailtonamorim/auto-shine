@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "prisma generate && prisma migrate deploy",
+    "build": "prisma generate && prisma migrate deploy && npm run migrate:sensitive-data",
     "check": "node scripts/check.js",
     "seed": "prisma db seed",
     "migrate": "prisma migrate dev",

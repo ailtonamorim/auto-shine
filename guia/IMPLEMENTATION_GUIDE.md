@@ -57,6 +57,8 @@ const usuario = await prisma.usuario.create({
 
 ### 2. Buscas com Índices HMAC
 
+Use `DATA_INDEX_KEY`, uma chave externa ao banco e independente de `DATA_ENCRYPTION_KEY`. Os campos criptografados usam IV aleatório e não devem ter `@unique`; imponha busca e unicidade pelos campos HMAC `*Index`. Ao trocar a chave de índice, execute `npm run migrate:sensitive-data` com a chave AES original para recalcular os índices.
+
 #### ✅ Exemplo Correto - Buscar por Email
 
 ```javascript

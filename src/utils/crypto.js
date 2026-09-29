@@ -1,12 +1,28 @@
 const crypto = require("crypto");
 
 const encryptionKey = Buffer.from(process.env.DATA_ENCRYPTION_KEY || "", "base64");
+const indexKey = Buffer.from(process.env.DATA_INDEX_KEY || "", "base64");
 
 function getEncryptionKey() {
   if (encryptionKey.length !== 32) {
     throw new Error("DATA_ENCRYPTION_KEY deve ser uma chave base64 de 32 bytes.");
   }
   return encryptionKey;
+}
+
+function getIndexKey() {
+  if (indexKey.length !== 32) {
+    throw new Error("DATA_INDEX_KEY deve ser uma chave base64 independente de 32 bytes.");
+  }
+  if (indexKey.equals(getEncryptionKey())) {
+    throw new Error("DATA_INDEX_KEY deve ser diferente de DATA_ENCRYPTION_KEY.");
+  }
+  return indexKey;
+}
+
+function validarChavesCriptograficas() {
+  getEncryptionKey();
+  getIndexKey();
 }
 
 function criptografar(valor) {
@@ -46,11 +62,11 @@ function descriptografarSeNecessario(valor) {
 
 function criarIndice(valor) {
   if (valor === null || valor === undefined || valor === "") return null;
-  return crypto.createHmac("sha256", getEncryptionKey()).update(String(valor), "utf8").digest("hex");
+  return crypto.createHmac("sha256", getIndexKey()).update(String(valor), "utf8").digest("hex");
 }
 
 function criarHashToken(token) {
   return crypto.createHash("sha256").update(String(token), "utf8").digest("hex");
 }
 
-module.exports = { criptografar, descriptografar, descriptografarSeNecessario, criarIndice, criarHashToken };
+module.exports = { criptografar, descriptografar, descriptografarSeNecessario, criarIndice, criarHashToken, validarChavesCriptograficas };
