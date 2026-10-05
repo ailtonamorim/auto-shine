@@ -3,9 +3,15 @@ const bcrypt = require("bcrypt");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const prisma = require("../config/database");
-const { gerarTokenUsuario, gerarTokenDono } = require("../utils/tokens");
+const { gerarTokenUsuario, gerarTokenDono, definirCookieAuth, limparCookieAuth } = require("../utils/tokens");
+const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 const { normalizarEmail, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
 const { limitarAuth } = require("../middlewares/security");
+const { registrarLogin } = require("../utils/audit");
+const { autenticarUsuario } = require("../middlewares/auth");
+const { registrarAudit, registrarExportacao, TiposAcao } = require("../utils/audit");
+const { usuarioPublicSelect, serializarUsuarioPublic } = require("../utils/serializers");
+const { logger } = require("../utils/logger");
 
 const router = express.Router();
 
@@ -58,19 +64,21 @@ router.get("/auth/google/callback", (req, res, next) => {
     if (parceiro) {
       (async () => {
         try {
-          let dono = await prisma.dono.findFirst({ where: { googleId: user.id } });
+          let dono = await prisma.dono.findFirst({ where: { googleIdIndex: criarIndice(user.id) } });
           if (!dono) {
             const base = String(user.email || user.name || "dono").split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 20) || "dono";
             let login = base;
             let i = 1;
             while (await prisma.dono.findUnique({ where: { login } })) login = `${base}${i++}`;
-            dono = await prisma.dono.create({ data: { nome: user.name || "Parceiro Google", login, senha: null, googleId: user.id } });
+            const googleIdCipher = criptografar(user.id);
+            dono = await prisma.dono.create({ data: { nome: user.name || "Parceiro Google", login, senha: null, googleId: googleIdCipher, googleIdCipher, googleIdIndex: criarIndice(user.id) } });
           }
           const token = gerarTokenDono(dono);
+          definirCookieAuth(res, "dono", token);
           const next = encodeURIComponent(returnTo);
-          res.redirect(`/cadastro-dono.html?auth=dono_google_success&token=${token}&next=${next}`);
+          res.redirect(`/cadastro-dono.html?auth=dono_google_success&next=${next}`);
         } catch (err) {
-          console.error("Erro no Google auth do dono:", err);
+          logger.error("Erro no Google auth do dono:", err);
           res.redirect("/cadastro-dono.html?auth=google_failed");
         }
       })();
@@ -81,19 +89,20 @@ router.get("/auth/google/callback", (req, res, next) => {
       try {
         const email = normalizarEmail(user.email);
         if (!email) return res.redirect("/cadastro.html?mode=login&auth=google_failed");
-        let usuario = await prisma.usuario.findFirst({ where: { OR: [{ googleId: user.id }, { email }] } });
+        let usuario = await prisma.usuario.findFirst({ where: { OR: [{ googleIdIndex: criarIndice(user.id) }, { emailIndex: criarIndice(email) }] } });
         if (!usuario) {
-          usuario = await prisma.usuario.create({ data: { nome: user.name || email.split("@")[0] || "Usuario Google", email, googleId: user.id } });
-        } else if (!usuario.googleId) {
-          usuario = await prisma.usuario.update({ where: { id: usuario.id }, data: { googleId: user.id } });
+          const emailCipher = criptografar(email);
+          const googleIdCipher = criptografar(user.id);
+          usuario = await prisma.usuario.create({ data: { nome: user.name || email.split("@")[0] || "Usuario Google", email: emailCipher, emailCipher, emailIndex: criarIndice(email), googleId: googleIdCipher, googleIdCipher, googleIdIndex: criarIndice(user.id) } });
+        } else if (!usuario.googleIdIndex) {
+          usuario = await prisma.usuario.update({ where: { id: usuario.id }, data: { googleId: criptografar(user.id), googleIdIndex: criarIndice(user.id) } });
         }
         const token = gerarTokenUsuario(usuario);
-        const name = encodeURIComponent(usuario.nome);
-        const emailParam = encodeURIComponent(usuario.email);
+        definirCookieAuth(res, "usuario", token);
         const next = encodeURIComponent(returnTo);
-        res.redirect(`/cadastro.html?mode=login&auth=success&provider=google&token=${encodeURIComponent(token)}&name=${name}&email=${emailParam}&next=${next}`);
+        res.redirect(`/cadastro.html?mode=login&auth=success&provider=google&next=${next}`);
       } catch (err) {
-        console.error("Erro no Google auth do cliente:", err);
+        logger.error("Erro no Google auth do cliente:", err);
         res.redirect("/cadastro.html?mode=login&auth=google_failed");
       }
     })();
@@ -107,8 +116,109 @@ router.get("/auth/logout", (req, res, next) => {
   });
 });
 
-router.get("/api/auth/me", (req, res) => res.json({ authenticated: Boolean(req.user), user: req.user || null }));
+router.get("/api/auth/me", autenticarUsuario, async (req, res) => {
+  try {
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.usuario.id }, select: usuarioPublicSelect });
+    if (!usuario) return res.status(401).json({ authenticated: false, user: null });
+    res.json({ authenticated: true, user: serializarUsuarioPublic(usuario) });
+  } catch {
+    res.status(500).json({ error: "Erro ao consultar a sessão." });
+  }
+});
+router.post("/api/auth/logout", (_req, res) => {
+  limparCookieAuth(res, "usuario");
+  res.json({ ok: true });
+});
 router.get("/api/auth/config", (_req, res) => res.json({ googleOAuthConfigured }));
+
+router.get("/api/meus-dados", autenticarUsuario, async (req, res) => {
+  try {
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.usuario.id },
+      select: {
+        id: true, nome: true, email: true, cpf: true, telefone: true, createdAt: true,
+        agendamentos: { select: { id: true, data: true, hora: true, status: true, lojaId: true, servicoId: true } },
+        avaliacoes: { select: { id: true, nota: true, comentario: true, lojaId: true, createdAt: true } },
+        denuncias: { select: { id: true, tipo: true, motivo: true, motivoCipher: true, detalhes: true, detalhesCipher: true, status: true, anonima: true, createdAt: true } },
+      },
+    });
+    if (!usuario) return res.status(404).json({ error: "Usuário não encontrado." });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", recordId: usuario.id, usuarioId: usuario.id, enderecoIp: req.ip });
+    const { denuncias, ...dadosUsuario } = usuario;
+    res.json({ dados: {
+      ...dadosUsuario,
+      email: descriptografarSeNecessario(usuario.email),
+      cpf: descriptografarSeNecessario(usuario.cpf),
+      telefone: descriptografarSeNecessario(usuario.telefone),
+      denuncias: denuncias.map(({ motivo, motivoCipher, detalhes, detalhesCipher, ...denuncia }) => ({
+        ...denuncia,
+        motivo: descriptografarSeNecessario(motivoCipher || motivo),
+        detalhes: descriptografarSeNecessario(detalhesCipher || detalhes),
+      })),
+    } });
+  } catch (err) {
+    logger.error("Erro ao consultar dados do titular:", err);
+    res.status(500).json({ error: "Erro ao consultar seus dados." });
+  }
+});
+
+router.get("/api/meus-dados/exportar", autenticarUsuario, async (req, res) => {
+  try {
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.usuario.id }, select: { id: true, nome: true, email: true, cpf: true, telefone: true, createdAt: true } });
+    if (!usuario) return res.status(404).json({ error: "Usuário não encontrado." });
+    await registrarExportacao({ usuarioId: usuario.id, enderecoIp: req.ip });
+    res.json({ dados: {
+      ...usuario,
+      email: descriptografarSeNecessario(usuario.email),
+      cpf: descriptografarSeNecessario(usuario.cpf),
+      telefone: descriptografarSeNecessario(usuario.telefone),
+    } });
+  } catch {
+    res.status(500).json({ error: "Erro ao exportar seus dados." });
+  }
+});
+
+router.patch("/api/meus-dados", autenticarUsuario, async (req, res) => {
+  try {
+    const atual = await prisma.usuario.findUnique({ where: { id: req.usuario.id } });
+    if (!atual) return res.status(404).json({ error: "Usuário não encontrado." });
+    const nome = req.body?.nome === undefined ? atual.nome : String(req.body.nome).trim();
+    const telefone = req.body?.telefone === undefined ? descriptografarSeNecessario(atual.telefone) : String(req.body.telefone).replace(/\D/g, "");
+    if (!nome || (telefone && telefone.length < 10)) return res.status(400).json({ error: "Nome ou telefone inválido." });
+    const atualizado = await prisma.usuario.update({
+      where: { id: atual.id },
+      data: { nome, telefone: criptografar(telefone), telefoneCipher: criptografar(telefone), telefoneIndex: criarIndice(telefone) },
+      select: { id: true, nome: true, telefone: true },
+    });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Usuario", recordId: atual.id, usuarioId: atual.id, enderecoIp: req.ip, detalhes: { campos: ["nome", "telefone"] } });
+    res.json({ usuario: { ...atualizado, telefone: descriptografarSeNecessario(atualizado.telefone) } });
+  } catch {
+    res.status(500).json({ error: "Erro ao atualizar seus dados." });
+  }
+});
+
+router.delete("/api/meus-dados", autenticarUsuario, async (req, res) => {
+  if (req.body?.confirmacao !== "EXCLUIR") return res.status(400).json({ error: "Envie confirmacao: EXCLUIR para apagar seus dados." });
+  try {
+    const usuarioId = req.usuario.id;
+    await prisma.$transaction(async (tx) => {
+      await tx.denuncia.deleteMany({ where: { usuarioId } });
+      await tx.avaliacao.deleteMany({ where: { usuarioId } });
+      const agendamentos = await tx.agendamento.findMany({ where: { usuarioId }, select: { id: true } });
+      const agendamentoIds = agendamentos.map((item) => item.id);
+      if (agendamentoIds.length) await tx.denuncia.deleteMany({ where: { agendamentoId: { in: agendamentoIds } } });
+      if (agendamentoIds.length) await tx.avaliacao.deleteMany({ where: { agendamentoId: { in: agendamentoIds } } });
+      await tx.agendamento.deleteMany({ where: { usuarioId } });
+      await tx.favorito.deleteMany({ where: { usuarioId } });
+      await tx.usuario.delete({ where: { id: usuarioId } });
+    });
+    await registrarAudit({ acao: TiposAcao.DELETAR, tabela: "Usuario", recordId: usuarioId, usuarioId, enderecoIp: req.ip });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error("Erro ao excluir dados do titular:", err);
+    res.status(500).json({ error: "Não foi possível excluir seus dados." });
+  }
+});
 
 router.post("/api/auth/signup", limitarAuth, async (req, res) => {
   try {
@@ -119,14 +229,18 @@ router.post("/api/auth/signup", limitarAuth, async (req, res) => {
     const telefoneNorm = String(telefone).replace(/\D/g, "");
     if (!cpfTemDigitoValido(cpfNorm)) return res.status(400).json({ error: "CPF invalido." });
     if (String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
-    const existente = await prisma.usuario.findFirst({ where: { OR: [{ email: emailNorm }, { cpf: cpfNorm }] } });
+    const existente = await prisma.usuario.findFirst({ where: { OR: [{ emailIndex: criarIndice(emailNorm) }, { cpfIndex: criarIndice(cpfNorm) }] } });
     if (existente) return res.status(409).json({ error: "Ja existe um cadastro com este email ou CPF." });
     const senhaHash = await bcrypt.hash(senha, 10);
-    const usuario = await prisma.usuario.create({ data: { nome: String(nome).trim(), email: emailNorm, cpf: cpfNorm, telefone: telefoneNorm, senha: senhaHash } });
+    const emailCipher = criptografar(emailNorm);
+    const cpfCipher = criptografar(cpfNorm);
+    const telefoneCipher = criptografar(telefoneNorm);
+    const usuario = await prisma.usuario.create({ data: { nome: String(nome).trim(), email: emailCipher, emailCipher, emailIndex: criarIndice(emailNorm), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpfNorm), telefone: telefoneCipher, telefoneCipher, telefoneIndex: criarIndice(telefoneNorm), senha: senhaHash } });
     const token = gerarTokenUsuario(usuario);
-    res.status(201).json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
+    definirCookieAuth(res, "usuario", token);
+    res.status(201).json({ user: { id: usuario.id, nome: usuario.nome, email: emailNorm } });
   } catch (err) {
-    console.error("Erro no cadastro:", err);
+    logger.error("Erro no cadastro:", err);
     res.status(500).json({ error: "Erro interno ao criar conta." });
   }
 });
@@ -135,14 +249,22 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
   try {
     const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ error: "Informe email e senha." });
-    const usuario = await prisma.usuario.findUnique({ where: { email: normalizarEmail(email) } });
-    if (!usuario) return res.status(401).json({ error: "Email ou senha inválidos." });
+    const usuario = await prisma.usuario.findUnique({ where: { emailIndex: criarIndice(normalizarEmail(email)) } });
+    if (!usuario) {
+      await registrarLogin({ usuarioEmail: criarIndice(normalizarEmail(email)), sucesso: false, enderecoIp: req.ip, motivo: "Usuário não encontrado" });
+      return res.status(401).json({ error: "Email ou senha inválidos." });
+    }
     if (!usuario.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
-    if (!(await bcrypt.compare(senha, usuario.senha))) return res.status(401).json({ error: "Email ou senha inválidos." });
+    if (!(await bcrypt.compare(senha, usuario.senha))) {
+      await registrarLogin({ usuarioEmail: criarIndice(normalizarEmail(email)), usuarioId: usuario.id, sucesso: false, enderecoIp: req.ip, motivo: "Senha incorreta" });
+      return res.status(401).json({ error: "Email ou senha inválidos." });
+    }
+    await registrarLogin({ usuarioEmail: criarIndice(normalizarEmail(email)), usuarioId: usuario.id, enderecoIp: req.ip });
     const token = gerarTokenUsuario(usuario);
-    res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
+    definirCookieAuth(res, "usuario", token);
+    res.json({ user: { id: usuario.id, nome: usuario.nome, email: normalizarEmail(email) } });
   } catch (err) {
-    console.error("Erro no login:", err);
+    logger.error("Erro no login:", err);
     res.status(500).json({ error: "Erro interno ao fazer login." });
   }
 });

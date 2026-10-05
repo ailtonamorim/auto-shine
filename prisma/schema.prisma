@@ -10,29 +10,47 @@ datasource db {
 model Usuario {
   id                Int           @id @default(autoincrement())
   nome              String
-  email             String        @unique
-  cpf               String?       @unique
+  email             String
+  emailCipher       String?
+  emailIndex        String?       @unique
+  cpf               String?
+  cpfCipher         String?
+  cpfIndex          String?       @unique
   telefone          String?
+  telefoneCipher    String?
+  telefoneIndex     String?
   senha             String?
-  googleId          String?       @unique
+  googleId          String?
+  googleIdCipher    String?
+  googleIdIndex     String?       @unique
   resetToken        String?       @unique
+  resetTokenHash    String?       @unique
   resetTokenExpiry  DateTime?
   createdAt         DateTime      @default(now())
   agendamentos      Agendamento[]
   avaliacoes        Avaliacao[]
   denuncias         Denuncia[]
   favoritos         Favorito[]
+
+  @@index([telefoneIndex])
 }
 
 model Dono {
   id               Int      @id @default(autoincrement())
   nome             String
   login            String   @unique
-  email            String?  @unique
+  email            String?
+  emailCipher      String?
+  emailIndex       String?  @unique
   cnpj             String?
+  cnpjCipher       String?
+  cnpjIndex        String?  @unique
   senha            String?
-  googleId         String?  @unique
+  googleId         String?
+  googleIdCipher   String?
+  googleIdIndex    String?  @unique
   resetToken       String?  @unique
+  resetTokenHash   String?  @unique
   resetTokenExpiry DateTime?
   createdAt        DateTime @default(now())
   lojas            Loja[]
@@ -84,9 +102,14 @@ model Agendamento {
   hora         String
   veiculo      String       @default("Carro")
   notas        String?
+  notasCipher  String?
   status       String       @default("pendente")
   nomeCliente  String?
+  nomeClienteCipher String?
+    nomeClienteIndex  String?
   emailCliente String?
+  emailClienteCipher String?
+    emailClienteIndex String?
   usuarioId    Int?
   lojaId       Int
   servicoId    Int
@@ -96,6 +119,9 @@ model Agendamento {
   avaliacao    Avaliacao?
   denuncias    Denuncia[]
   createdAt    DateTime     @default(now())
+
+  @@index([nomeClienteIndex])
+  @@index([emailClienteIndex])
 }
 
 model Avaliacao {
@@ -104,6 +130,7 @@ model Avaliacao {
   comentario    String?
   fotoUrl       String?
   nomeCliente   String?
+  aprovado      Boolean      @default(true)
   usuarioId     Int?
   lojaId        Int
   agendamentoId Int?         @unique
@@ -112,13 +139,19 @@ model Avaliacao {
   agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
   denuncias     Denuncia[]
   createdAt     DateTime     @default(now())
+
+  @@index([aprovado])
 }
 
 model Denuncia {
   id            Int          @id @default(autoincrement())
   tipo          String
-  motivo        String
+  motivo        String?
+    motivoCipher   String?
+    motivoIndex    String?
   detalhes      String?
+  detalhesCipher String?
+    anonima       Boolean      @default(false)
   status        String       @default("aberta")
   usuarioId     Int?
   lojaId        Int?
@@ -130,6 +163,8 @@ model Denuncia {
   agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+
+  @@index([motivoIndex])
 }
 
 model Favorito {
@@ -141,4 +176,22 @@ model Favorito {
   createdAt DateTime @default(now())
 
   @@unique([usuarioId, lojaId])
+}
+
+model AuditLog {
+  id           Int      @id @default(autoincrement())
+  acao         String   // CRIAR, ATUALIZAR, DELETAR, ACESSAR, EXPORTAR, LOGIN, etc
+  tabela       String   // Nome da tabela afetada
+  recordId     Int?     // ID do registro afetado
+  usuarioId    Int?     // ID do usuário que fez a ação
+  enderecoIp   String?  // IP da requisição
+  detalhes     String?  // JSON com detalhes adicionais
+  sucesso      Boolean  @default(true)
+  erro         String?  // Mensagem de erro se houver
+  createdAt    DateTime @default(now())
+
+  @@index([acao])
+  @@index([tabela])
+  @@index([usuarioId])
+  @@index([createdAt])
 }
