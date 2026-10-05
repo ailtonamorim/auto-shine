@@ -10,7 +10,7 @@ const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horari
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
 const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 const { buscarAudits, resumoSuspeitas, registrarAudit, TiposAcao } = require("../utils/audit");
-const { removerCamposCriptografados } = require("../utils/masking");
+const { removerCamposCriptografados, sanitizarTexto, mascararEmail, mascararNomeCliente } = require("../utils/masking");
 const { serializarUsuarioAdmin, serializarDonoAdmin, serializarLojaAdmin } = require("../utils/serializers");
 
 const router = express.Router();
@@ -36,7 +36,21 @@ const avaliacaoAdminInclude = {
 
 function avaliacaoProtegida(avaliacao) {
   if (!avaliacao?.usuario) return avaliacao;
-  return { ...avaliacao, usuario: { ...avaliacao.usuario, email: descriptografarSeNecessario(avaliacao.usuario.email) } };
+  return { ...avaliacao, usuario: { ...avaliacao.usuario, email: avaliacao.usuario.email ? mascararEmail(descriptografarSeNecessario(avaliacao.usuario.email)) : null } };
+}
+
+function serializarAgendamentoAdmin(item) {
+  const nomeCliente = descriptografarSeNecessario(item.nomeCliente);
+  const emailCliente = descriptografarSeNecessario(item.emailCliente);
+  const usuarioEmail = item.usuario ? descriptografarSeNecessario(item.usuario.email) : null;
+
+  return {
+    ...removerCamposCriptografados(item),
+    notas: sanitizarTexto(descriptografarSeNecessario(item.notas)),
+    nomeCliente: nomeCliente ? mascararNomeCliente(nomeCliente, item.usuarioId || item.id) : null,
+    emailCliente: emailCliente ? mascararEmail(emailCliente) : null,
+    usuario: item.usuario ? { ...item.usuario, email: usuarioEmail ? mascararEmail(usuarioEmail) : null } : null,
+  };
 }
 
 router.post("/login", limitarAuth, async (req, res) => {
@@ -406,13 +420,7 @@ router.get("/agendamentos", autenticarAdmin, async (req, res) => {
       take: 300,
     });
     await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Agendamento", enderecoIp: req.ip, detalhes: { quantidade: agendamentos.length, ator: "admin" } });
-    res.json({ agendamentos: agendamentos.map((item) => ({
-      ...removerCamposCriptografados(item),
-      notas: descriptografarSeNecessario(item.notas),
-      nomeCliente: descriptografarSeNecessario(item.nomeCliente),
-      emailCliente: descriptografarSeNecessario(item.emailCliente),
-      usuario: item.usuario ? { ...item.usuario, email: descriptografarSeNecessario(item.usuario.email) } : null,
-    })) });
+    res.json({ agendamentos: agendamentos.map(serializarAgendamentoAdmin) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar agendamentos." });
   }
@@ -425,12 +433,7 @@ router.put("/agendamentos/:id/status", autenticarAdmin, async (req, res) => {
     if (!id || !["pendente", "finalizado", "cancelado"].includes(status)) return res.status(400).json({ error: "Status invalido." });
     const agendamento = await prisma.agendamento.update({ where: { id }, data: { status } });
     await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Agendamento", recordId: id, enderecoIp: req.ip, detalhes: { status, ator: "admin" } });
-    res.json({ agendamento: {
-      ...removerCamposCriptografados(agendamento),
-      notas: descriptografarSeNecessario(agendamento.notas),
-      nomeCliente: descriptografarSeNecessario(agendamento.nomeCliente),
-      emailCliente: descriptografarSeNecessario(agendamento.emailCliente),
-    } });
+    res.json({ agendamento: serializarAgendamentoAdmin(agendamento) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar agendamento." });
   }

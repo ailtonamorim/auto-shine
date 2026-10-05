@@ -7,6 +7,7 @@ const {
   usuarioPublicSelect,
   donoPublicSelect,
 } = require('../src/utils/serializers');
+const { mascararEmail, mascararNomeCliente } = require('../src/utils/masking');
 
 test('serializarUsuarioPublic remove campos sensíveis e mascara CPF', () => {
   const usuario = {
@@ -78,4 +79,14 @@ test('selects públicos não incluem campos sensíveis', () => {
   assert.ok(!('cnpjCipher' in donoPublicSelect));
   assert.ok(!('googleId' in donoPublicSelect));
   assert.ok(!('resetTokenHash' in donoPublicSelect));
+});
+
+test('mascararEmail e mascararNomeCliente protegem dados pessoais', () => {
+  const email = mascararEmail('joao.silva@gmail.com');
+  const nome = mascararNomeCliente('João Silva', 42);
+
+  assert.ok(email.includes('@'));
+  assert.ok(!email.includes('joao'));
+  assert.ok(nome.startsWith('Cliente #'));
+  assert.ok(nome !== 'João Silva');
 });

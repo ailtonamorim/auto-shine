@@ -5,16 +5,20 @@ const { dataEhPassado } = require("../utils/validators");
 const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 const { horarioOcupado, montarDisponibilidadeLoja, statusValidos, statusBloqueiamHorario, erroHorarioReservado } = require("../utils/agenda");
 const { registrarAudit, TiposAcao } = require("../utils/audit");
-const { removerCamposCriptografados } = require("../utils/masking");
+const { removerCamposCriptografados, sanitizarTexto, mascararEmail, mascararNomeCliente } = require("../utils/masking");
 
 const router = express.Router();
 
 function agendamentoParaResposta(agendamento) {
+  const nomeCliente = descriptografarSeNecessario(agendamento.nomeCliente);
+  const emailCliente = descriptografarSeNecessario(agendamento.emailCliente);
+  const notas = descriptografarSeNecessario(agendamento.notas);
+
   return {
     ...removerCamposCriptografados(agendamento),
-    notas: descriptografarSeNecessario(agendamento.notas),
-    nomeCliente: descriptografarSeNecessario(agendamento.nomeCliente),
-    emailCliente: descriptografarSeNecessario(agendamento.emailCliente),
+    notas: sanitizarTexto(notas),
+    nomeCliente: nomeCliente ? mascararNomeCliente(nomeCliente, agendamento.usuarioId || agendamento.id) : null,
+    emailCliente: emailCliente ? mascararEmail(emailCliente) : null,
   };
 }
 
@@ -63,7 +67,10 @@ router.get("/dono", autenticarDono, async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
     await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Agendamento", enderecoIp: req.ip, detalhes: { donoId: req.dono.donoId, quantidade: agendamentos.length } });
-    res.json({ agendamentos: agendamentos.map((item) => ({ ...agendamentoParaResposta(item), usuario: item.usuario ? { ...item.usuario, email: descriptografarSeNecessario(item.usuario.email) } : null })) });
+    res.json({ agendamentos: agendamentos.map((item) => ({
+      ...agendamentoParaResposta(item),
+      usuario: item.usuario ? { ...item.usuario, email: item.usuario.email ? mascararEmail(descriptografarSeNecessario(item.usuario.email)) : null } : null,
+    })) });
   } catch {
     res.status(500).json({ error: "Erro ao buscar agendamentos." });
   }

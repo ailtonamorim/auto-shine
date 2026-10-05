@@ -10,11 +10,28 @@ const crypto = require("crypto");
  * @returns {string} Nome mascarado
  */
 function mascararNomeCliente(nome, usuarioId) {
-  if (!nome || !usuarioId) return "Cliente";
+  if (!nome) return "Cliente";
   
-  const shortHash = crypto.createHash("sha256").update(String(usuarioId)).digest("hex").slice(0, 6);
+  const chave = usuarioId ?? nome;
+  const shortHash = crypto.createHash("sha256").update(String(chave)).digest("hex").slice(0, 6);
   
   return `Cliente #${shortHash}`;
+}
+
+function mascararEmail(email) {
+  if (!email || typeof email !== "string") return "";
+
+  const valor = email.trim();
+  if (!valor.includes("@")) return "***";
+
+  const [local, dominioCompleto] = valor.split("@");
+  const partesDominio = dominioCompleto.split(".");
+  const dominio = partesDominio.length > 1 ? partesDominio.slice(0, -1).join(".") : partesDominio[0];
+  const tld = partesDominio.length > 1 ? `.${partesDominio.slice(-1)[0]}` : "";
+  const localMascarado = local.length <= 2 ? "*".repeat(local.length) : `${local.slice(0, 2)}${"*".repeat(Math.max(local.length - 2, 1))}`;
+  const dominioMascarado = dominio.length <= 2 ? "*".repeat(dominio.length) : `${dominio.slice(0, 2)}${"*".repeat(Math.max(dominio.length - 2, 1))}`;
+
+  return `${localMascarado}@${dominioMascarado}${tld}`;
 }
 
 /**
@@ -173,6 +190,7 @@ function mascararListaAvaliacoes(avaliacoes) {
 
 module.exports = {
   mascararNomeCliente,
+  mascararEmail,
   mascararEndereco,
   arredondarGPS,
   sanitizarTexto,
