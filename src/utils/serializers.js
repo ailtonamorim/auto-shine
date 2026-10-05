@@ -1,4 +1,5 @@
 const { descriptografarSeNecessario } = require("./crypto");
+const { mascararEmail } = require("./masking");
 
 const camposSensiveis = new Set([
   "senha",
@@ -63,7 +64,7 @@ const donoPublicSelect = {
 function serializarUsuarioPublic(usuario) {
   if (!usuario) return null;
   const resposta = removerCamposSensiveis(usuario);
-  resposta.email = descriptografarSeNecessario(resposta.email);
+  resposta.email = mascararEmail(descriptografarSeNecessario(resposta.email));
   resposta.cpf = mascararCpf(resposta.cpf);
   if (resposta.telefone !== undefined) resposta.telefone = descriptografarSeNecessario(resposta.telefone);
   return resposta;
@@ -72,7 +73,7 @@ function serializarUsuarioPublic(usuario) {
 function serializarDonoPublic(dono) {
   if (!dono) return null;
   const resposta = removerCamposSensiveis(dono);
-  resposta.email = descriptografarSeNecessario(resposta.email);
+  resposta.email = mascararEmail(descriptografarSeNecessario(resposta.email));
   resposta.cnpj = mascararCnpj(resposta.cnpj);
   return resposta;
 }
