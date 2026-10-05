@@ -7,6 +7,7 @@ const { normalizarLoginDono, normalizarCnpj, normalizarEmail, emailValido, cnpjT
 const { consultarCnpjBrasilApi } = require("../utils/geocode");
 const { autenticarDono } = require("../middlewares/auth");
 const { limitarAuth } = require("../middlewares/security");
+const { donoPublicSelect, serializarDonoPublic } = require("../utils/serializers");
 
 const router = express.Router();
 
@@ -41,7 +42,7 @@ router.post("/cadastro", limitarAuth, async (req, res) => {
     const dono = await prisma.dono.create({ data: { nome: String(nome).trim(), login: loginNorm, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpjNorm), email: emailCipher, emailCipher, emailIndex: emailNorm ? criarIndice(emailNorm) : null, senha: senhaHash } });
     const token = gerarTokenDono(dono);
     definirCookieAuth(res, "dono", token);
-    res.status(201).json({ dono: { id: dono.id, nome: dono.nome, login: dono.login, cnpj: cnpjNorm } });
+    res.status(201).json({ dono: { id: dono.id, nome: dono.nome, login: dono.login } });
   } catch (err) {
     console.error("Erro no cadastro do dono:", err);
     res.status(500).json({ error: "Erro interno." });
@@ -68,9 +69,9 @@ router.post("/login", limitarAuth, async (req, res) => {
 
 router.get("/me", autenticarDono, async (req, res) => {
   try {
-    const dono = await prisma.dono.findUnique({ where: { id: req.dono.donoId }, select: { id: true, nome: true, login: true } });
+    const dono = await prisma.dono.findUnique({ where: { id: req.dono.donoId }, select: donoPublicSelect });
     if (!dono) return res.status(404).json({ error: "Dono não encontrado." });
-    res.json({ dono });
+    res.json({ dono: serializarDonoPublic(dono) });
   } catch {
     res.status(500).json({ error: "Erro interno." });
   }

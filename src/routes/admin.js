@@ -11,6 +11,7 @@ const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } =
 const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
 const { buscarAudits, resumoSuspeitas, registrarAudit, TiposAcao } = require("../utils/audit");
 const { removerCamposCriptografados } = require("../utils/masking");
+const { serializarUsuarioAdmin, serializarDonoAdmin, serializarLojaAdmin } = require("../utils/serializers");
 
 const router = express.Router();
 
@@ -18,12 +19,12 @@ const adminLogin = process.env.ADMIN_LOGIN;
 const adminSenha = process.env.ADMIN_SENHA;
 
 const usuarioAdminSelect = {
-  id: true, nome: true, email: true, cpf: true, telefone: true, googleId: true, createdAt: true,
+  id: true, nome: true, email: true, cpf: true, telefone: true, createdAt: true,
   _count: { select: { agendamentos: true, avaliacoes: true, denuncias: true } },
 };
 
 const donoAdminSelect = {
-  id: true, nome: true, login: true, cnpj: true, googleId: true, createdAt: true,
+  id: true, nome: true, login: true, cnpj: true, createdAt: true,
   _count: { select: { lojas: true } },
 };
 
@@ -32,16 +33,6 @@ const avaliacaoAdminInclude = {
   loja: { select: { id: true, nome: true } },
   _count: { select: { denuncias: true } },
 };
-
-function usuarioProtegido(usuario) {
-  if (!usuario) return usuario;
-  return { ...usuario, email: descriptografarSeNecessario(usuario.email), cpf: descriptografarSeNecessario(usuario.cpf), telefone: descriptografarSeNecessario(usuario.telefone), googleId: undefined };
-}
-
-function donoProtegido(dono) {
-  if (!dono) return dono;
-  return { ...dono, email: descriptografarSeNecessario(dono.email), cnpj: descriptografarSeNecessario(dono.cnpj), googleId: undefined };
-}
 
 function avaliacaoProtegida(avaliacao) {
   if (!avaliacao?.usuario) return avaliacao;
@@ -101,7 +92,7 @@ router.get("/lojas", autenticarAdmin, async (_req, res) => {
       include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } }, servicos: true, _count: { select: { servicos: true, avaliacoes: true } }, avaliacoes: { select: { nota: true } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ lojas });
+    res.json({ lojas: lojas.map((loja) => serializarLojaAdmin(loja)) });
   } catch {
     res.status(500).json({ error: "Erro interno." });
   }
@@ -130,7 +121,7 @@ router.get("/lojas/:id", autenticarAdmin, async (req, res) => {
       include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } }, servicos: { orderBy: { id: "asc" } }, avaliacoes: { select: { nota: true } } },
     });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
-    res.json({ loja });
+    res.json({ loja: serializarLojaAdmin(loja, { cnpjDonoCompleto: true }) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar loja." });
   }
@@ -140,14 +131,15 @@ router.put("/lojas/:id", autenticarAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID invalido." });
-    const atual = await prisma.loja.findUnique({ where: { id }, include: { dono: true } });
+    const atual = await prisma.loja.findUnique({ where: { id }, include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } } } });
     if (!atual) return res.status(404).json({ error: "Loja não encontrada." });
 
     const { dono: donoInput, loja: lojaInput, servicos: servicosInput } = req.body || {};
     const donoNome = String(donoInput?.nome || atual.dono.nome).trim();
     const donoLogin = normalizarLoginDono(donoInput?.login || atual.dono.login);
-    const cnpj = normalizarCnpj(donoInput?.cnpj ?? atual.dono.cnpj);
-    const cnpjAlterado = cnpj !== (atual.dono.cnpj || "");
+    const cnpjAtual = normalizarCnpj(descriptografarSeNecessario(atual.dono.cnpj));
+    const cnpj = normalizarCnpj(donoInput?.cnpj ?? cnpjAtual);
+    const cnpjAlterado = cnpj !== cnpjAtual;
 
     if (!donoNome || !donoLogin) return res.status(400).json({ error: "Informe nome e login do parceiro." });
     if (donoLogin.length < 4) return res.status(400).json({ error: "Login do parceiro deve ter pelo menos 4 caracteres." });
@@ -158,11 +150,12 @@ router.put("/lojas/:id", autenticarAdmin, async (req, res) => {
       if (loginExistente && loginExistente.id !== atual.donoId) return res.status(409).json({ error: "Este login ja pertence a outro parceiro." });
     }
     if (cnpj && cnpjAlterado) {
-      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpj } });
+      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpjIndex: criarIndice(cnpj) } });
       if (cnpjExistente && cnpjExistente.id !== atual.donoId) return res.status(409).json({ error: "Este CNPJ ja pertence a outro parceiro." });
     }
 
-    const donoUpdate = { nome: donoNome, login: donoLogin, cnpj: cnpj || null };
+    const cnpjCipher = cnpj ? criptografar(cnpj) : null;
+    const donoUpdate = { nome: donoNome, login: donoLogin, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpj) };
     const novaSenha = String(donoInput?.senha || "");
     if (novaSenha) {
       if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
@@ -202,9 +195,9 @@ router.put("/lojas/:id", autenticarAdmin, async (req, res) => {
         }
         await tx.servicoLoja.deleteMany({ where: whereRemovidos });
       }
-      return tx.loja.findUnique({ where: { id: loja.id }, include: { dono: true, servicos: true } });
+      return tx.loja.findUnique({ where: { id: loja.id }, include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } }, servicos: true } });
     });
-    res.json({ loja: completa });
+    res.json({ loja: serializarLojaAdmin(completa) });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || "Erro ao atualizar loja pelo admin." });
   }
@@ -215,7 +208,7 @@ router.put("/lojas/:id/bloquear", autenticarAdmin, async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const loja = await prisma.loja.update({ where: { id }, data: { bloqueado: true } });
-    res.json({ loja });
+    res.json({ loja: serializarLojaAdmin(loja) });
   } catch {
     res.status(500).json({ error: "Erro ao bloquear loja." });
   }
@@ -226,7 +219,7 @@ router.put("/lojas/:id/desbloquear", autenticarAdmin, async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const loja = await prisma.loja.update({ where: { id }, data: { bloqueado: false } });
-    res.json({ loja });
+    res.json({ loja: serializarLojaAdmin(loja) });
   } catch {
     res.status(500).json({ error: "Erro ao desbloquear loja." });
   }
@@ -248,11 +241,11 @@ router.delete("/lojas/:id", autenticarAdmin, async (req, res) => {
 router.get("/usuarios", autenticarAdmin, async (req, res) => {
   try {
     const usuarios = await prisma.usuario.findMany({
-      select: { id: true, nome: true, email: true, cpf: true, telefone: true, googleId: true, createdAt: true, _count: { select: { agendamentos: true, avaliacoes: true, denuncias: true } } },
+      select: usuarioAdminSelect,
       orderBy: { createdAt: "desc" },
     });
     await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", enderecoIp: req.ip, detalhes: { quantidade: usuarios.length, ator: "admin" } });
-    res.json({ usuarios: usuarios.map(usuarioProtegido) });
+    res.json({ usuarios: usuarios.map((usuario) => serializarUsuarioAdmin(usuario)) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuários." });
   }
@@ -265,7 +258,7 @@ router.get("/usuarios/:id", autenticarAdmin, async (req, res) => {
     const usuario = await prisma.usuario.findUnique({ where: { id }, select: usuarioAdminSelect });
     if (!usuario) return res.status(404).json({ error: "Usuario nao encontrado." });
     await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
-    res.json({ usuario: usuarioProtegido(usuario) });
+    res.json({ usuario: serializarUsuarioAdmin(usuario, { cpfCompleto: true }) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuario." });
   }
@@ -308,7 +301,7 @@ router.put("/usuarios/:id", autenticarAdmin, async (req, res) => {
       data.senha = await bcrypt.hash(novaSenha, 10);
     }
     const usuario = await prisma.usuario.update({ where: { id }, data, select: usuarioAdminSelect });
-    res.json({ usuario: usuarioProtegido(usuario) });
+    res.json({ usuario: serializarUsuarioAdmin(usuario) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar usuario." });
   }
@@ -333,11 +326,11 @@ router.delete("/usuarios/:id", autenticarAdmin, async (req, res) => {
 router.get("/donos", autenticarAdmin, async (req, res) => {
   try {
     const donos = await prisma.dono.findMany({
-      select: { id: true, nome: true, login: true, cnpj: true, googleId: true, createdAt: true, _count: { select: { lojas: true } } },
+      select: donoAdminSelect,
       orderBy: { createdAt: "desc" },
     });
     await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Dono", enderecoIp: req.ip, detalhes: { quantidade: donos.length, ator: "admin" } });
-    res.json({ donos: donos.map(donoProtegido) });
+    res.json({ donos: donos.map((dono) => serializarDonoAdmin(dono)) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiros." });
   }
@@ -350,7 +343,7 @@ router.get("/donos/:id", autenticarAdmin, async (req, res) => {
     const dono = await prisma.dono.findUnique({ where: { id }, select: donoAdminSelect });
     if (!dono) return res.status(404).json({ error: "Parceiro nao encontrado." });
     await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Dono", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
-    res.json({ dono: donoProtegido(dono) });
+    res.json({ dono: serializarDonoAdmin(dono, { cnpjCompleto: true }) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiro." });
   }
@@ -386,7 +379,7 @@ router.put("/donos/:id", autenticarAdmin, async (req, res) => {
       data.senha = await bcrypt.hash(novaSenha, 10);
     }
     const dono = await prisma.dono.update({ where: { id }, data, select: donoAdminSelect });
-    res.json({ dono: donoProtegido(dono) });
+    res.json({ dono: serializarDonoAdmin(dono) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar parceiro." });
   }

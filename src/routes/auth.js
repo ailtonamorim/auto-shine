@@ -10,6 +10,7 @@ const { limitarAuth } = require("../middlewares/security");
 const { registrarLogin } = require("../utils/audit");
 const { autenticarUsuario } = require("../middlewares/auth");
 const { registrarAudit, registrarExportacao, TiposAcao } = require("../utils/audit");
+const { usuarioPublicSelect, serializarUsuarioPublic } = require("../utils/serializers");
 
 const router = express.Router();
 
@@ -116,9 +117,9 @@ router.get("/auth/logout", (req, res, next) => {
 
 router.get("/api/auth/me", autenticarUsuario, async (req, res) => {
   try {
-    const usuario = await prisma.usuario.findUnique({ where: { id: req.usuario.id }, select: { id: true, nome: true, email: true } });
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.usuario.id }, select: usuarioPublicSelect });
     if (!usuario) return res.status(401).json({ authenticated: false, user: null });
-    res.json({ authenticated: true, user: { id: usuario.id, nome: usuario.nome, email: descriptografarSeNecessario(usuario.email) } });
+    res.json({ authenticated: true, user: serializarUsuarioPublic(usuario) });
   } catch {
     res.status(500).json({ error: "Erro ao consultar a sessão." });
   }
