@@ -8,6 +8,7 @@ const {
   donoPublicSelect,
 } = require('../src/utils/serializers');
 const { mascararEmail, mascararNomeCliente } = require('../src/utils/masking');
+const { sanitizarParaLog, logger } = require('../src/utils/logger');
 
 test('serializarUsuarioPublic remove campos sensíveis e mascara CPF', () => {
   const usuario = {
@@ -89,4 +90,31 @@ test('mascararEmail e mascararNomeCliente protegem dados pessoais', () => {
   assert.ok(!email.includes('joao'));
   assert.ok(nome.startsWith('Cliente #'));
   assert.ok(nome !== 'João Silva');
+});
+
+test('sanitizarParaLog remove senha, token, authorization, CPF, CNPJ, email e telefone', () => {
+  const payload = {
+    password: '123456',
+    token: 'abc123',
+    Authorization: 'Bearer abc123',
+    cpf: '12345678909',
+    cnpj: '12345678000199',
+    email: 'joao@email.com',
+    telefone: '11999998888',
+    nested: { senha: 'segredo', accessToken: 'tok', email: 'a@b.com' },
+  };
+
+  const saida = sanitizarParaLog(payload);
+
+  assert.equal(saida.password, '[REDACTED]');
+  assert.equal(saida.token, '[REDACTED]');
+  assert.equal(saida.Authorization, '[REDACTED]');
+  assert.equal(saida.cpf, '[REDACTED]');
+  assert.equal(saida.cnpj, '[REDACTED]');
+  assert.equal(saida.email, '[REDACTED]');
+  assert.equal(saida.telefone, '[REDACTED]');
+  assert.equal(saida.nested.senha, '[REDACTED]');
+  assert.equal(saida.nested.accessToken, '[REDACTED]');
+  assert.equal(saida.nested.email, '[REDACTED]');
+  assert.equal(typeof logger.info, 'function');
 });

@@ -10,13 +10,14 @@ dotenv.config();
 const requiredConfig = ["JWT_SECRET", "SESSION_SECRET", "ADMIN_LOGIN", "ADMIN_SENHA", "DATA_ENCRYPTION_KEY", "DATA_INDEX_KEY"];
 const missingConfig = requiredConfig.filter((key) => !process.env[key]);
 if (missingConfig.length) {
-  console.error(`Configuracao obrigatoria ausente: ${missingConfig.join(", ")}. Confira o arquivo .env.`);
+  logger.error(`Configuracao obrigatoria ausente: ${missingConfig.join(", ")}. Confira o arquivo .env.`);
   process.exit(1);
 }
 
 const { aplicarHeadersSeguranca } = require("./src/middlewares/security");
 const { garantirIndicesBanco } = require("./src/utils/loja");
 const { validarChavesCriptograficas } = require("./src/utils/crypto");
+const { logger } = require("./src/utils/logger");
 
 const authRouter = require("./src/routes/auth");
 const donoRouter = require("./src/routes/dono");
@@ -41,7 +42,7 @@ const publicPages = new Set([
 ]);
 
 fs.mkdir(uploadsDir, { recursive: true }).catch((err) => {
-  console.error("Não foi possível preparar a pasta de uploads:", err);
+  logger.error("Não foi possível preparar a pasta de uploads:", err);
 });
 
 app.disable("x-powered-by");
@@ -88,14 +89,14 @@ async function iniciarServidor() {
   validarChavesCriptograficas();
   await garantirIndicesBanco();
   server = app.listen(PORT, () => {
-    console.log(`AutoShine ativo em http://localhost:${PORT}`);
+    logger.info(`AutoShine ativo em http://localhost:${PORT}`);
     const googleOAuthConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-    if (!googleOAuthConfigured) console.log("OAuth Google desativado: configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env");
+    if (!googleOAuthConfigured) logger.info("OAuth Google desativado: configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env");
   });
 }
 
 iniciarServidor().catch((err) => {
-  console.error("Nao foi possivel iniciar o AutoShine:", err);
+  logger.error("Nao foi possivel iniciar o AutoShine:", err);
   process.exit(1);
 });
 

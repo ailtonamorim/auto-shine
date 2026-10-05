@@ -4,6 +4,7 @@
  */
 
 const prisma = require("../config/database");
+const { logger } = require("./logger");
 
 /**
  * Tipos de ações auditáveis
@@ -45,13 +46,13 @@ async function registrarAudit({
 }) {
   try {
     if (!acao || !tabela) {
-      console.error("Auditoria: parâmetros obrigatórios faltando");
+      logger.error("Auditoria: parâmetros obrigatórios faltando");
       return null;
     }
 
     // Valida ação
     if (!Object.values(TiposAcao).includes(acao)) {
-      console.warn(`Auditoria: ação desconhecida: ${acao}`);
+      logger.warn(`Auditoria: ação desconhecida: ${acao}`);
     }
 
     // Extrai IP da requisição se não fornecido
@@ -77,13 +78,13 @@ async function registrarAudit({
 
     // Log no console para monitoramento
     const status = sucesso ? "✅" : "❌";
-    console.log(
+    logger.info(
       `[AUDIT] ${status} ${acao} | Tabela: ${tabela} | User: ${usuarioId || "ANÔNIMO"} | IP: ${ip}`
     );
 
     return auditLog;
   } catch (err) {
-    console.error("Erro ao registrar auditoria:", err);
+    logger.error("Erro ao registrar auditoria:", err);
     // Não retorna erro para não quebrar a requisição principal
     return null;
   }
