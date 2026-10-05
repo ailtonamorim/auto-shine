@@ -18,6 +18,13 @@ const imageModerationBlockedCategories = new Set(
 );
 
 const uploadsDir = path.join(__dirname, "..", "..", "assets", "uploads");
+const externalRetentionDays = Number(process.env.EXTERNAL_IMAGE_RETENTION_DAYS || process.env.EXTERNAL_DATA_RETENTION_DAYS || 30);
+
+function normalizarNomeArquivoExterno(nomeArquivo = "imagem") {
+  const identificador = crypto.randomBytes(3).toString("hex");
+  const timestamp = Date.now().toString(36);
+  return `imagem-${timestamp}-${identificador}`.slice(0, 120).toLowerCase();
+}
 
 function detectarMimeImagem(buffer) {
   if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
@@ -73,7 +80,8 @@ function prepararImagemUpload({ imagem, nomeArquivo = "imagem", escopo = "geral"
     const pixels = dimensoes.width * dimensoes.height;
     if (!dimensoes.width || !dimensoes.height || pixels > maxPixels) throw criarErroHttp("A imagem tem dimensoes invalidas ou grandes demais.", 400);
   }
-  return { dataUrl, buffer, extensao, mimeType: mimeDetectado, dimensoes, nomeArquivo, escopo };
+  const nomeArquivoExterno = normalizarNomeArquivoExterno(nomeArquivo);
+  return { dataUrl, buffer, extensao, mimeType: mimeDetectado, dimensoes, nomeArquivo: nomeArquivoExterno, nomeArquivoOriginal: nomeArquivo, escopo, retencaoDias: externalRetentionDays };
 }
 
 function normalizarCategoriaModeracao(categoria) {
@@ -115,7 +123,7 @@ async function consultarModeracaoImagemExterna(upload) {
   try {
     const headers = { "Content-Type": "application/json" };
     if (imageModerationApiToken) headers.Authorization = `Bearer ${imageModerationApiToken}`;
-    const resposta = await fetch(imageModerationApiUrl, { method: "POST", headers, signal: controller.signal, body: JSON.stringify({ imagem: upload.dataUrl, mimeType: upload.mimeType, nomeArquivo: upload.nomeArquivo, escopo: upload.escopo, tamanhoBytes: upload.buffer.length, dimensoes: upload.dimensoes }) });
+    const resposta = await fetch(imageModerationApiUrl, { method: "POST", headers, signal: controller.signal, body: JSON.stringify({ imagem: upload.dataUrl, mimeType: upload.mimeType, nomeArquivo: upload.nomeArquivo, escopo: upload.escopo, tamanhoBytes: upload.buffer.length, dimensoes: upload.dimensoes, retencaoDias: upload.retencaoDias }) });
     if (!resposta.ok) throw new Error(`moderacao respondeu ${resposta.status}`);
     return normalizarResultadoModeracao(await resposta.json(), "externa");
   } finally {
@@ -153,14 +161,14 @@ async function salvarImagemUpload({ imagem, nomeArquivo = "imagem", escopo = "ge
       const stream = cloudinaryV2.uploader.upload_stream({ folder: `autoshine/${escopoSeguro}`, resource_type: "image" }, (error, result) => (error ? reject(error) : resolve(result)));
       stream.end(upload.buffer);
     });
-    return { url: resultado.secure_url, moderacao };
+    return { url: resultado.secure_url, moderacao, retencaoDias: upload.retencaoDias };
   }
-  const baseSeguro = path.basename(String(nomeArquivo || "imagem")).replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 48) || "imagem";
+  const baseSeguro = normalizarNomeArquivoExterno(String(nomeArquivo || "imagem")).slice(0, 48) || "imagem";
   const nomeFinal = `${escopoSeguro}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${baseSeguro}.${upload.extensao}`;
   const destino = path.join(uploadsDir, nomeFinal);
   await fs.mkdir(uploadsDir, { recursive: true });
   await fs.writeFile(destino, upload.buffer);
-  return { url: `assets/uploads/${nomeFinal}`, moderacao };
+  return { url: `assets/uploads/${nomeFinal}`, moderacao, retencaoDias: upload.retencaoDias };
 }
 
-module.exports = { prepararImagemUpload, moderarImagemUpload, exigirImagemPermitida, salvarImagemUpload };
+module.exports = { prepararImagemUpload, moderarImagemUpload, exigirImagemPermitida, salvarImagemUpload, normalizarNomeArquivoExterno };

@@ -9,6 +9,7 @@ const {
 } = require('../src/utils/serializers');
 const { mascararEmail, mascararNomeCliente } = require('../src/utils/masking');
 const { sanitizarParaLog, logger } = require('../src/utils/logger');
+const { normalizarNomeArquivoExterno } = require('../src/utils/imagem');
 
 test('serializarUsuarioPublic remove campos sensíveis e mascara CPF', () => {
   const usuario = {
@@ -117,4 +118,13 @@ test('sanitizarParaLog remove senha, token, authorization, CPF, CNPJ, email e te
   assert.equal(saida.nested.accessToken, '[REDACTED]');
   assert.equal(saida.nested.email, '[REDACTED]');
   assert.equal(typeof logger.info, 'function');
+});
+
+test('normalizarNomeArquivoExterno remove dados pessoais antes do envio para serviços externos', () => {
+  const nome = normalizarNomeArquivoExterno('joao-silva-12345678909-foto.jpg');
+
+  assert.ok(nome.startsWith('imagem-'));
+  assert.ok(!nome.includes('joao'));
+  assert.ok(!nome.includes('12345678909'));
+  assert.ok(!nome.includes('silva'));
 });

@@ -53,6 +53,8 @@ IMAGE_MODERATION_TIMEOUT_MS=8000
 IMAGE_MODERATION_BLOCK_THRESHOLD=0.8
 IMAGE_MODERATION_BLOCK_CATEGORIES=adult,nudity,porn,sexual,violence,gore,hate,self-harm,weapon,drugs,illegal,child-safety
 IMAGE_MAX_PIXELS=25000000
+EXTERNAL_DATA_RETENTION_DAYS=30
+EXTERNAL_IMAGE_RETENTION_DAYS=30
 ```
 
 `DATA_ENCRYPTION_KEY` protege os valores com AES-256-GCM; `DATA_INDEX_KEY` é uma chave distinta usada somente nos índices HMAC de busca/unicidade. Gere um valor com `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` e execute o comando novamente para obter a outra chave. Guarde ambas em um gerenciador de segredos. Nunca reutilize a chave AES como chave de índice.
@@ -112,7 +114,9 @@ O painel do parceiro também permite upload real de fotos, salvas em `assets/upl
 
 Uploads em `POST /api/uploads/imagem` passam por validação de formato real, tamanho, dimensões e moderação antes de serem salvos. A rota `POST /api/moderacao/imagem` permite pré-validar a mesma imagem sem gravar arquivo.
 
-Configure `IMAGE_MODERATION_API_URL` para apontar para um serviço externo de classificação. O AutoShine envia `imagem`, `mimeType`, `nomeArquivo`, `escopo`, `tamanhoBytes` e `dimensões`, e aceita respostas com campos como `allowed`, `blocked`, `flagged`, `score`, `categories`/`category_scores` ou equivalentes em português. Se `IMAGE_MODERATION_REQUIRED=true`, uploads falham quando o serviço externo estiver indisponível.
+Configure `IMAGE_MODERATION_API_URL` para apontar para um serviço externo de classificação. O AutoShine envia somente o mínimo necessário: `imagem`, `mimeType`, `escopo`, `tamanhoBytes`, `dimensões` e um `nomeArquivo` sanitizado, sem dados pessoais do usuário original. Nomes reais de arquivos não são enviados para provedores externos. Se `IMAGE_MODERATION_REQUIRED=true`, uploads falham quando o serviço externo estiver indisponível.
+
+Todos os dados enviados para serviços externos são tratados como dados de processamento mínimo e não devem ser retidos por mais que o necessário para a validação. O projeto usa `EXTERNAL_DATA_RETENTION_DAYS` e `EXTERNAL_IMAGE_RETENTION_DAYS` para documentar a retenção máxima em dias; em produção, esse valor deve refletir o contrato do provedor e o limite operacional do caso de uso. Em geral, os valores devem ser mantidos em 30 dias ou menos, e qualquer resposta de API externa deve ser descartada após a conclusão do processamento.
 
 ## Agenda por loja
 
