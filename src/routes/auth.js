@@ -11,6 +11,7 @@ const { registrarLogin } = require("../utils/audit");
 const { autenticarUsuario } = require("../middlewares/auth");
 const { registrarAudit, registrarExportacao, TiposAcao } = require("../utils/audit");
 const { usuarioPublicSelect, serializarUsuarioPublic } = require("../utils/serializers");
+const { logger } = require("../utils/logger");
 
 const router = express.Router();
 
@@ -77,7 +78,7 @@ router.get("/auth/google/callback", (req, res, next) => {
           const next = encodeURIComponent(returnTo);
           res.redirect(`/cadastro-dono.html?auth=dono_google_success&next=${next}`);
         } catch (err) {
-          console.error("Erro no Google auth do dono:", err);
+          logger.error("Erro no Google auth do dono:", err);
           res.redirect("/cadastro-dono.html?auth=google_failed");
         }
       })();
@@ -101,7 +102,7 @@ router.get("/auth/google/callback", (req, res, next) => {
         const next = encodeURIComponent(returnTo);
         res.redirect(`/cadastro.html?mode=login&auth=success&provider=google&next=${next}`);
       } catch (err) {
-        console.error("Erro no Google auth do cliente:", err);
+        logger.error("Erro no Google auth do cliente:", err);
         res.redirect("/cadastro.html?mode=login&auth=google_failed");
       }
     })();
@@ -156,7 +157,7 @@ router.get("/api/meus-dados", autenticarUsuario, async (req, res) => {
       })),
     } });
   } catch (err) {
-    console.error("Erro ao consultar dados do titular:", err);
+    logger.error("Erro ao consultar dados do titular:", err);
     res.status(500).json({ error: "Erro ao consultar seus dados." });
   }
 });
@@ -214,7 +215,7 @@ router.delete("/api/meus-dados", autenticarUsuario, async (req, res) => {
     await registrarAudit({ acao: TiposAcao.DELETAR, tabela: "Usuario", recordId: usuarioId, usuarioId, enderecoIp: req.ip });
     res.json({ ok: true });
   } catch (err) {
-    console.error("Erro ao excluir dados do titular:", err);
+    logger.error("Erro ao excluir dados do titular:", err);
     res.status(500).json({ error: "Não foi possível excluir seus dados." });
   }
 });
@@ -239,7 +240,7 @@ router.post("/api/auth/signup", limitarAuth, async (req, res) => {
     definirCookieAuth(res, "usuario", token);
     res.status(201).json({ user: { id: usuario.id, nome: usuario.nome, email: emailNorm } });
   } catch (err) {
-    console.error("Erro no cadastro:", err);
+    logger.error("Erro no cadastro:", err);
     res.status(500).json({ error: "Erro interno ao criar conta." });
   }
 });
@@ -263,7 +264,7 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
     definirCookieAuth(res, "usuario", token);
     res.json({ user: { id: usuario.id, nome: usuario.nome, email: normalizarEmail(email) } });
   } catch (err) {
-    console.error("Erro no login:", err);
+    logger.error("Erro no login:", err);
     res.status(500).json({ error: "Erro interno ao fazer login." });
   }
 });

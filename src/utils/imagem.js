@@ -3,6 +3,7 @@ const fs = require("fs/promises");
 const crypto = require("crypto");
 const { cloudinaryV2, cloudinaryAtivo } = require("../config/cloudinary");
 const { criarErroHttp } = require("./validators");
+const { logger } = require("./logger");
 
 const imageModerationEnabled = process.env.IMAGE_MODERATION_ENABLED !== "false";
 const imageModerationRequired = process.env.IMAGE_MODERATION_REQUIRED === "true";
@@ -131,7 +132,7 @@ async function moderarImagemUpload(upload) {
   try {
     return await consultarModeracaoImagemExterna(upload);
   } catch (err) {
-    console.warn(`Aviso: moderacao de imagem indisponivel: ${err.message}`);
+    logger.warn("Aviso: moderacao de imagem indisponivel.", err);
     if (imageModerationRequired) throw criarErroHttp("Nao foi possivel moderar a imagem agora. Tente novamente mais tarde.", 503);
     return { aprovada: true, bloqueada: false, origem: "fallback-local", score: 0, categorias: [], motivos: ["Servico externo indisponivel; validacao local de formato aprovada."], mensagem: "Imagem aprovada pela validacao local." };
   }

@@ -6,6 +6,7 @@ const { enviarEmailReset } = require("../config/email");
 const { normalizarEmail, emailValido } = require("../utils/validators");
 const { limitarReset } = require("../middlewares/security");
 const { criarIndice, criarHashToken } = require("../utils/crypto");
+const { logger } = require("../utils/logger");
 
 const router = express.Router();
 
@@ -32,11 +33,11 @@ router.post("/solicitar", limitarReset, async (req, res) => {
         }
       }
     } catch (dbErr) {
-      console.warn("Aviso reset-senha:", dbErr.message?.split("\n")[0]);
+      logger.warn("Aviso reset-senha:", dbErr?.message?.split("\n")[0]);
     }
     res.json({ ok: true, mensagem: "Se este email estiver cadastrado, você receberá um link de recuperação em breve." });
   } catch (err) {
-    console.error("Erro ao solicitar reset:", err);
+    logger.error("Erro ao solicitar reset:", err);
     res.status(500).json({ error: "Erro interno ao solicitar recuperação." });
   }
 });
@@ -58,11 +59,11 @@ router.post("/confirmar", limitarReset, async (req, res) => {
         await prisma.dono.update({ where: { id: dono.id }, data: { senha: await bcrypt.hash(novaSenha, 10), resetToken: null, resetTokenHash: null, resetTokenExpiry: null } });
       }
     } catch (dbErr) {
-      console.warn("Aviso reset-confirmar:", dbErr.message?.split("\n")[0]);
+      logger.warn("Aviso reset-confirmar:", dbErr?.message?.split("\n")[0]);
     }
     res.json({ ok: true, mensagem: "Senha alterada com sucesso! Você já pode fazer login." });
   } catch (err) {
-    console.error("Erro ao confirmar reset:", err);
+    logger.error("Erro ao confirmar reset:", err);
     res.status(500).json({ error: "Erro interno ao redefinir senha." });
   }
 });

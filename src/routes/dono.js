@@ -8,6 +8,7 @@ const { consultarCnpjBrasilApi } = require("../utils/geocode");
 const { autenticarDono } = require("../middlewares/auth");
 const { limitarAuth } = require("../middlewares/security");
 const { donoPublicSelect, serializarDonoPublic } = require("../utils/serializers");
+const { logger } = require("../utils/logger");
 
 const router = express.Router();
 
@@ -24,9 +25,9 @@ router.post("/cadastro", limitarAuth, async (req, res) => {
     if (emailNorm && !emailValido(emailNorm)) return res.status(400).json({ error: "Email inválido." });
     try {
       const cnpjValidado = await consultarCnpjBrasilApi(cnpjNorm);
-      if (!cnpjValidado.valido) console.warn(`Aviso: CNPJ ${cnpjNorm} não encontrado na Receita Federal, mas permitindo cadastro.`);
+      if (!cnpjValidado.valido) logger.warn("Aviso: CNPJ não encontrado na Receita Federal, mas permitindo cadastro.");
     } catch (err) {
-      console.warn(`Aviso: Erro ao validar CNPJ com BrasilAPI: ${err.message}`);
+      logger.warn("Aviso: Erro ao validar CNPJ com BrasilAPI.", err);
     }
     const existente = await prisma.dono.findUnique({ where: { login: loginNorm } });
     if (existente) return res.status(409).json({ error: "Este login ja esta em uso." });
@@ -44,7 +45,7 @@ router.post("/cadastro", limitarAuth, async (req, res) => {
     definirCookieAuth(res, "dono", token);
     res.status(201).json({ dono: { id: dono.id, nome: dono.nome, login: dono.login } });
   } catch (err) {
-    console.error("Erro no cadastro do dono:", err);
+    logger.error("Erro no cadastro do dono:", err);
     res.status(500).json({ error: "Erro interno." });
   }
 });
@@ -62,7 +63,7 @@ router.post("/login", limitarAuth, async (req, res) => {
     definirCookieAuth(res, "dono", token);
     res.json({ dono: { id: dono.id, nome: dono.nome, login: dono.login } });
   } catch (err) {
-    console.error("Erro no login do dono:", err);
+    logger.error("Erro no login do dono:", err);
     res.status(500).json({ error: "Erro interno." });
   }
 });
