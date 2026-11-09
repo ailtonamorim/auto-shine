@@ -1674,7 +1674,17 @@ async function initPartnerPage() {
         return;
       }
 
-      bookingsList.innerHTML = cachedBookings
+      const validarBox = `
+        <div class="validar-codigo-box">
+          <p class="validar-codigo-label">🔑 Confirmar retirada de veículo</p>
+          <div class="validar-codigo-row">
+            <input type="text" id="input-codigo-retirada" class="validar-codigo-input" placeholder="Digite o código do cliente (ex: A3F2BC)" maxlength="6" autocomplete="off" />
+            <button class="btn btn-primary" type="button" id="btn-validar-codigo">Confirmar</button>
+          </div>
+          <p id="validar-codigo-msg" class="validar-codigo-msg"></p>
+        </div>`;
+
+      bookingsList.innerHTML = validarBox + cachedBookings
         .map((ag) => {
           const safeShopName = escapeHtml(ag.loja?.nome || "Lava jato");
           const safeService = escapeHtml(ag.servico?.nome || "Serviço");
@@ -1692,6 +1702,7 @@ async function initPartnerPage() {
                 ? "booking-status-canceled"
                 : "booking-status-pending";
           const safeId = escapeHtml(String(ag.id));
+          const codigo = ag.codigoRetirada ? `<p class="booking-codigo-retirada">🔑 Código: <strong>${escapeHtml(ag.codigoRetirada)}</strong></p>` : "";
 
           return `
           <article class="booking-received-item">
@@ -1704,6 +1715,7 @@ async function initPartnerPage() {
             <p><strong>Veículo:</strong> ${safeVehicle}</p>
             <p><strong>Cliente:</strong> ${escapeHtml(customerName)} (${escapeHtml(customerEmail)})</p>
             ${safeNotes ? `<p><strong>Obs:</strong> ${safeNotes}</p>` : ""}
+            ${codigo}
             <div class="booking-item-actions">
               ${status !== "finalizado" ? `<button class="btn btn-secondary" type="button" data-finish-booking="${safeId}">Marcar como finalizado</button>` : ""}
               ${status === "finalizado" ? `<button class="btn btn-secondary" type="button" data-reopen-booking="${safeId}">Reabrir agendamento</button>` : ""}
@@ -1712,6 +1724,41 @@ async function initPartnerPage() {
           </article>`;
         })
         .join("");
+
+      // Lógica de validação do código
+      const btnValidar = document.getElementById("btn-validar-codigo");
+      const inputCodigo = document.getElementById("input-codigo-retirada");
+      const msgValidar = document.getElementById("validar-codigo-msg");
+      if (btnValidar && inputCodigo) {
+        btnValidar.addEventListener("click", async () => {
+          const codigo = inputCodigo.value.trim().toUpperCase();
+          if (!codigo) { msgValidar.textContent = "Digite o código do cliente."; msgValidar.style.color = "var(--danger, #e05252)"; return; }
+          btnValidar.disabled = true;
+          msgValidar.textContent = "Validando...";
+          msgValidar.style.color = "var(--muted)";
+          try {
+            const res = await donoFetch("/api/agendamentos/validar-codigo", {
+              method: "POST",
+              body: JSON.stringify({ codigo }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              msgValidar.textContent = data.error || "Código inválido.";
+              msgValidar.style.color = "var(--danger, #e05252)";
+            } else {
+              msgValidar.textContent = `✅ Retirada confirmada! ${data.agendamento.cliente} — ${data.agendamento.servico}`;
+              msgValidar.style.color = "var(--success, #3ecf8e)";
+              inputCodigo.value = "";
+              await renderReceivedBookings();
+            }
+          } catch {
+            msgValidar.textContent = "Erro de conexão.";
+            msgValidar.style.color = "var(--danger, #e05252)";
+          }
+          btnValidar.disabled = false;
+        });
+        inputCodigo.addEventListener("keydown", (e) => { if (e.key === "Enter") btnValidar.click(); });
+      }
     } catch {
       bookingsList.innerHTML = '<p class="empty-copy">Erro ao carregar agendamentos.</p>';
       cachedBookings = [];

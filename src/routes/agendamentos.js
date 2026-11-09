@@ -1,10 +1,15 @@
 const express = require("express");
+const crypto = require("crypto");
 const prisma = require("../config/database");
 const { autenticarUsuario, autenticarDono } = require("../middlewares/auth");
 const { dataEhPassado } = require("../utils/validators");
 const { horarioOcupado, montarDisponibilidadeLoja, statusValidos, statusBloqueiamHorario, erroHorarioReservado } = require("../utils/agenda");
 
 const router = express.Router();
+
+function gerarCodigoRetirada() {
+  return crypto.randomBytes(3).toString("hex").toUpperCase();
+}
 
 router.post("/", autenticarUsuario, async (req, res) => {
   try {
@@ -20,7 +25,7 @@ router.post("/", autenticarUsuario, async (req, res) => {
     if (!servico) return res.status(404).json({ error: "Serviço não encontrado nesta loja." });
     if (await horarioOcupado({ lojaId, data, hora })) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     const agendamento = await prisma.agendamento.create({
-      data: { data, hora, veiculo: veiculo || "Carro", notas: notas || null, nomeCliente: nomeCliente || null, emailCliente: emailCliente || null, usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId) },
+      data: { data, hora, veiculo: veiculo || "Carro", notas: notas || null, nomeCliente: nomeCliente || null, emailCliente: emailCliente || null, usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId), codigoRetirada: gerarCodigoRetirada() },
       include: { loja: { select: { nome: true } }, servico: { select: { nome: true } } },
     });
     res.status(201).json({ agendamento });
@@ -28,6 +33,48 @@ router.post("/", autenticarUsuario, async (req, res) => {
     if (erroHorarioReservado(err)) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     console.error("Erro ao criar agendamento:", err);
     res.status(500).json({ error: "Erro ao criar agendamento." });
+  }
+});
+
+router.post("/validar-codigo", autenticarDono, async (req, res) => {
+  try {
+    const { codigo } = req.body;
+    if (!codigo) return res.status(400).json({ error: "Informe o código de retirada." });
+
+    const agendamento = await prisma.agendamento.findFirst({
+      where: { codigoRetirada: codigo.trim().toUpperCase() },
+      include: {
+        loja: { select: { id: true, nome: true, donoId: true } },
+        servico: { select: { nome: true } },
+        usuario: { select: { nome: true } },
+      },
+    });
+
+    if (!agendamento) return res.status(404).json({ error: "Código inválido. Verifique e tente novamente." });
+    if (agendamento.loja.donoId !== req.dono.donoId) return res.status(403).json({ error: "Este agendamento não pertence ao seu lava jato." });
+    if (agendamento.status === "cancelado") return res.status(400).json({ error: "Este agendamento foi cancelado." });
+    if (agendamento.status === "finalizado") return res.status(400).json({ error: "Este agendamento já foi finalizado." });
+
+    const atualizado = await prisma.agendamento.update({
+      where: { id: agendamento.id },
+      data: { status: "finalizado" },
+    });
+
+    res.json({
+      ok: true,
+      agendamento: {
+        id: atualizado.id,
+        loja: agendamento.loja.nome,
+        servico: agendamento.servico.nome,
+        cliente: agendamento.usuario?.nome || agendamento.nomeCliente || "Cliente",
+        data: agendamento.data,
+        hora: agendamento.hora,
+        veiculo: agendamento.veiculo,
+      },
+    });
+  } catch (err) {
+    console.error("Erro ao validar código:", err);
+    res.status(500).json({ error: "Erro ao validar código." });
   }
 });
 

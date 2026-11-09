@@ -1,17 +1,25 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View, Text, Image, ScrollView, StyleSheet,
-  ActivityIndicator, TouchableOpacity, Alert,
+  ActivityIndicator, TouchableOpacity, Alert, Dimensions, NativeSyntheticEvent, NativeScrollEvent,
 } from "react-native";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+import { Ionicons } from "@expo/vector-icons";
 import { getLoja } from "../../api/lojas";
+import { getFavoritos, favoritar, desfavoritar } from "../../api/favoritos";
+import { useAuth } from "../../context/AuthContext";
 import { Loja } from "../../types";
 import { formatarPreco, calcularMediaAvaliacoes, formatarNota, formatarData } from "../../utils";
 import { COLORS, SPACING, RADIUS } from "../../constants";
 
 export default function PerfilLojaScreen({ route, navigation }: any) {
   const { lojaId } = route.params;
+  const { token } = useAuth();
   const [loja, setLoja] = useState<Loja | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [favoritado, setFavoritado] = useState(false);
+  const [fotoAtual, setFotoAtual] = useState(0);
 
   useEffect(() => {
     getLoja(lojaId)
@@ -19,6 +27,31 @@ export default function PerfilLojaScreen({ route, navigation }: any) {
       .catch(() => Alert.alert("Erro", "Não foi possível carregar o lava jato."))
       .finally(() => setCarregando(false));
   }, [lojaId]);
+
+  useEffect(() => {
+    if (!token) {
+      setFavoritado(false);
+      return;
+    }
+    getFavoritos(token)
+      .then((favoritos) => setFavoritado(favoritos.some((f) => f.id === lojaId)))
+      .catch(() => {});
+  }, [lojaId, token]);
+
+  async function handleToggleFavorito() {
+    if (!token) {
+      navigation.navigate("Login");
+      return;
+    }
+    const novoEstado = !favoritado;
+    setFavoritado(novoEstado);
+    try {
+      if (novoEstado) await favoritar(lojaId, token);
+      else await desfavoritar(lojaId, token);
+    } catch {
+      setFavoritado(!novoEstado);
+    }
+  }
 
   if (carregando) {
     return (
@@ -38,8 +71,17 @@ export default function PerfilLojaScreen({ route, navigation }: any) {
 
   const media = calcularMediaAvaliacoes(loja.avaliacoes || []);
   const totalAvaliacoes = loja.avaliacoes?.length || 0;
-  const diasFuncionamento = loja.agendaDias || "";
   const horarios = loja.agendaHorarios || "";
+
+  const fotosExtras = loja.fotosAdicionais
+    ? loja.fotosAdicionais.split("\n").map((u) => u.trim()).filter(Boolean)
+    : [];
+  const todasFotos = [loja.fotoUrl, ...fotosExtras];
+
+  function onScrollFoto(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    setFotoAtual(idx);
+  }
 
   return (
     <View style={styles.container}>
@@ -48,9 +90,39 @@ export default function PerfilLojaScreen({ route, navigation }: any) {
         <Text style={styles.btnVoltarTexto}>← Voltar</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity style={styles.btnFavorito} onPress={handleToggleFavorito} hitSlop={8}>
+        <Ionicons name={favoritado ? "heart" : "heart-outline"} size={18} color={favoritado ? COLORS.primary : "#fff"} />
+      </TouchableOpacity>
+
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Foto principal */}
-        <Image source={{ uri: loja.fotoUrl }} style={styles.foto} resizeMode="cover" />
+        {/* Carrossel de fotos */}
+        <View style={styles.carrosselContainer}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={onScrollFoto}
+          >
+            {todasFotos.map((uri, idx) => (
+              <Image key={idx} source={{ uri }} style={styles.foto} resizeMode="cover" />
+            ))}
+          </ScrollView>
+
+          {todasFotos.length > 1 && (
+            <>
+              {/* Contador */}
+              <View style={styles.contador}>
+                <Text style={styles.contadorTexto}>{fotoAtual + 1}/{todasFotos.length}</Text>
+              </View>
+              {/* Dots */}
+              <View style={styles.dots}>
+                {todasFotos.map((_, idx) => (
+                  <View key={idx} style={[styles.dot, idx === fotoAtual && styles.dotAtivo]} />
+                ))}
+              </View>
+            </>
+          )}
+        </View>
 
         <View style={styles.conteudo}>
           {/* Nome e avaliação */}
@@ -145,7 +217,25 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
   },
   btnVoltarTexto: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  foto: { width: "100%", height: 260 },
+  btnFavorito: {
+    position: "absolute", top: 48, right: SPACING.md, zIndex: 10,
+    backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 20,
+    width: 36, height: 36, justifyContent: "center", alignItems: "center",
+  },
+  carrosselContainer: { position: "relative" },
+  foto: { width: SCREEN_WIDTH, height: 260 },
+  contador: {
+    position: "absolute", top: SPACING.md, right: SPACING.md,
+    backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 12,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  contadorTexto: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  dots: {
+    position: "absolute", bottom: SPACING.sm,
+    left: 0, right: 0, flexDirection: "row", justifyContent: "center", gap: 6,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.4)" },
+  dotAtivo: { backgroundColor: "#fff", width: 18 },
   conteudo: { padding: SPACING.lg },
   nome: { fontSize: 22, fontWeight: "800", color: COLORS.text, marginBottom: SPACING.xs },
   metaRow: { flexDirection: "row", alignItems: "center", marginBottom: SPACING.xs },

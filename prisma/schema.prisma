@@ -83,8 +83,9 @@ model Agendamento {
   data         String
   hora         String
   veiculo      String       @default("Carro")
-  notas        String?
-  status       String       @default("pendente")
+  notas           String?
+  status          String       @default("pendente")
+  codigoRetirada  String?      @unique
   nomeCliente  String?
   emailCliente String?
   usuarioId    Int?

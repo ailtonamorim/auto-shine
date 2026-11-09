@@ -2776,6 +2776,55 @@ a.owner-dashboard-nav {
   color: #80b8ff;
 }
 
+.validar-codigo-box {
+  background: rgba(47, 127, 255, 0.07);
+  border: 1px solid rgba(47, 127, 255, 0.3);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+.validar-codigo-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.validar-codigo-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.validar-codigo-input {
+  flex: 1;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  max-width: 200px;
+}
+.validar-codigo-msg {
+  font-size: 13px;
+  margin-top: 8px;
+  min-height: 18px;
+  font-weight: 600;
+}
+.booking-codigo-retirada {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.booking-codigo-retirada strong {
+  color: var(--primary);
+  letter-spacing: 2px;
+  font-size: 15px;
+}
+
 .booking-received-item {
   border: 1px solid rgba(47, 127, 255, 0.18);
   border-radius: var(--radius);
