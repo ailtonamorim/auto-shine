@@ -4,10 +4,14 @@ const bcrypt = require("bcrypt");
 const prisma = require("../config/database");
 const { autenticarAdmin } = require("../middlewares/auth");
 const { limitarAuth } = require("../middlewares/security");
-const { gerarTokenAdmin } = require("../utils/tokens");
+const { gerarTokenAdmin, definirCookieAuth, limparCookieAuth } = require("../utils/tokens");
 const { normalizarLoginDono, normalizarCnpj, normalizarEmail, normalizarCpf, normalizarTelefone, emailValido, cnpjTemDigitoValido, cpfTemDigitoValido, fotoAvaliacaoValida, serializarFotosAdicionais, serializarListaTexto, coordenadasValidas, imagemLojaValida } = require("../utils/validators");
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("../utils/agenda");
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
+const { criptografar, descriptografarSeNecessario, criarIndice } = require("../utils/crypto");
+const { buscarAudits, resumoSuspeitas, registrarAudit, TiposAcao } = require("../utils/audit");
+const { removerCamposCriptografados, sanitizarTexto, mascararEmail, mascararNomeCliente } = require("../utils/masking");
+const { serializarUsuarioAdmin, serializarDonoAdmin, serializarLojaAdmin } = require("../utils/serializers");
 
 const router = express.Router();
 
@@ -15,12 +19,12 @@ const adminLogin = process.env.ADMIN_LOGIN;
 const adminSenha = process.env.ADMIN_SENHA;
 
 const usuarioAdminSelect = {
-  id: true, nome: true, email: true, cpf: true, telefone: true, googleId: true, createdAt: true,
+  id: true, nome: true, email: true, cpf: true, telefone: true, createdAt: true,
   _count: { select: { agendamentos: true, avaliacoes: true, denuncias: true } },
 };
 
 const donoAdminSelect = {
-  id: true, nome: true, login: true, cnpj: true, googleId: true, createdAt: true,
+  id: true, nome: true, login: true, cnpj: true, createdAt: true,
   _count: { select: { lojas: true } },
 };
 
@@ -29,6 +33,25 @@ const avaliacaoAdminInclude = {
   loja: { select: { id: true, nome: true } },
   _count: { select: { denuncias: true } },
 };
+
+function avaliacaoProtegida(avaliacao) {
+  if (!avaliacao?.usuario) return avaliacao;
+  return { ...avaliacao, usuario: { ...avaliacao.usuario, email: avaliacao.usuario.email ? mascararEmail(descriptografarSeNecessario(avaliacao.usuario.email)) : null } };
+}
+
+function serializarAgendamentoAdmin(item) {
+  const nomeCliente = descriptografarSeNecessario(item.nomeCliente);
+  const emailCliente = descriptografarSeNecessario(item.emailCliente);
+  const usuarioEmail = item.usuario ? descriptografarSeNecessario(item.usuario.email) : null;
+
+  return {
+    ...removerCamposCriptografados(item),
+    notas: sanitizarTexto(descriptografarSeNecessario(item.notas)),
+    nomeCliente: nomeCliente ? mascararNomeCliente(nomeCliente, item.usuarioId || item.id) : null,
+    emailCliente: emailCliente ? mascararEmail(emailCliente) : null,
+    usuario: item.usuario ? { ...item.usuario, email: usuarioEmail ? mascararEmail(usuarioEmail) : null } : null,
+  };
+}
 
 router.post("/login", limitarAuth, async (req, res) => {
   const { login, senha } = req.body || {};
@@ -40,7 +63,14 @@ router.post("/login", limitarAuth, async (req, res) => {
   } catch {
     return res.status(401).json({ error: "Login ou senha incorretos." });
   }
-  res.json({ token: gerarTokenAdmin() });
+  definirCookieAuth(res, "admin", gerarTokenAdmin());
+  res.json({ ok: true });
+});
+
+router.get("/session", autenticarAdmin, (_req, res) => res.json({ authenticated: true }));
+router.post("/logout", (_req, res) => {
+  limparCookieAuth(res, "admin");
+  res.json({ ok: true });
 });
 
 router.get("/resumo", autenticarAdmin, async (_req, res) => {
@@ -56,13 +86,27 @@ router.get("/resumo", autenticarAdmin, async (_req, res) => {
   }
 });
 
+router.get("/auditoria", autenticarAdmin, async (req, res) => {
+  try {
+    const limite = Math.min(Math.max(Number(req.query.limite) || 100, 1), 1000);
+    const diasRetro = Math.min(Math.max(Number(req.query.diasRetro) || 30, 1), 365);
+    const [audits, suspeitas] = await Promise.all([
+      buscarAudits({ acao: req.query.acao || null, tabela: req.query.tabela || null, diasRetro, limite }),
+      resumoSuspeitas(diasRetro),
+    ]);
+    res.json({ audits, suspeitas });
+  } catch {
+    res.status(500).json({ error: "Erro ao carregar auditoria." });
+  }
+});
+
 router.get("/lojas", autenticarAdmin, async (_req, res) => {
   try {
     const lojas = await prisma.loja.findMany({
       include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } }, servicos: true, _count: { select: { servicos: true, avaliacoes: true } }, avaliacoes: { select: { nota: true } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ lojas });
+    res.json({ lojas: lojas.map((loja) => serializarLojaAdmin(loja)) });
   } catch {
     res.status(500).json({ error: "Erro interno." });
   }
@@ -91,7 +135,7 @@ router.get("/lojas/:id", autenticarAdmin, async (req, res) => {
       include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } }, servicos: { orderBy: { id: "asc" } }, avaliacoes: { select: { nota: true } } },
     });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
-    res.json({ loja });
+    res.json({ loja: serializarLojaAdmin(loja, { cnpjDonoCompleto: true }) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar loja." });
   }
@@ -101,14 +145,15 @@ router.put("/lojas/:id", autenticarAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID invalido." });
-    const atual = await prisma.loja.findUnique({ where: { id }, include: { dono: true } });
+    const atual = await prisma.loja.findUnique({ where: { id }, include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } } } });
     if (!atual) return res.status(404).json({ error: "Loja não encontrada." });
 
     const { dono: donoInput, loja: lojaInput, servicos: servicosInput } = req.body || {};
     const donoNome = String(donoInput?.nome || atual.dono.nome).trim();
     const donoLogin = normalizarLoginDono(donoInput?.login || atual.dono.login);
-    const cnpj = normalizarCnpj(donoInput?.cnpj ?? atual.dono.cnpj);
-    const cnpjAlterado = cnpj !== (atual.dono.cnpj || "");
+    const cnpjAtual = normalizarCnpj(descriptografarSeNecessario(atual.dono.cnpj));
+    const cnpj = normalizarCnpj(donoInput?.cnpj ?? cnpjAtual);
+    const cnpjAlterado = cnpj !== cnpjAtual;
 
     if (!donoNome || !donoLogin) return res.status(400).json({ error: "Informe nome e login do parceiro." });
     if (donoLogin.length < 4) return res.status(400).json({ error: "Login do parceiro deve ter pelo menos 4 caracteres." });
@@ -119,11 +164,12 @@ router.put("/lojas/:id", autenticarAdmin, async (req, res) => {
       if (loginExistente && loginExistente.id !== atual.donoId) return res.status(409).json({ error: "Este login ja pertence a outro parceiro." });
     }
     if (cnpj && cnpjAlterado) {
-      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpj } });
+      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpjIndex: criarIndice(cnpj) } });
       if (cnpjExistente && cnpjExistente.id !== atual.donoId) return res.status(409).json({ error: "Este CNPJ ja pertence a outro parceiro." });
     }
 
-    const donoUpdate = { nome: donoNome, login: donoLogin, cnpj: cnpj || null };
+    const cnpjCipher = cnpj ? criptografar(cnpj) : null;
+    const donoUpdate = { nome: donoNome, login: donoLogin, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpj) };
     const novaSenha = String(donoInput?.senha || "");
     if (novaSenha) {
       if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
@@ -163,9 +209,9 @@ router.put("/lojas/:id", autenticarAdmin, async (req, res) => {
         }
         await tx.servicoLoja.deleteMany({ where: whereRemovidos });
       }
-      return tx.loja.findUnique({ where: { id: loja.id }, include: { dono: true, servicos: true } });
+      return tx.loja.findUnique({ where: { id: loja.id }, include: { dono: { select: { id: true, nome: true, login: true, cnpj: true } }, servicos: true } });
     });
-    res.json({ loja: completa });
+    res.json({ loja: serializarLojaAdmin(completa) });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || "Erro ao atualizar loja pelo admin." });
   }
@@ -176,7 +222,7 @@ router.put("/lojas/:id/bloquear", autenticarAdmin, async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const loja = await prisma.loja.update({ where: { id }, data: { bloqueado: true } });
-    res.json({ loja });
+    res.json({ loja: serializarLojaAdmin(loja) });
   } catch {
     res.status(500).json({ error: "Erro ao bloquear loja." });
   }
@@ -187,7 +233,7 @@ router.put("/lojas/:id/desbloquear", autenticarAdmin, async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const loja = await prisma.loja.update({ where: { id }, data: { bloqueado: false } });
-    res.json({ loja });
+    res.json({ loja: serializarLojaAdmin(loja) });
   } catch {
     res.status(500).json({ error: "Erro ao desbloquear loja." });
   }
@@ -206,13 +252,14 @@ router.delete("/lojas/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/usuarios", autenticarAdmin, async (_req, res) => {
+router.get("/usuarios", autenticarAdmin, async (req, res) => {
   try {
     const usuarios = await prisma.usuario.findMany({
-      select: { id: true, nome: true, email: true, cpf: true, telefone: true, googleId: true, createdAt: true, _count: { select: { agendamentos: true, avaliacoes: true, denuncias: true } } },
+      select: usuarioAdminSelect,
       orderBy: { createdAt: "desc" },
     });
-    res.json({ usuarios });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", enderecoIp: req.ip, detalhes: { quantidade: usuarios.length, ator: "admin" } });
+    res.json({ usuarios: usuarios.map((usuario) => serializarUsuarioAdmin(usuario)) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuários." });
   }
@@ -224,7 +271,8 @@ router.get("/usuarios/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const usuario = await prisma.usuario.findUnique({ where: { id }, select: usuarioAdminSelect });
     if (!usuario) return res.status(404).json({ error: "Usuario nao encontrado." });
-    res.json({ usuario });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Usuario", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
+    res.json({ usuario: serializarUsuarioAdmin(usuario, { cpfCompleto: true }) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar usuario." });
   }
@@ -237,31 +285,37 @@ router.put("/usuarios/:id", autenticarAdmin, async (req, res) => {
     const atual = await prisma.usuario.findUnique({ where: { id } });
     if (!atual) return res.status(404).json({ error: "Usuario nao encontrado." });
     const nome = String(req.body?.nome ?? atual.nome).trim();
-    const email = normalizarEmail(req.body?.email ?? atual.email);
-    const cpf = req.body?.cpf === undefined ? atual.cpf : normalizarCpf(req.body.cpf);
-    const telefone = req.body?.telefone === undefined ? atual.telefone : normalizarTelefone(req.body.telefone);
+    const emailAtual = descriptografarSeNecessario(atual.email);
+    const cpfAtual = descriptografarSeNecessario(atual.cpf);
+    const telefoneAtual = descriptografarSeNecessario(atual.telefone);
+    const email = normalizarEmail(req.body?.email ?? emailAtual);
+    const cpf = req.body?.cpf === undefined ? cpfAtual : normalizarCpf(req.body.cpf);
+    const telefone = req.body?.telefone === undefined ? telefoneAtual : normalizarTelefone(req.body.telefone);
     const cpfAlterado = cpf !== (atual.cpf || "");
     const telefoneAlterado = telefone !== (atual.telefone || "");
     if (!nome || !email) return res.status(400).json({ error: "Informe nome e email." });
     if (!emailValido(email)) return res.status(400).json({ error: "Email invalido." });
     if (cpfAlterado && cpf && !cpfTemDigitoValido(cpf)) return res.status(400).json({ error: "CPF invalido." });
     if (telefoneAlterado && telefone && telefone.length < 10) return res.status(400).json({ error: "Telefone invalido." });
-    if (email !== atual.email) {
-      const emailExistente = await prisma.usuario.findUnique({ where: { email } });
+    if (email !== emailAtual) {
+      const emailExistente = await prisma.usuario.findUnique({ where: { emailIndex: criarIndice(email) } });
       if (emailExistente && emailExistente.id !== id) return res.status(409).json({ error: "Este email ja pertence a outro usuario." });
     }
     if (cpf && cpfAlterado) {
-      const cpfExistente = await prisma.usuario.findFirst({ where: { cpf } });
+      const cpfExistente = await prisma.usuario.findFirst({ where: { cpfIndex: criarIndice(cpf) } });
       if (cpfExistente && cpfExistente.id !== id) return res.status(409).json({ error: "Este CPF ja pertence a outro usuario." });
     }
-    const data = { nome, email, cpf: cpf || null, telefone: telefone || null };
+    const emailCipher = criptografar(email);
+    const cpfCipher = cpf ? criptografar(cpf) : null;
+    const telefoneCipher = telefone ? criptografar(telefone) : null;
+    const data = { nome, email: emailCipher, emailCipher, emailIndex: criarIndice(email), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpf), telefone: telefoneCipher, telefoneCipher, telefoneIndex: criarIndice(telefone) };
     const novaSenha = String(req.body?.senha || "");
     if (novaSenha) {
       if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
       data.senha = await bcrypt.hash(novaSenha, 10);
     }
     const usuario = await prisma.usuario.update({ where: { id }, data, select: usuarioAdminSelect });
-    res.json({ usuario });
+    res.json({ usuario: serializarUsuarioAdmin(usuario) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar usuario." });
   }
@@ -283,13 +337,14 @@ router.delete("/usuarios/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/donos", autenticarAdmin, async (_req, res) => {
+router.get("/donos", autenticarAdmin, async (req, res) => {
   try {
     const donos = await prisma.dono.findMany({
-      select: { id: true, nome: true, login: true, cnpj: true, googleId: true, createdAt: true, _count: { select: { lojas: true } } },
+      select: donoAdminSelect,
       orderBy: { createdAt: "desc" },
     });
-    res.json({ donos });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Dono", enderecoIp: req.ip, detalhes: { quantidade: donos.length, ator: "admin" } });
+    res.json({ donos: donos.map((dono) => serializarDonoAdmin(dono)) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiros." });
   }
@@ -301,7 +356,8 @@ router.get("/donos/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const dono = await prisma.dono.findUnique({ where: { id }, select: donoAdminSelect });
     if (!dono) return res.status(404).json({ error: "Parceiro nao encontrado." });
-    res.json({ dono });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Dono", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
+    res.json({ dono: serializarDonoAdmin(dono, { cnpjCompleto: true }) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar parceiro." });
   }
@@ -315,8 +371,9 @@ router.put("/donos/:id", autenticarAdmin, async (req, res) => {
     if (!atual) return res.status(404).json({ error: "Parceiro nao encontrado." });
     const nome = String(req.body?.nome ?? atual.nome).trim();
     const login = normalizarLoginDono(req.body?.login ?? atual.login);
-    const cnpj = req.body?.cnpj === undefined ? atual.cnpj : normalizarCnpj(req.body.cnpj);
-    const cnpjAlterado = cnpj !== (atual.cnpj || "");
+    const cnpjAtual = descriptografarSeNecessario(atual.cnpj);
+    const cnpj = req.body?.cnpj === undefined ? cnpjAtual : normalizarCnpj(req.body.cnpj);
+    const cnpjAlterado = cnpj !== (cnpjAtual || "");
     if (!nome || !login) return res.status(400).json({ error: "Informe nome e login do parceiro." });
     if (login.length < 4) return res.status(400).json({ error: "Login do parceiro deve ter pelo menos 4 caracteres." });
     if (cnpjAlterado && cnpj && !cnpjTemDigitoValido(cnpj)) return res.status(400).json({ error: "CNPJ invalido." });
@@ -325,17 +382,18 @@ router.put("/donos/:id", autenticarAdmin, async (req, res) => {
       if (loginExistente && loginExistente.id !== id) return res.status(409).json({ error: "Este login ja pertence a outro parceiro." });
     }
     if (cnpj && cnpjAlterado) {
-      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpj } });
+      const cnpjExistente = await prisma.dono.findFirst({ where: { cnpjIndex: criarIndice(cnpj) } });
       if (cnpjExistente && cnpjExistente.id !== id) return res.status(409).json({ error: "Este CNPJ ja pertence a outro parceiro." });
     }
-    const data = { nome, login, cnpj: cnpj || null };
+    const cnpjCipher = cnpj ? criptografar(cnpj) : null;
+    const data = { nome, login, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpj) };
     const novaSenha = String(req.body?.senha || "");
     if (novaSenha) {
       if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
       data.senha = await bcrypt.hash(novaSenha, 10);
     }
     const dono = await prisma.dono.update({ where: { id }, data, select: donoAdminSelect });
-    res.json({ dono });
+    res.json({ dono: serializarDonoAdmin(dono) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar parceiro." });
   }
@@ -354,14 +412,15 @@ router.delete("/donos/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/agendamentos", autenticarAdmin, async (_req, res) => {
+router.get("/agendamentos", autenticarAdmin, async (req, res) => {
   try {
     const agendamentos = await prisma.agendamento.findMany({
       include: { usuario: { select: { id: true, nome: true, email: true } }, loja: { select: { id: true, nome: true } }, servico: { select: { id: true, nome: true, preco: true } } },
       orderBy: { createdAt: "desc" },
       take: 300,
     });
-    res.json({ agendamentos });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Agendamento", enderecoIp: req.ip, detalhes: { quantidade: agendamentos.length, ator: "admin" } });
+    res.json({ agendamentos: agendamentos.map(serializarAgendamentoAdmin) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar agendamentos." });
   }
@@ -373,7 +432,8 @@ router.put("/agendamentos/:id/status", autenticarAdmin, async (req, res) => {
     const status = String(req.body?.status || "").trim().toLowerCase();
     if (!id || !["pendente", "finalizado", "cancelado"].includes(status)) return res.status(400).json({ error: "Status invalido." });
     const agendamento = await prisma.agendamento.update({ where: { id }, data: { status } });
-    res.json({ agendamento });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Agendamento", recordId: id, enderecoIp: req.ip, detalhes: { status, ator: "admin" } });
+    res.json({ agendamento: serializarAgendamentoAdmin(agendamento) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar agendamento." });
   }
@@ -392,14 +452,15 @@ router.delete("/agendamentos/:id", autenticarAdmin, async (req, res) => {
   }
 });
 
-router.get("/avaliacoes", autenticarAdmin, async (_req, res) => {
+router.get("/avaliacoes", autenticarAdmin, async (req, res) => {
   try {
     const avaliacoes = await prisma.avaliacao.findMany({
       include: { usuario: { select: { id: true, nome: true, email: true } }, loja: { select: { id: true, nome: true } }, _count: { select: { denuncias: true } } },
       orderBy: { createdAt: "desc" },
       take: 300,
     });
-    res.json({ avaliacoes });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Avaliacao", enderecoIp: req.ip, detalhes: { quantidade: avaliacoes.length, ator: "admin" } });
+    res.json({ avaliacoes: avaliacoes.map(avaliacaoProtegida) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar avaliações." });
   }
@@ -411,7 +472,8 @@ router.get("/avaliacoes/:id", autenticarAdmin, async (req, res) => {
     if (!id) return res.status(400).json({ error: "ID invalido." });
     const avaliacao = await prisma.avaliacao.findUnique({ where: { id }, include: avaliacaoAdminInclude });
     if (!avaliacao) return res.status(404).json({ error: "Avaliacao nao encontrada." });
-    res.json({ avaliacao });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Avaliacao", recordId: id, enderecoIp: req.ip, detalhes: { ator: "admin" } });
+    res.json({ avaliacao: avaliacaoProtegida(avaliacao) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar avaliacao." });
   }
@@ -427,16 +489,30 @@ router.put("/avaliacoes/:id", autenticarAdmin, async (req, res) => {
     const comentario = req.body?.comentario === undefined ? atual.comentario : String(req.body.comentario || "").trim();
     const fotoUrl = req.body?.fotoUrl === undefined ? atual.fotoUrl : String(req.body.fotoUrl || "").trim();
     const nomeCliente = req.body?.nomeCliente === undefined ? atual.nomeCliente : String(req.body.nomeCliente || "").trim();
+    if (req.body?.aprovado !== undefined && typeof req.body.aprovado !== "boolean") return res.status(400).json({ error: "Estado de aprovação inválido." });
     if (!Number.isInteger(nota) || nota < 1 || nota > 5) return res.status(400).json({ error: "Nota deve ser um inteiro entre 1 e 5." });
     if (!fotoAvaliacaoValida(fotoUrl)) return res.status(400).json({ error: "Foto deve ser uma URL http/https ou imagem PNG, JPG ou WEBP de ate 2 MB." });
     const avaliacao = await prisma.avaliacao.update({
       where: { id },
-      data: { nota, comentario: comentario || null, fotoUrl: fotoUrl || null, nomeCliente: nomeCliente || null },
+      data: { nota, comentario: comentario || null, fotoUrl: fotoUrl || null, nomeCliente: nomeCliente || null, aprovado: req.body?.aprovado ?? atual.aprovado },
       include: avaliacaoAdminInclude,
     });
-    res.json({ avaliacao });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Avaliacao", recordId: id, enderecoIp: req.ip, detalhes: { aprovado: avaliacao.aprovado, ator: "admin" } });
+    res.json({ avaliacao: avaliacaoProtegida(avaliacao) });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar avaliacao." });
+  }
+});
+
+router.patch("/avaliacoes/:id/aprovacao", autenticarAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id || typeof req.body?.aprovado !== "boolean") return res.status(400).json({ error: "Informe se a avaliação deve ser aprovada." });
+    const avaliacao = await prisma.avaliacao.update({ where: { id }, data: { aprovado: req.body.aprovado } });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Avaliacao", recordId: id, enderecoIp: req.ip, detalhes: { aprovado: avaliacao.aprovado } });
+    res.json({ avaliacao: { id: avaliacao.id, aprovado: avaliacao.aprovado } });
+  } catch {
+    res.status(500).json({ error: "Erro ao moderar avaliação." });
   }
 });
 
@@ -464,7 +540,13 @@ router.get("/denuncias", autenticarAdmin, async (_req, res) => {
       orderBy: { createdAt: "desc" },
       take: 300,
     });
-    res.json({ denuncias });
+    await registrarAudit({ acao: TiposAcao.ACESSAR, tabela: "Denuncia", enderecoIp: _req.ip, detalhes: { quantidade: denuncias.length } });
+    res.json({ denuncias: denuncias.map(({ motivo, motivoCipher, detalhes, detalhesCipher, ...denuncia }) => ({
+      ...denuncia,
+      motivo: descriptografarSeNecessario(motivoCipher || motivo),
+      detalhes: descriptografarSeNecessario(detalhesCipher || detalhes),
+      usuario: denuncia.anonima || !denuncia.usuario ? null : { ...denuncia.usuario, email: descriptografarSeNecessario(denuncia.usuario.email) },
+    })) });
   } catch {
     res.status(500).json({ error: "Erro ao carregar denúncias." });
   }
@@ -476,7 +558,9 @@ router.put("/denuncias/:id/status", autenticarAdmin, async (req, res) => {
     const status = String(req.body?.status || "").trim().toLowerCase();
     if (!id || !["aberta", "em_analise", "resolvida", "arquivada"].includes(status)) return res.status(400).json({ error: "Status invalido." });
     const denuncia = await prisma.denuncia.update({ where: { id }, data: { status } });
-    res.json({ denuncia });
+    await registrarAudit({ acao: TiposAcao.ATUALIZAR, tabela: "Denuncia", recordId: id, enderecoIp: req.ip, detalhes: { status, ator: "admin" } });
+    const { motivoCipher, detalhesCipher, ...dadosDenuncia } = denuncia;
+    res.json({ denuncia: { ...dadosDenuncia, motivo: descriptografarSeNecessario(motivoCipher || denuncia.motivo), detalhes: descriptografarSeNecessario(detalhesCipher || denuncia.detalhes) } });
   } catch {
     res.status(500).json({ error: "Erro ao atualizar denúncia." });
   }

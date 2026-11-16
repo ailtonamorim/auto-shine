@@ -1,6 +1,7 @@
 const { coordenadasValidas } = require("./validators");
 
 const geocodingUserAgent = process.env.GEOCODING_USER_AGENT || "AutoShine Marketplace/1.0";
+const externalDataRetentionDays = Number(process.env.EXTERNAL_DATA_RETENTION_DAYS || process.env.IMAGE_EXTERNAL_RETENTION_DAYS || 30);
 const serproCpfApiUrl = process.env.SERPRO_CPF_API_URL || "";
 const serproCpfBearerToken = process.env.SERPRO_CPF_BEARER_TOKEN || "";
 const serproCpfConsumerKey = process.env.SERPRO_CPF_CONSUMER_KEY || "";
@@ -8,6 +9,13 @@ const serproCpfConsumerSecret = process.env.SERPRO_CPF_CONSUMER_SECRET || "";
 const serproCpfTokenUrl = process.env.SERPRO_CPF_TOKEN_URL || "https://gateway.apiserpro.serpro.gov.br/token";
 
 let serproCpfTokenCache = { token: "", expiresAt: 0 };
+
+function mascararDocumento(valor) {
+  const digits = String(valor || "").replace(/\D/g, "");
+  if (!digits) return "***";
+  if (digits.length <= 4) return "*".repeat(digits.length);
+  return `${digits.slice(0, 2)}***${digits.slice(-2)}`;
+}
 
 async function obterSerproCpfBearerToken() {
   if (serproCpfBearerToken) return serproCpfBearerToken;
@@ -37,12 +45,14 @@ async function consultarCpfSerpro(cpf) {
     : `${serproCpfApiUrl.replace(/\/$/, "")}/${cpf}`;
   const resposta = await fetch(url, { headers: { Accept: "application/json", Authorization: `Bearer ${token}` } });
   if (resposta.status === 404) return { valido: false, origem: "serpro", mensagem: "CPF não encontrado na base oficial." };
-  if (!resposta.ok) throw new Error(`SERPRO respondeu ${resposta.status}`);
+  if (!resposta.ok) throw new Error(`SERPRO respondeu ${resposta.status} para CPF ${mascararDocumento(cpf)}.`);
   const dados = await resposta.json();
   const situacao = String(dados.situacao?.descricao || dados.situacao || dados.situacaoCadastral || dados.status || "").toLowerCase();
   const valido = !situacao || situacao.includes("regular") || situacao.includes("ativo");
   return {
-    valido, origem: "serpro",
+    valido,
+    origem: "serpro",
+    retencaoDias: externalDataRetentionDays,
     mensagem: valido ? "CPF validado na base oficial." : "CPF encontrado, mas com situação cadastral irregular.",
     dados: { situacao: dados.situacao?.descricao || dados.situacao || dados.situacaoCadastral || dados.status || null },
   };
@@ -50,11 +60,14 @@ async function consultarCpfSerpro(cpf) {
 
 async function consultarCnpjBrasilApi(cnpj) {
   const resposta = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
-  if (resposta.status === 404) return { valido: false, origem: "brasilapi", mensagem: "CNPJ não encontrado na Receita Federal." };
-  if (!resposta.ok) throw new Error(`BrasilAPI respondeu ${resposta.status}`);
+  if (resposta.status === 404) return { valido: false, origem: "brasilapi", retencaoDias: externalDataRetentionDays, mensagem: "CNPJ não encontrado na Receita Federal." };
+  if (!resposta.ok) throw new Error(`BrasilAPI respondeu ${resposta.status} para CNPJ ${mascararDocumento(cnpj)}.`);
   const dados = await resposta.json();
   return {
-    valido: true, origem: "brasilapi", mensagem: "CNPJ validado na base da Receita Federal.",
+    valido: true,
+    origem: "brasilapi",
+    retencaoDias: externalDataRetentionDays,
+    mensagem: "CNPJ validado na base da Receita Federal.",
     dados: { razaoSocial: dados.razao_social || null, nomeFantasia: dados.nome_fantasia || null, situacao: dados.descricao_situacao_cadastral || dados.situacao_cadastral || null },
   };
 }

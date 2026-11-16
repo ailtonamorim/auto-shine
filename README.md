@@ -25,15 +25,19 @@ Marketplace responsivo para lava jatos e estética automotiva, com cadastro de c
 
 ## Configuração
 
-Copie `.env.example` para `.env` e preencha:
+Copie `.env.example` para `.env` e preencha com valores reais do seu ambiente. Nunca use senhas, tokens, chaves ou credenciais demo em staging/produção.
 
 ```env
 DATABASE_URL="file:./data/dev.db"
 PORT=3000
-SESSION_SECRET=troque-para-uma-chave-segura
-JWT_SECRET=troque-para-uma-chave-jwt-segura
-ADMIN_LOGIN=admin-local
-ADMIN_SENHA=troque-esta-senha
+SESSION_SECRET=sua-chave-secreta-segura
+JWT_SECRET=sua-chave-jwt-segura
+ADMIN_LOGIN=seu-login-admin
+ADMIN_SENHA=sua-senha-admin-forte
+DATA_ENCRYPTION_KEY=chave-base64-de-32-bytes
+DATA_ENCRYPTION_KEY_PREVIOUS=chave-anterior-opcional-para-rotacao
+DATA_INDEX_KEY=outra-chave-base64-independente-de-32-bytes
+DATA_INDEX_KEY_PREVIOUS=chave-de-indice-anterior-opcional
 GOOGLE_CLIENT_ID=seu-google-client-id
 GOOGLE_CLIENT_SECRET=seu-google-client-secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
@@ -42,7 +46,7 @@ SERPRO_CPF_BEARER_TOKEN=seu-token-serpro
 SERPRO_CPF_CONSUMER_KEY=seu-consumer-key-serpro
 SERPRO_CPF_CONSUMER_SECRET=seu-consumer-secret-serpro
 SERPRO_CPF_TOKEN_URL=https://gateway.apiserpro.serpro.gov.br/token
-GEOCODING_USER_AGENT="AutoShine Marketplace/1.0 contato@seudominio.com"
+GEOCODING_USER_AGENT="AutoShine Marketplace/1.0"
 IMAGE_MODERATION_ENABLED=true
 IMAGE_MODERATION_REQUIRED=false
 IMAGE_MODERATION_API_URL=
@@ -51,13 +55,27 @@ IMAGE_MODERATION_TIMEOUT_MS=8000
 IMAGE_MODERATION_BLOCK_THRESHOLD=0.8
 IMAGE_MODERATION_BLOCK_CATEGORIES=adult,nudity,porn,sexual,violence,gore,hate,self-harm,weapon,drugs,illegal,child-safety
 IMAGE_MAX_PIXELS=25000000
+EXTERNAL_DATA_RETENTION_DAYS=30
+EXTERNAL_IMAGE_RETENTION_DAYS=30
 ```
+
+### Gestão de chaves e credenciais
+
+- `DATA_ENCRYPTION_KEY` protege os valores com AES-256-GCM.
+- `DATA_INDEX_KEY` é uma chave separada usada apenas para índices HMAC de busca/unicidade.
+- `DATA_ENCRYPTION_KEY_PREVIOUS` e `DATA_INDEX_KEY_PREVIOUS` são opcionalmente usadas para rotação segura e compatibilidade durante migração.
+- Gere valores fortes com um gerenciador de segredos ou secret manager da plataforma; nunca deixe chaves em repositório, logs, snapshots ou arquivos compartilhados.
+- Nunca reutilize a chave AES como chave de índice.
+- Para rotação, mantenha a chave antiga disponível durante a janela de transição, recriptografe os registros e só então remova a antiga após validação.
+
+Ao adotar uma nova `DATA_INDEX_KEY` ou trocar a `DATA_ENCRYPTION_KEY` em produção, mantenha a chave antiga disponível, execute a migração e valide o comportamento antes de desligar a chave anterior. Em produção, planeje uma janela de manutenção e backup antes da troca.
 
 ## Comandos
 
 ```bash
 npm install
 npm run migrate
+npm run migrate:sensitive-data
 npm run seed
 npm run dev
 ```
@@ -70,13 +88,13 @@ Para validar o projeto:
 npm run check
 ```
 
-## Seed
+## Seed e dados de demonstração
 
-O seed cria lojas, serviços, avaliações, usuários demo e agendamentos de apresentação.
+O seed pode criar dados de apresentação para ambiente local, mas não deve ser usado como base para credenciais reais. Para ambientes locais, use contas próprias geradas em `.env` ou por processo de cadastro real; evite reutilizar senhas e e-mails de produção em dados de teste.
 
-- Cliente: `cliente@autoshine.local` / `cliente123`
-- O cliente demo possui agendamentos pendente, confirmado e finalizado para testar histórico e publicação de avaliação.
-- Parceiros: senha `autoshine123` para `shine-centro`, `detalhe-premium`, `prime-car-care`, `fastwash-marista`, `eco-brilho`, `studio-vitrificacao`, `truck-clean` e `mall-auto-spa`
+- Não documente nem distribua credenciais de produção em exemplos de uso.
+- Se você usar dados de demonstração, prefira valores fictícios e não reutilizar chaves, e-mails ou senhas de qualquer ambiente real.
+- Para autenticação administrativa, configure `ADMIN_LOGIN` e `ADMIN_SENHA` exclusivamente no seu ambiente local/servidor e mantenha-as fora do repositório.
 
 ## Google OAuth
 
@@ -105,7 +123,9 @@ O painel do parceiro também permite upload real de fotos, salvas em `assets/upl
 
 Uploads em `POST /api/uploads/imagem` passam por validação de formato real, tamanho, dimensões e moderação antes de serem salvos. A rota `POST /api/moderacao/imagem` permite pré-validar a mesma imagem sem gravar arquivo.
 
-Configure `IMAGE_MODERATION_API_URL` para apontar para um serviço externo de classificação. O AutoShine envia `imagem`, `mimeType`, `nomeArquivo`, `escopo`, `tamanhoBytes` e `dimensões`, e aceita respostas com campos como `allowed`, `blocked`, `flagged`, `score`, `categories`/`category_scores` ou equivalentes em português. Se `IMAGE_MODERATION_REQUIRED=true`, uploads falham quando o serviço externo estiver indisponível.
+Configure `IMAGE_MODERATION_API_URL` para apontar para um serviço externo de classificação. O AutoShine envia somente o mínimo necessário: `imagem`, `mimeType`, `escopo`, `tamanhoBytes`, `dimensões` e um `nomeArquivo` sanitizado, sem dados pessoais do usuário original. Nomes reais de arquivos não são enviados para provedores externos. Se `IMAGE_MODERATION_REQUIRED=true`, uploads falham quando o serviço externo estiver indisponível.
+
+Todos os dados enviados para serviços externos são tratados como dados de processamento mínimo e não devem ser retidos por mais que o necessário para a validação. O projeto usa `EXTERNAL_DATA_RETENTION_DAYS` e `EXTERNAL_IMAGE_RETENTION_DAYS` para documentar a retenção máxima em dias; em produção, esse valor deve refletir o contrato do provedor e o limite operacional do caso de uso. Em geral, os valores devem ser mantidos em 30 dias ou menos, e qualquer resposta de API externa deve ser descartada após a conclusão do processamento.
 
 ## Agenda por loja
 

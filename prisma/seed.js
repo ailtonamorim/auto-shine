@@ -1,24 +1,28 @@
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
+const { criptografar, criarIndice } = require("../src/utils/crypto");
 
 const prisma = new PrismaClient();
 
 async function upsertDono({ nome, login, cnpj }) {
   const senha = await bcrypt.hash("autoshine123", 10);
+  const cnpjCipher = criptografar(cnpj);
   return prisma.dono.upsert({
     where: { login },
-    update: { nome, cnpj },
-    create: { nome, login, cnpj, senha },
+    update: { nome, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpj) },
+    create: { nome, login, cnpj: cnpjCipher, cnpjCipher, cnpjIndex: criarIndice(cnpj), senha },
   });
 }
 
 async function upsertUsuario({ nome, email, cpf, telefone }) {
   const senha = await bcrypt.hash("cliente123", 10);
-  return prisma.usuario.upsert({
-    where: { email },
-    update: { nome, cpf, telefone },
-    create: { nome, email, cpf, telefone, senha },
-  });
+  const emailCipher = criptografar(email);
+  const cpfCipher = criptografar(cpf);
+  const telefoneCipher = criptografar(telefone);
+  const existente = await prisma.usuario.findUnique({ where: { emailIndex: criarIndice(email) } });
+  const data = { nome, email: emailCipher, emailCipher, emailIndex: criarIndice(email), cpf: cpfCipher, cpfCipher, cpfIndex: criarIndice(cpf), telefone: telefoneCipher, telefoneCipher };
+  if (existente) return prisma.usuario.update({ where: { id: existente.id }, data });
+  return prisma.usuario.create({ data: { ...data, senha } });
 }
 
 function localDateKey(offsetDays = 0) {

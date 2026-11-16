@@ -4,6 +4,7 @@ const { consultarCpfSerpro, consultarCnpjBrasilApi, consultarGeocodingNominatim,
 const { prepararImagemUpload, moderarImagemUpload, salvarImagemUpload } = require("../utils/imagem");
 const { autenticarUpload } = require("../middlewares/auth");
 const { limitarValidacoes, limitarUploads } = require("../middlewares/security");
+const { logger } = require("../utils/logger");
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ router.get("/validacoes/cpf/:cpf", limitarValidacoes, async (req, res) => {
     const validacaoOficial = await consultarCpfSerpro(cpf);
     if (validacaoOficial) return res.json(validacaoOficial);
   } catch (err) {
-    console.warn(`Aviso: não foi possível validar CPF no SERPRO: ${err.message}`);
+    logger.warn("Aviso: não foi possível validar CPF no SERPRO.", err);
   }
   res.json({ valido: true, origem: "local", mensagem: "CPF com dígitos válidos. Configure a API oficial SERPRO para consulta cadastral." });
 });
@@ -25,7 +26,7 @@ router.get("/validacoes/cnpj/:cnpj", limitarValidacoes, async (req, res) => {
   try {
     return res.json(await consultarCnpjBrasilApi(cnpj));
   } catch (err) {
-    console.warn(`Aviso: não foi possível validar CNPJ na BrasilAPI: ${err.message}`);
+    logger.warn("Aviso: não foi possível validar CNPJ na BrasilAPI.", err);
   }
   return res.json({ valido: true, origem: "local", mensagem: "CNPJ com dígitos válidos. Consulta oficial indisponível agora." });
 });
