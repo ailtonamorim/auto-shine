@@ -1,0 +1,8 @@
+ALTER TABLE "Usuario"
+ADD COLUMN "bloqueado" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "Dono"
+ADD COLUMN "bloqueado" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "Avaliacao"
+ADD COLUMN "bloqueado" BOOLEAN NOT NULL DEFAULT false;

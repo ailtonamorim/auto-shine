@@ -3,12 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AutoShine — Mapa</title>
+  <title>LavaJá — Mapa</title>
 
+  <!-- Importação do Mapa Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
-  <link rel="stylesheet" href="assets/css/styles.css" />
+  <!-- IMPORTANTE: Importação das fontes Anton e Montserrat adicionada aqui! -->
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;500;600;900&display=swap" rel="stylesheet">
 
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
 </head>
 
 <body data-page="mapa">
@@ -16,26 +22,39 @@
   <div class="bg-decor"></div>
 
   <header class="topbar container">
+  <a class="logo" href="index.html" aria-label="LavaJá - página inicial">
+    LavaJá
+  </a>
 
-    <a class="brand" href="index.html">
-      <span>AutoShine</span>
+  <button class="nav-toggle" type="button" aria-label="Abrir menu" aria-expanded="false">
+    <span class="nav-toggle-bar"></span>
+    <span class="nav-toggle-bar"></span>
+    <span class="nav-toggle-bar"></span>
+  </button>
+
+  <nav class="main-nav" id="main-nav">
+    <a href="index.html">Início</a>
+
+    <a href="servicos.html">Serviços</a>
+
+    <a href="favoritos.html" id="link-favoritos" class="hidden">
+      Favoritos
     </a>
 
-    <button class="nav-toggle" aria-label="Abrir menu" aria-expanded="false">
-      <span class="nav-toggle-bar"></span>
-      <span class="nav-toggle-bar"></span>
-      <span class="nav-toggle-bar"></span>
-    </button>
+    <a href="mapa.html" class="active" aria-current="page">
+      Mapa
+    </a>
 
-    <nav class="main-nav">
-      <a href="index.html">Início</a>
-      <a href="favoritos.html">Favoritos</a>
-      <a href="mapa.html">Mapa</a>
-      <a href="meus-agendamentos.html">Agendamentos</a>
-      <a href="cadastro.html?mode=login">Acessar</a>
-    </nav>
+    <a href="meus-agendamentos.html" id="link-agendamentos" class="hidden">
+      Agendamentos
+    </a>
+  </nav>
 
-  </header>
+  <a href="cadastro.html?mode=login" class="btn btn-primary btn-acessar header-access" id="btn-acessar"
+  >
+    Acessar
+  </a>
+</header>
 
   <main class="container page-map reveal-root">
 

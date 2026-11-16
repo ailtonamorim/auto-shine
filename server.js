@@ -7,19 +7,19 @@ const dotenv = require("dotenv");
 
 dotenv.config();
 
-const requiredConfig = ["JWT_SECRET", "SESSION_SECRET", "ADMIN_LOGIN", "ADMIN_SENHA", "DATA_ENCRYPTION_KEY", "DATA_INDEX_KEY"];
+const requiredConfig = ["JWT_SECRET", "SESSION_SECRET", "ADMIN_LOGIN", "ADMIN_SENHA"];
 const missingConfig = requiredConfig.filter((key) => !process.env[key]);
 if (missingConfig.length) {
-  logger.error(`Configuracao obrigatoria ausente: ${missingConfig.join(", ")}. Confira o arquivo .env.`);
+  console.error(`Configuracao obrigatoria ausente: ${missingConfig.join(", ")}. Confira o arquivo .env.`);
   process.exit(1);
 }
 
 const { aplicarHeadersSeguranca } = require("./src/middlewares/security");
 const { garantirIndicesBanco } = require("./src/utils/loja");
-const { validarChavesCriptograficas } = require("./src/utils/crypto");
-const { logger } = require("./src/utils/logger");
+const { iniciarHealthWorker } = require("./src/services/health-worker");
 
 const authRouter = require("./src/routes/auth");
+const profileRouter = require("./src/routes/profile");
 const donoRouter = require("./src/routes/dono");
 const resetSenhaRouter = require("./src/routes/resetSenha");
 const lojasRouter = require("./src/routes/lojas");
@@ -36,13 +36,26 @@ const baseDir = __dirname;
 const uploadsDir = path.join(baseDir, "assets", "uploads");
 
 const publicPages = new Set([
-  "index.html", "mapa.html", "perfil.html", "agendamento.html", "meus-agendamentos.html",
-  "avaliacoes.html", "cadastro.html", "cadastro-dono.html", "admin.html", "termos.html",
-  "privacidade.html", "favoritos.html", "login.html", "reset-senha.html",
+  "index.html",
+  "mapa.html",
+  "perfil.html",
+  "perfil-usuario.html",
+  "servicos.html",
+  "agendamento.html",
+  "meus-agendamentos.html",
+  "avaliacoes.html",
+  "cadastro.html",
+  "cadastro-dono.html",
+  "admin.html",
+  "termos.html",
+  "privacidade.html",
+  "favoritos.html",
+  "login.html",
+  "reset-senha.html",
 ]);
 
 fs.mkdir(uploadsDir, { recursive: true }).catch((err) => {
-  logger.error("Não foi possível preparar a pasta de uploads:", err);
+  console.error("Não foi possível preparar a pasta de uploads:", err);
 });
 
 app.disable("x-powered-by");
@@ -52,7 +65,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 1000 * 60 * 60 * 24 },
+  cookie: { httpOnly: true, sameSite: "lax", maxAge: 1000 * 60 * 60 * 24 },
 }));
 
 app.use(passport.initialize());
@@ -60,6 +73,7 @@ app.use(passport.session());
 app.use(express.json({ limit: "8mb" }));
 
 app.use(authRouter);
+app.use(profileRouter);
 app.use("/api/dono", donoRouter);
 app.use("/api/reset-senha", resetSenhaRouter);
 app.use("/api/lojas", lojasRouter);
@@ -86,17 +100,17 @@ app.use((_req, res) => {
 let server;
 
 async function iniciarServidor() {
-  validarChavesCriptograficas();
   await garantirIndicesBanco();
+  await iniciarHealthWorker();
   server = app.listen(PORT, () => {
-    logger.info(`AutoShine ativo em http://localhost:${PORT}`);
+    console.log(`AutoShine ativo em http://localhost:${PORT}`);
     const googleOAuthConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-    if (!googleOAuthConfigured) logger.info("OAuth Google desativado: configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env");
+    if (!googleOAuthConfigured) console.log("OAuth Google desativado: configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env");
   });
 }
 
 iniciarServidor().catch((err) => {
-  logger.error("Nao foi possivel iniciar o AutoShine:", err);
+  console.error("Nao foi possivel iniciar o AutoShine:", err);
   process.exit(1);
 });
 

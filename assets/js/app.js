@@ -1,6 +1,8 @@
 const page = document.body.dataset.page;
+const usersStorageKey = "autoshine:users";
 const currentUserStorageKey = "autoshine:current-user";
-const donoProfileStorageKey = "autoshine:owner-profile";
+const authTokenStorageKey = "autoshine:token";
+const donoTokenKey = "autoshine:dono-token";
 const userLocationStorageKey = "autoshine:user-location";
 const defaultBookingTimes = ["08:00", "09:30", "11:00", "13:30", "15:00", "16:30"];
 const defaultScheduleDays = ["1", "2", "3", "4", "5", "6"];
@@ -14,81 +16,81 @@ const weekdayLabels = {
   6: "Sab",
 };
 
-localStorage.removeItem("autoshine:token");
-localStorage.removeItem("autoshine:dono-token");
-localStorage.removeItem("autoshine:admin-token");
-
 // ── Usuário (cliente) ───────────────────────────────────────────────────────
+function getUsersFromStorage() {
+  const raw = localStorage.getItem(usersStorageKey);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUsersToStorage(users) {
+  localStorage.setItem(usersStorageKey, JSON.stringify(users));
+}
+
 function getCurrentUser() {
   const raw = localStorage.getItem(currentUserStorageKey);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-function setCurrentUser(user) {
+function setCurrentUser(user, token) {
   localStorage.setItem(currentUserStorageKey, JSON.stringify(user));
-  localStorage.removeItem("autoshine:token");
+  if (token) localStorage.setItem(authTokenStorageKey, token);
+  else localStorage.removeItem(authTokenStorageKey);
   updateNavAuthState();
 }
 
 function clearCurrentUser() {
   localStorage.removeItem(currentUserStorageKey);
-  localStorage.removeItem("autoshine:token");
-  fetch("/api/auth/logout", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
+  localStorage.removeItem(authTokenStorageKey);
   updateNavAuthState();
 }
 
-function hasCachedUserProfile() {
-  return Boolean(getCurrentUser());
+function getAuthToken() {
+  return localStorage.getItem(authTokenStorageKey);
 }
 
 // ── Dono (parceiro) ─────────────────────────────────────────────────────────
-function getDonoProfile() {
-  const raw = localStorage.getItem(donoProfileStorageKey);
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+function getDonoToken() {
+  return localStorage.getItem(donoTokenKey);
 }
 
-function setDonoProfile(dono) {
-  if (!dono) {
-    localStorage.removeItem(donoProfileStorageKey);
-    localStorage.removeItem("autoshine:dono-token");
-    return;
-  }
-  localStorage.setItem(donoProfileStorageKey, JSON.stringify(dono));
-  localStorage.removeItem("autoshine:dono-token");
+function setDonoToken(token) {
+  localStorage.setItem(donoTokenKey, token);
+  updateNavAuthState();
+  updatePartnerNavState();
 }
 
-function clearDonoSession() {
-  localStorage.removeItem(donoProfileStorageKey);
-  localStorage.removeItem("autoshine:dono-token");
-  fetch("/api/dono/logout", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
+function clearDonoToken() {
+  localStorage.removeItem(donoTokenKey);
+  updateNavAuthState();
+  updatePartnerNavState();
+}
+
+function getDonoFromToken() {
+  const token = getDonoToken();
+  if (!token) return null;
+  try { return JSON.parse(atob(token.split(".")[1])); } catch { return null; }
 }
 
 // ── Helpers de fetch autenticado ────────────────────────────────────────────
 function donoFetch(path, options = {}) {
+  const token = getDonoToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  return fetch(path, { ...options, credentials: "same-origin", headers });
-}
-
-async function getDonoSession() {
-  try {
-    const response = await donoFetch("/api/dono/me");
-    if (!response.ok) {
-      localStorage.removeItem(donoProfileStorageKey);
-      return null;
-    }
-    const data = await response.json();
-    setDonoProfile(data.dono);
-    return data.dono;
-  } catch {
-    return null;
-  }
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return fetch(path, { ...options, headers });
 }
 
 function userFetch(path, options = {}) {
+  const token = getAuthToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  return fetch(path, { ...options, credentials: "same-origin", headers });
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return fetch(path, { ...options, headers });
 }
 
 function readFileAsDataUrl(file) {
@@ -420,9 +422,11 @@ function setActiveNavLink() {
   const map = {
     home: "index.html",
     cadastro: "cadastro.html",
+    servicos: "servicos.html",
     mapa: "mapa.html",
     "meus-agendamentos": "meus-agendamentos.html",
     favoritos: "favoritos.html",
+    "perfil-usuario": "perfil-usuario.html",
   };
   const target = map[page];
   if (!target) return;
@@ -432,33 +436,105 @@ function setActiveNavLink() {
   });
 }
 
+// Função responsável por atualizar o menu com base no login do usuário
 function updateNavAuthState() {
-  const logged = hasCachedUserProfile();
+  const clientLogged = Boolean(getCurrentUser() && getAuthToken());
+  const partnerLogged = Boolean(getDonoFromToken());
+  const anyUserLogged = clientLogged || partnerLogged;
+  
+  // Pegamos os dois links restritos
+  const linkAgendamentos = document.getElementById("link-agendamentos");
+  const linkFavoritos = document.getElementById("link-favoritos");
 
-  document.querySelectorAll('nav a[href*="cadastro.html"]').forEach((link) => {
-    link.classList.toggle("hidden", logged);
+  // Esconde "Acessar" quando um cliente OU parceiro estiver autenticado.
+  document.querySelectorAll('header a[href*="cadastro.html"]').forEach((link) => {
+    link.classList.toggle("hidden", anyUserLogged);
   });
 
+  // Favoritos e Agendamentos pertencem somente à sessão do cliente.
+  if (linkAgendamentos) {
+    linkAgendamentos.classList.toggle("hidden", !clientLogged);
+  }
+  if (linkFavoritos) {
+    linkFavoritos.classList.toggle("hidden", !clientLogged);
+  }
+
+  // Remove os botões de "Sair" antigos antes de recriar para evitar duplicações
   document.querySelectorAll("[data-client-session-link]").forEach((item) => item.remove());
 
-  if (!logged) return;
+  // Se o usuário não está logado, a função para por aqui
+  if (!clientLogged) return;
 
+  // Se está logado, cria dinamicamente o botão "Sair"
   document.querySelectorAll(".topbar nav").forEach((nav) => {
-    const logoutButton = document.createElement("button");
-    logoutButton.type = "button";
-    logoutButton.className = "nav-logout";
-    logoutButton.dataset.clientSessionLink = "logout";
-    logoutButton.textContent = "Sair";
-    logoutButton.addEventListener("click", () => {
+    const profileMenu = window.createUserProfileMenu(getCurrentUser(), () => {
       clearCurrentUser();
       window.location.href = "index.html";
     });
-    nav.appendChild(logoutButton);
+    profileMenu.dataset.clientSessionLink = "profile";
+    // A conta fica à direita, sem ocupar o centro reservado aos links.
+    const header = nav.closest(".topbar");
+    const access = header?.querySelector(".header-access");
+    if (access) access.insertAdjacentElement("afterend", profileMenu);
+    else nav.insertAdjacentElement("afterend", profileMenu);
+  });
+}
+
+// Mantém o acesso ao painel visível em todas as páginas enquanto uma empresa
+// estiver autenticada, sem precisar alterar o menu de cada arquivo HTML.
+function updatePartnerNavState() {
+  const partnerLogged = Boolean(getDonoFromToken());
+  const partnerPage = page === "cadastro-dono" || page === "parceiro";
+
+  document.querySelectorAll("[data-partner-session-link]").forEach((item) => item.remove());
+  if (!partnerLogged) return;
+
+  // Remove atalhos antigos posicionados fora da navegação principal. Assim o
+  // cabeçalho mantém apenas um botão "Painel do parceiro".
+  document.querySelectorAll('header a[href*="cadastro-dono.html"]').forEach((link) => {
+    if (!link.closest(".main-nav")) link.remove();
+  });
+
+  document.querySelectorAll(".topbar .main-nav").forEach((nav) => {
+    // Na página do parceiro, remove qualquer seleção deixada fixa no HTML,
+    // como class="active" no link de Serviços.
+    if (partnerPage) {
+      nav.querySelectorAll("a.active").forEach((link) => {
+        link.classList.remove("active");
+        link.removeAttribute("aria-current");
+      });
+    }
+
+    // Reutiliza o link caso ele já exista; cria somente quando necessário.
+    let partnerLink = nav.querySelector('a[href*="cadastro-dono.html"]');
+    if (!partnerLink) {
+      partnerLink = document.createElement("a");
+      partnerLink.href = "cadastro-dono.html";
+      partnerLink.textContent = "Painel do parceiro";
+
+      const servicesLink = Array.from(nav.querySelectorAll("a")).find((link) => {
+        const href = link.getAttribute("href") || "";
+        return href.includes("servicos.html");
+      });
+
+      if (servicesLink) servicesLink.insertAdjacentElement("afterend", partnerLink);
+      else nav.prepend(partnerLink);
+    }
+
+    partnerLink.dataset.partnerSessionLink = "panel";
+
+    if (partnerPage) {
+      partnerLink.classList.add("active");
+      partnerLink.setAttribute("aria-current", "page");
+    } else {
+      partnerLink.classList.remove("active");
+      partnerLink.removeAttribute("aria-current");
+    }
   });
 }
 
 function requireAuth(reason = "login_required") {
-  if (hasCachedUserProfile()) return true;
+  if (getCurrentUser() && getAuthToken()) return true;
   clearCurrentUser();
   redirectToLogin(reason);
   return false;
@@ -467,7 +543,7 @@ function requireAuth(reason = "login_required") {
 function initializeAuthRequiredLinks() {
   document.querySelectorAll("a.requires-auth").forEach((link) => {
     link.addEventListener("click", (event) => {
-      if (hasCachedUserProfile()) return;
+      if (getCurrentUser() && getAuthToken()) return;
       event.preventDefault();
       clearCurrentUser();
       redirectToLogin(link.dataset.authAction || "login_required");
@@ -499,9 +575,9 @@ function initializeSiteFooter() {
       <section>
         <h3>Para Empresas</h3>
         <nav class="footer-links" aria-label="Links para parceiros">
-          <a href="cadastro-dono.html">Cadastrar lava jato</a>
-          <a href="cadastro-dono.html">Painel do parceiro</a>
-          <a href="cadastro.html?mode=login">Acessar conta</a>
+          
+          <a href="cadastro.html?perfil=empresa&mode=login">Painel do parceiro</a>
+          
         </nav>
       </section>
       <section>
@@ -545,10 +621,6 @@ function initializeReportActions() {
           <label for="report-dialog-details">Detalhes</label>
           <textarea id="report-dialog-details" rows="4" maxlength="400" placeholder="Conte rapidamente o que aconteceu. Isso ajuda nossa equipe a analisar melhor."></textarea>
         </div>
-        <label class="admin-checkbox">
-          <input id="report-dialog-anonymous" type="checkbox" />
-          <span>Não vincular esta denúncia à minha conta</span>
-        </label>
         <p id="report-dialog-feedback" class="report-dialog-feedback" role="status"></p>
         <div class="report-dialog-actions">
           <button class="btn btn-ghost" type="button" data-report-close>Cancelar</button>
@@ -569,7 +641,6 @@ function initializeReportActions() {
   const copy = modal.querySelector("#report-dialog-copy");
   const reasonSelect = modal.querySelector("#report-dialog-reason");
   const detailsInput = modal.querySelector("#report-dialog-details");
-  const anonymousInput = modal.querySelector("#report-dialog-anonymous");
   const feedback = modal.querySelector("#report-dialog-feedback");
   const submitButton = modal.querySelector("#report-dialog-submit");
   const successBox = modal.querySelector("#report-dialog-success");
@@ -655,7 +726,7 @@ function initializeReportActions() {
     try {
       const res = await userFetch("/api/denuncias", {
         method: "POST",
-        body: JSON.stringify({ ...reportPayload, motivo, detalhes, anonima: anonymousInput?.checked === true }),
+        body: JSON.stringify({ ...reportPayload, motivo, detalhes }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -726,33 +797,12 @@ function initCategoryFilter() {
 
 function applyHomeFilters() {
   const category = document.querySelector("#category-list .chip.active")?.dataset.category || "todos";
-  const searchQuery = (document.getElementById("search-input")?.value || "").toLowerCase().trim();
-  const priceFilter = document.getElementById("price-filter")?.value || "todos";
 
   document.querySelectorAll("#shop-grid .shop-card").forEach((card) => {
     const services = card.dataset.services || "";
     const matchesCategory = category === "todos" || services.includes(category);
-
-    const name = card.dataset.name || "";
-    const matchesSearch = !searchQuery || name.includes(searchQuery) || services.includes(searchQuery);
-
-    const preco = parseFloat(card.dataset.precoMedio) || 0;
-    let matchesPrice = true;
-    if (priceFilter === "0-50") matchesPrice = preco <= 50;
-    else if (priceFilter === "50-100") matchesPrice = preco > 50 && preco <= 100;
-    else if (priceFilter === "100-200") matchesPrice = preco > 100 && preco <= 200;
-    else if (priceFilter === "200+") matchesPrice = preco > 200;
-
-    card.style.display = matchesCategory && matchesSearch && matchesPrice ? "" : "none";
+    card.style.display = matchesCategory ? "" : "none";
   });
-}
-
-function initSearchFilter() {
-  const searchInput = document.getElementById("search-input");
-  const priceFilter = document.getElementById("price-filter");
-  if (!searchInput && !priceFilter) return;
-  searchInput?.addEventListener("input", applyHomeFilters);
-  priceFilter?.addEventListener("change", applyHomeFilters);
 }
 
 function updateHomeLocationStatus(message) {
@@ -899,7 +949,6 @@ function buildHomeCard(loja) {
     ? avaliacoesSort.reduce((s, a) => s + Number(a.nota || 0), 0) / avaliacoesSort.length
     : 0;
   article.dataset.avgRating = String(avgRatingSort);
-  article.dataset.name = (loja.nome || "").toLowerCase();
 
   const safeName = escapeHtml(loja.nome);
   const safePhoto = escapeHtml(loja.fotoUrl || "");
@@ -941,7 +990,7 @@ async function renderOwnerShopsOnHome() {
 
   try {
     const favoriteIds = await fetchUserFavoriteShopIds();
-    const res = await fetch("/api/lojas");
+    const res = await fetch("/api/lojas", { cache: "no-store" });
     if (!res.ok) return;
     const { lojas } = await res.json();
     lojas.forEach((loja) => {
@@ -1070,6 +1119,10 @@ async function initPartnerPage() {
   });
 
   function showAuthArea() {
+    if (page === "cadastro-dono") {
+      window.location.replace("cadastro.html?perfil=empresa&mode=login");
+      return;
+    }
     authShell.classList.remove("hidden");
     managementShell.classList.add("hidden");
   }
@@ -1122,7 +1175,7 @@ async function initPartnerPage() {
     }
 
     const loja = cachedShops.find((item) => String(item.id) === String(selectedDashboardShopId)) || cachedShops[0];
-    const dono = getDonoProfile() || {};
+    const dono = getDonoFromToken() || {};
     const lojaId = String(loja.id);
     const hoje = localDateKey();
     const ontem = shiftDateKey(hoje, -1);
@@ -1375,12 +1428,22 @@ async function initPartnerPage() {
     const priceInput = fragment.querySelector('[data-service-field="price"]');
     const durationInput = fragment.querySelector('[data-service-field="duration"]');
     const descriptionInput = fragment.querySelector('[data-service-field="description"]');
+    const includedInput = fragment.querySelector('[data-service-field="included"]');
+    const stepsInput = fragment.querySelector('[data-service-field="steps"]');
+    const productsInput = fragment.querySelector('[data-service-field="products"]');
+    const guidanceInput = fragment.querySelector('[data-service-field="guidance"]');
+    const warrantyInput = fragment.querySelector('[data-service-field="warranty"]');
 
     if (initialData) {
       nameInput.value = initialData.nome || initialData.name || "";
       priceInput.value = initialData.preco ?? initialData.price ?? "";
       durationInput.value = initialData.duracao || initialData.duration || "";
       descriptionInput.value = initialData.descricao || initialData.description || "";
+      if (includedInput) includedInput.value = initialData.inclusos || "";
+      if (stepsInput) stepsInput.value = initialData.etapas || "";
+      if (productsInput) productsInput.value = initialData.produtos || "";
+      if (guidanceInput) guidanceInput.value = initialData.orientacoes || "";
+      if (warrantyInput) warrantyInput.value = initialData.garantia || "";
     }
 
     removeButton.addEventListener("click", () => {
@@ -1406,6 +1469,11 @@ async function initPartnerPage() {
         preco: Number(String(row.querySelector('[data-service-field="price"]').value || "").replace(",", ".")),
         duracao: row.querySelector('[data-service-field="duration"]').value.trim(),
         descricao: row.querySelector('[data-service-field="description"]').value.trim(),
+        inclusos: row.querySelector('[data-service-field="included"]')?.value.trim() || "",
+        etapas: row.querySelector('[data-service-field="steps"]')?.value.trim() || "",
+        produtos: row.querySelector('[data-service-field="products"]')?.value.trim() || "",
+        orientacoes: row.querySelector('[data-service-field="guidance"]')?.value.trim() || "",
+        garantia: row.querySelector('[data-service-field="warranty"]')?.value.trim() || "",
       }))
       .filter((s) => s.nome && s.descricao && s.duracao && Number.isFinite(s.preco));
   }
@@ -1574,6 +1642,14 @@ async function initPartnerPage() {
           const safeCategory = escapeHtml(loja.categoria || "serviços gerais");
           const safeAddress = escapeHtml(loja.endereco || "");
           const safeSchedule = escapeHtml(formatScheduleSummary(loja.agendaDias, loja.agendaHorarios));
+          const approvalLabel = loja.bloqueado
+            ? "Bloqueado pelo administrador"
+            : loja.statusAprovacao === "pendente"
+              ? "Aguardando aprovação"
+              : "Publicado no marketplace";
+          const approvalClass = loja.statusAprovacao === "pendente" || loja.bloqueado
+            ? "owned-shop-approval-pending"
+            : "owned-shop-approval-active";
           const servicos = Array.isArray(loja.servicos) ? loja.servicos : [];
 
           const servicesHtml = servicos.length
@@ -1606,6 +1682,7 @@ async function initPartnerPage() {
                 <h3>${safeName}</h3>
                 <div class="owned-shop-meta-row">
                   <span class="owned-shop-badge">${safeCategory}</span>
+                  <span class="owned-shop-approval ${approvalClass}">${approvalLabel}</span>
                   <span class="owned-shop-meta">${safeAddress}</span>
                 </div>
                 <span class="owned-shop-meta">Agenda: ${safeSchedule}</span>
@@ -1645,6 +1722,30 @@ async function initPartnerPage() {
                     <input type="text" data-inline-service-field="description" placeholder="Resumo rápido do serviço" />
                   </div>
                 </div>
+                <div class="field-grid service-detail-fields">
+                  <div class="field">
+                    <label>O que está incluído <span class="field-hint">— um item por linha</span></label>
+                    <textarea data-inline-service-field="included" rows="4" placeholder="Aspiração interna&#10;Limpeza dos vidros"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>Etapas <span class="field-hint">— uma etapa por linha</span></label>
+                    <textarea data-inline-service-field="steps" rows="4" placeholder="Inspeção inicial&#10;Execução do serviço&#10;Conferência final"></textarea>
+                  </div>
+                </div>
+                <div class="field-grid service-detail-fields">
+                  <div class="field">
+                    <label>Produtos e equipamentos</label>
+                    <textarea data-inline-service-field="products" rows="3" placeholder="Produtos profissionais utilizados"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>Garantia</label>
+                    <textarea data-inline-service-field="warranty" rows="3" placeholder="Política de garantia deste serviço"></textarea>
+                  </div>
+                </div>
+                <div class="field service-detail-fields">
+                  <label>Orientações ao cliente</label>
+                  <textarea data-inline-service-field="guidance" rows="3" placeholder="Cuidados antes ou depois do atendimento"></textarea>
+                </div>
                 <p class="empty-copy partner-inline-service-feedback" data-inline-service-feedback></p>
                 <div class="owned-shop-actions">
                   <button class="btn btn-primary" type="button" data-save-owner-service="${safeId}">Salvar serviço</button>
@@ -1681,17 +1782,7 @@ async function initPartnerPage() {
         return;
       }
 
-      const validarBox = `
-        <div class="validar-codigo-box">
-          <p class="validar-codigo-label">🔑 Confirmar retirada de veículo</p>
-          <div class="validar-codigo-row">
-            <input type="text" id="input-codigo-retirada" class="validar-codigo-input" placeholder="Digite o código do cliente (ex: A3F2BC)" maxlength="6" autocomplete="off" />
-            <button class="btn btn-primary" type="button" id="btn-validar-codigo">Confirmar</button>
-          </div>
-          <p id="validar-codigo-msg" class="validar-codigo-msg"></p>
-        </div>`;
-
-      bookingsList.innerHTML = validarBox + cachedBookings
+      bookingsList.innerHTML = cachedBookings
         .map((ag) => {
           const safeShopName = escapeHtml(ag.loja?.nome || "Lava jato");
           const safeService = escapeHtml(ag.servico?.nome || "Serviço");
@@ -1709,7 +1800,6 @@ async function initPartnerPage() {
                 ? "booking-status-canceled"
                 : "booking-status-pending";
           const safeId = escapeHtml(String(ag.id));
-          const codigo = ag.codigoRetirada ? `<p class="booking-codigo-retirada">🔑 Código: <strong>${escapeHtml(ag.codigoRetirada)}</strong></p>` : "";
 
           return `
           <article class="booking-received-item">
@@ -1722,7 +1812,6 @@ async function initPartnerPage() {
             <p><strong>Veículo:</strong> ${safeVehicle}</p>
             <p><strong>Cliente:</strong> ${escapeHtml(customerName)} (${escapeHtml(customerEmail)})</p>
             ${safeNotes ? `<p><strong>Obs:</strong> ${safeNotes}</p>` : ""}
-            ${codigo}
             <div class="booking-item-actions">
               ${status !== "finalizado" ? `<button class="btn btn-secondary" type="button" data-finish-booking="${safeId}">Marcar como finalizado</button>` : ""}
               ${status === "finalizado" ? `<button class="btn btn-secondary" type="button" data-reopen-booking="${safeId}">Reabrir agendamento</button>` : ""}
@@ -1731,41 +1820,6 @@ async function initPartnerPage() {
           </article>`;
         })
         .join("");
-
-      // Lógica de validação do código
-      const btnValidar = document.getElementById("btn-validar-codigo");
-      const inputCodigo = document.getElementById("input-codigo-retirada");
-      const msgValidar = document.getElementById("validar-codigo-msg");
-      if (btnValidar && inputCodigo) {
-        btnValidar.addEventListener("click", async () => {
-          const codigo = inputCodigo.value.trim().toUpperCase();
-          if (!codigo) { msgValidar.textContent = "Digite o código do cliente."; msgValidar.style.color = "var(--danger, #e05252)"; return; }
-          btnValidar.disabled = true;
-          msgValidar.textContent = "Validando...";
-          msgValidar.style.color = "var(--muted)";
-          try {
-            const res = await donoFetch("/api/agendamentos/validar-codigo", {
-              method: "POST",
-              body: JSON.stringify({ codigo }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-              msgValidar.textContent = data.error || "Código inválido.";
-              msgValidar.style.color = "var(--danger, #e05252)";
-            } else {
-              msgValidar.textContent = `✅ Retirada confirmada! ${data.agendamento.cliente} — ${data.agendamento.servico}`;
-              msgValidar.style.color = "var(--success, #3ecf8e)";
-              inputCodigo.value = "";
-              await renderReceivedBookings();
-            }
-          } catch {
-            msgValidar.textContent = "Erro de conexão.";
-            msgValidar.style.color = "var(--danger, #e05252)";
-          }
-          btnValidar.disabled = false;
-        });
-        inputCodigo.addEventListener("keydown", (e) => { if (e.key === "Enter") btnValidar.click(); });
-      }
     } catch {
       bookingsList.innerHTML = '<p class="empty-copy">Erro ao carregar agendamentos.</p>';
       cachedBookings = [];
@@ -1776,7 +1830,7 @@ async function initPartnerPage() {
   // Ações nos agendamentos recebidos
   if (bookingsList) {
     bookingsList.addEventListener("click", async (event) => {
-      if (!getDonoProfile()) return;
+      if (!getDonoFromToken()) return;
 
       const deleteBtn = event.target.closest("[data-delete-booking]");
       if (deleteBtn) {
@@ -1925,7 +1979,7 @@ async function initPartnerPage() {
 
   // Ações na lista de lojas próprias
   ownedList.addEventListener("click", async (event) => {
-    if (!getDonoProfile()) { showAuthArea(); return; }
+    if (!getDonoFromToken()) { showAuthArea(); return; }
 
     // Excluir loja
     const removeShopBtn = event.target.closest("[data-remove-owner-shop]");
@@ -1985,6 +2039,11 @@ async function initPartnerPage() {
       editor.querySelector('[data-inline-service-field="price"]').value = servico.preco ?? "";
       editor.querySelector('[data-inline-service-field="duration"]').value = servico.duracao || "";
       editor.querySelector('[data-inline-service-field="description"]').value = servico.descricao || "";
+      editor.querySelector('[data-inline-service-field="included"]').value = servico.inclusos || "";
+      editor.querySelector('[data-inline-service-field="steps"]').value = servico.etapas || "";
+      editor.querySelector('[data-inline-service-field="products"]').value = servico.produtos || "";
+      editor.querySelector('[data-inline-service-field="guidance"]').value = servico.orientacoes || "";
+      editor.querySelector('[data-inline-service-field="warranty"]').value = servico.garantia || "";
       const fb = editor.querySelector("[data-inline-service-feedback]");
       if (fb) fb.textContent = "";
       editor.classList.remove("hidden");
@@ -2006,6 +2065,11 @@ async function initPartnerPage() {
       );
       const duracao = editor.querySelector('[data-inline-service-field="duration"]').value.trim();
       const descricao = editor.querySelector('[data-inline-service-field="description"]').value.trim();
+      const inclusos = editor.querySelector('[data-inline-service-field="included"]').value.trim();
+      const etapas = editor.querySelector('[data-inline-service-field="steps"]').value.trim();
+      const produtos = editor.querySelector('[data-inline-service-field="products"]').value.trim();
+      const orientacoes = editor.querySelector('[data-inline-service-field="guidance"]').value.trim();
+      const garantia = editor.querySelector('[data-inline-service-field="warranty"]').value.trim();
 
       if (!nome || !duracao || !descricao) {
         if (fb) fb.textContent = "Preencha nome, duração e descrição do serviço.";
@@ -2022,12 +2086,12 @@ async function initPartnerPage() {
         if (editingServiceId) {
           res = await donoFetch(`/api/lojas/${shopId}/servicos/${editingServiceId}`, {
             method: "PUT",
-            body: JSON.stringify({ nome, preco, duracao, descricao }),
+            body: JSON.stringify({ nome, preco, duracao, descricao, inclusos, etapas, produtos, orientacoes, garantia }),
           });
         } else {
           res = await donoFetch(`/api/lojas/${shopId}/servicos`, {
             method: "POST",
-            body: JSON.stringify({ nome, preco, duracao, descricao }),
+            body: JSON.stringify({ nome, preco, duracao, descricao, inclusos, etapas, produtos, orientacoes, garantia }),
           });
         }
         if (!res.ok) {
@@ -2093,7 +2157,7 @@ async function initPartnerPage() {
   // Submeter formulário de loja
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!getDonoProfile()) { showAuthArea(); notify("Faça login no painel do dono para continuar."); return; }
+    if (!getDonoFromToken()) { showAuthArea(); notify("Faça login no painel do dono para continuar."); return; }
 
     const formData = new FormData(form);
     const nome = String(formData.get("shopName") || "").trim();
@@ -2211,7 +2275,7 @@ async function initPartnerPage() {
       resetPartnerForm();
       await renderOwnedShops();
       await renderReceivedBookings();
-      notify(editingId ? "Lava jato atualizado com sucesso." : "Lava jato publicado com sucesso no marketplace.");
+      notify(editingId ? "Lava jato atualizado com sucesso." : "Cadastro enviado para aprovação. Sua loja ficará visível no marketplace após a aprovação da equipe.");
       switchTab("dashboard");
     } catch (err) {
       notify(err.message || "Erro de conexão. Tente novamente.");
@@ -2237,7 +2301,7 @@ async function initPartnerPage() {
       const data = await res.json();
       if (!res.ok) { notify(data.error || "Login ou senha inválidos."); return; }
 
-      setDonoProfile(data.dono);
+      setDonoToken(data.token);
       loginForm.reset();
       resetPartnerForm();
       showManagementArea(data.dono);
@@ -2257,16 +2321,16 @@ async function initPartnerPage() {
     });
   }
 
-  // Retorno do OAuth: a sessão é criada pelo cookie HttpOnly do servidor.
+  // Callback Google OAuth → token na URL
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get("auth") === "dono_google_success") {
-    setDonoProfile(await getDonoSession());
-    window.history.replaceState({}, "", urlParams.get("next") || "cadastro-dono.html");
+  if (urlParams.get("auth") === "dono_google_success" && urlParams.get("token")) {
+    setDonoToken(urlParams.get("token"));
+    window.history.replaceState({}, "", "cadastro-dono.html");
   }
 
   // Logout do dono
   ownerLogoutButton.addEventListener("click", () => {
-    clearDonoSession();
+    clearDonoToken();
     cachedShops = [];
     cachedBookings = [];
     selectedDashboardShopId = "";
@@ -2600,8 +2664,8 @@ async function initPartnerPage() {
   initPhotoZone();
   initTimeTags();
 
-  // Verifica a sessão no servidor; o perfil local nunca autentica por si só.
-  const dono = await getDonoSession();
+  // Verifica se já está logado via token
+  const dono = getDonoFromToken();
   if (dono) {
     resetPartnerForm();
     showManagementArea(dono);
@@ -2729,11 +2793,13 @@ async function initOwnerRegisterPage() {
   if (googleLoginBtn) googleLoginBtn.addEventListener("click", startGoogleAuthDono);
   if (googleRegisterBtn) googleRegisterBtn.addEventListener("click", startGoogleAuthDono);
 
-  // Tratar retorno do callback Google, cuja sessão veio em cookie HttpOnly.
+  // Tratar retorno do callback Google
   function handleGoogleCallback() {
     const auth = params.get("auth");
-    if (auth === "dono_google_success") {
-      window.history.replaceState({}, "", params.get("next") || "cadastro-dono.html");
+    const token = params.get("token");
+    if (auth === "dono_google_success" && token) {
+      setDonoToken(token);
+      window.history.replaceState({}, "", "cadastro-dono.html");
       return true;
     }
     if (auth === "google_not_configured") {
@@ -2750,7 +2816,7 @@ async function initOwnerRegisterPage() {
   if (handleGoogleCallback()) return;
 
   // Se ja esta logado como dono, vai direto para o painel
-  if (await getDonoSession()) {
+  if (getDonoFromToken()) {
     return;
   }
 
@@ -2877,7 +2943,7 @@ async function initOwnerRegisterPage() {
         });
         const data = await res.json();
         if (!res.ok) { notify(data.error || "Erro ao criar conta."); return; }
-        setDonoProfile(data.dono);
+        setDonoToken(data.token);
         registerForm.reset();
         window.location.href = "cadastro-dono.html";
       } catch {
@@ -2885,6 +2951,94 @@ async function initOwnerRegisterPage() {
       }
     });
   }
+}
+
+// ── Acesso unificado: cliente ou empresa ───────────────────────────────────
+function initUnifiedOwnerLogin() {
+  const loginForm = document.getElementById("dono-login-form");
+  if (!loginForm || page !== "cadastro") return;
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(loginForm);
+    const login = normalizeOwnerLogin(formData.get("login"));
+    const senha = String(formData.get("password") || "");
+
+    if (!login || !senha) {
+      notify("Informe o login e a senha da empresa.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/dono/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login, senha }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify(data.error || "Login ou senha inválidos.");
+        return;
+      }
+
+      setDonoToken(data.token);
+      loginForm.reset();
+      window.location.href = "cadastro-dono.html";
+    } catch {
+      notify("Erro de conexão. Tente novamente.");
+    }
+  });
+}
+
+function initAccountTypeSelector() {
+  const clientButton = document.getElementById("select-client-account");
+  const companyButton = document.getElementById("select-company-account");
+  const clientContent = document.getElementById("client-account-content");
+  const companyContent = document.getElementById("company-account-content");
+
+  if (!clientButton || !companyButton || !clientContent || !companyContent) return;
+
+  const clientLoginButton = document.getElementById("switch-login");
+  const clientRegisterButton = document.getElementById("switch-signup");
+  const companyLoginButton = document.getElementById("dono-switch-login");
+  const companyRegisterButton = document.getElementById("dono-switch-register");
+  const params = new URLSearchParams(window.location.search);
+
+  function currentIntent() {
+    const mode = new URLSearchParams(window.location.search).get("mode");
+    return mode === "signup" || mode === "register" ? "register" : "login";
+  }
+
+  function updateUrl(type, intent) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("perfil", type);
+    url.searchParams.set("mode", type === "empresa" && intent === "register" ? "register" : type === "cliente" && intent === "register" ? "signup" : "login");
+    window.history.replaceState({}, "", url);
+  }
+
+  function selectAccountType(type, intent = currentIntent()) {
+    const isCompany = type === "empresa";
+    clientContent.classList.toggle("hidden", isCompany);
+    companyContent.classList.toggle("hidden", !isCompany);
+    clientButton.classList.toggle("active", !isCompany);
+    companyButton.classList.toggle("active", isCompany);
+    clientButton.setAttribute("aria-selected", String(!isCompany));
+    companyButton.setAttribute("aria-selected", String(isCompany));
+
+    if (isCompany) {
+      (intent === "register" ? companyRegisterButton : companyLoginButton)?.click();
+    } else {
+      (intent === "register" ? clientRegisterButton : clientLoginButton)?.click();
+    }
+    updateUrl(type, intent);
+  }
+
+  clientButton.addEventListener("click", () => selectAccountType("cliente"));
+  companyButton.addEventListener("click", () => selectAccountType("empresa"));
+
+  const initialType = params.get("perfil") === "empresa" ? "empresa" : "cliente";
+  const initialIntent = params.get("mode") === "signup" || params.get("mode") === "register" ? "register" : "login";
+  selectAccountType(initialType, initialIntent);
 }
 
 // ── Perfil da loja ───────────────────────────────────────────────────────────
@@ -3085,6 +3239,136 @@ async function initProfilePage() {
     }
 
     const servicos = loja.servicos || [];
+    let serviceDetailModal = document.getElementById("service-detail-modal");
+    if (!serviceDetailModal) {
+      document.body.insertAdjacentHTML("beforeend", `
+        <div id="service-detail-modal" class="service-detail-modal hidden" aria-hidden="true">
+          <div class="service-detail-backdrop" data-close-service-detail></div>
+          <section class="service-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="service-detail-title">
+            <header class="service-detail-header">
+              <div>
+                <p class="eyebrow">Detalhes do serviço</p>
+                <h2 id="service-detail-title"></h2>
+                <p id="service-detail-description" class="hero-text"></p>
+              </div>
+              <button class="service-detail-close" type="button" aria-label="Fechar detalhes" data-close-service-detail>&times;</button>
+            </header>
+            <div class="service-detail-summary">
+              <div><span>Preço</span><strong id="service-detail-price"></strong></div>
+              <div><span>Duração</span><strong id="service-detail-duration"></strong></div>
+              <div><span>Garantia</span><strong id="service-detail-warranty-summary"></strong></div>
+            </div>
+            <div class="service-detail-tabs" role="tablist" aria-label="Informações do serviço">
+              <button class="active" type="button" role="tab" aria-selected="true" data-service-detail-tab="included">O que inclui</button>
+              <button type="button" role="tab" aria-selected="false" data-service-detail-tab="steps">Como funciona</button>
+              <button type="button" role="tab" aria-selected="false" data-service-detail-tab="trust">Confiança</button>
+            </div>
+            <div class="service-detail-content">
+              <div data-service-detail-panel="included"></div>
+              <div class="hidden" data-service-detail-panel="steps"></div>
+              <div class="hidden" data-service-detail-panel="trust"></div>
+            </div>
+            <footer class="service-detail-footer">
+              <a id="service-detail-booking" class="btn btn-primary requires-auth" data-auth-action="agendar" href="#">Agendar este serviço</a>
+            </footer>
+          </section>
+        </div>`);
+      serviceDetailModal = document.getElementById("service-detail-modal");
+    }
+
+    const detailTitle = serviceDetailModal.querySelector("#service-detail-title");
+    const detailDescription = serviceDetailModal.querySelector("#service-detail-description");
+    const detailPrice = serviceDetailModal.querySelector("#service-detail-price");
+    const detailDuration = serviceDetailModal.querySelector("#service-detail-duration");
+    const detailWarrantySummary = serviceDetailModal.querySelector("#service-detail-warranty-summary");
+    const detailBooking = serviceDetailModal.querySelector("#service-detail-booking");
+    const detailTabs = Array.from(serviceDetailModal.querySelectorAll("[data-service-detail-tab]"));
+    const detailPanels = Array.from(serviceDetailModal.querySelectorAll("[data-service-detail-panel]"));
+
+    function detailList(value, fallback) {
+      const items = parseTextList(value);
+      return items.length ? items : fallback;
+    }
+
+    function closeServiceDetail() {
+      serviceDetailModal.classList.add("hidden");
+      serviceDetailModal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("service-detail-open");
+    }
+
+    function selectServiceDetailTab(name) {
+      detailTabs.forEach((tab) => {
+        const active = tab.dataset.serviceDetailTab === name;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+      detailPanels.forEach((panel) => {
+        panel.classList.toggle("hidden", panel.dataset.serviceDetailPanel !== name);
+      });
+    }
+
+    function openServiceDetail(servico) {
+      const bookingUrl = `agendamento.html?servicoId=${servico.id}&shopId=${loja.id}&servico=${encodeURIComponent(servico.nome)}&shop=${encodeURIComponent(loja.nome)}`;
+      const included = detailList(servico.inclusos, [servico.descricao || "Serviço executado conforme a descrição apresentada."]);
+      const steps = detailList(servico.etapas, ["Recepção e inspeção inicial", "Execução do serviço", "Conferência final e entrega"]);
+      const products = String(servico.produtos || "Produtos profissionais selecionados pelo estabelecimento.").trim();
+      const guidance = String(servico.orientacoes || "Consulte o estabelecimento caso o veículo precise de alguma preparação especial.").trim();
+      const warranty = String(servico.garantia || "Consultar condições com o estabelecimento.").trim();
+
+      // O selo é concedido somente quando o estabelecimento preencheu todos os
+      // campos de transparência. Os textos automáticos acima continuam servindo
+      // apenas como orientação visual e não contam para a obtenção do selo.
+      const hasCompleteTransparency =
+        parseTextList(servico.inclusos).length > 0 &&
+        parseTextList(servico.etapas).length > 0 &&
+        String(servico.produtos || "").trim().length > 0 &&
+        String(servico.orientacoes || "").trim().length > 0 &&
+        String(servico.garantia || "").trim().length > 0;
+
+      const transparencyBadge = hasCompleteTransparency
+        ? `<div class="service-transparency-badge">
+            <strong>Serviço com informações completas</strong>
+            <span>O estabelecimento detalhou todas as informações importantes deste serviço.</span>
+          </div>`
+        : "";
+
+      detailTitle.textContent = servico.nome || "Serviço";
+      detailDescription.textContent = servico.descricao || "Conheça os detalhes deste serviço.";
+      detailPrice.textContent = `R$ ${Number(servico.preco || 0).toFixed(2).replace(".", ",")}`;
+      detailDuration.textContent = servico.duracao || "Consultar";
+      detailWarrantySummary.textContent = servico.garantia ? "Informada" : "Consultar";
+      detailBooking.href = bookingUrl;
+
+      serviceDetailModal.querySelector('[data-service-detail-panel="included"]').innerHTML = `
+        <ul class="service-detail-checklist">${included.map((item) => `<li><span aria-hidden="true">&#10003;</span>${escapeHtml(item)}</li>`).join("")}</ul>`;
+      serviceDetailModal.querySelector('[data-service-detail-panel="steps"]').innerHTML = `
+        <ol class="service-detail-steps">${steps.map((item) => `<li><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
+      serviceDetailModal.querySelector('[data-service-detail-panel="trust"]').innerHTML = `
+        ${transparencyBadge}
+        <dl class="service-detail-trust-list">
+          <div><dt>Produtos e equipamentos</dt><dd>${escapeHtml(products)}</dd></div>
+          <div><dt>Orientações</dt><dd>${escapeHtml(guidance)}</dd></div>
+          <div><dt>Garantia</dt><dd>${escapeHtml(warranty)}</dd></div>
+        </dl>`;
+
+      selectServiceDetailTab("included");
+      serviceDetailModal.classList.remove("hidden");
+      serviceDetailModal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("service-detail-open");
+      serviceDetailModal.querySelector(".service-detail-close")?.focus();
+    }
+
+    detailTabs.forEach((tab) => {
+      if (tab.dataset.serviceDetailBound === "1") return;
+      tab.dataset.serviceDetailBound = "1";
+      tab.addEventListener("click", () => selectServiceDetailTab(tab.dataset.serviceDetailTab));
+    });
+    serviceDetailModal.querySelectorAll("[data-close-service-detail]").forEach((button) => {
+      if (button.dataset.serviceDetailBound === "1") return;
+      button.dataset.serviceDetailBound = "1";
+      button.addEventListener("click", closeServiceDetail);
+    });
+
     servicesGrid.innerHTML = servicos.length
       ? servicos.map((servico) => {
         const nome = escapeHtml(servico.nome || "Serviço");
@@ -3100,11 +3384,25 @@ async function initProfilePage() {
               <strong>R$ ${preco}</strong>
               <span>${duracao}</span>
             </div>
-            <a class="btn btn-primary requires-auth" data-auth-action="agendar" href="${bookingUrl}">Agendar</a>
+            <div class="service-card-actions">
+              <button class="btn btn-secondary" type="button" data-service-detail="${servico.id}">Ver detalhes</button>
+              <a class="btn btn-primary requires-auth" data-auth-action="agendar" href="${bookingUrl}">Agendar</a>
+            </div>
           </article>`;
       })
       .join("")
       : '<article class="service-card"><p>Este estabelecimento ainda não cadastrou serviços.</p></article>';
+
+    servicesGrid.addEventListener("click", (event) => {
+      const detailButton = event.target.closest("[data-service-detail]");
+      if (!detailButton) return;
+      const servico = servicos.find((item) => String(item.id) === detailButton.dataset.serviceDetail);
+      if (servico) openServiceDetail(servico);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !serviceDetailModal.classList.contains("hidden")) closeServiceDetail();
+    });
 
     initializeAuthRequiredLinks();
   } catch {}
@@ -3171,7 +3469,7 @@ async function initMapInteractions() {
 
   let apiShops = [];
   try {
-    const res = await fetch("/api/lojas");
+    const res = await fetch("/api/lojas", { cache: "no-store" });
     if (res.ok) {
       const { lojas } = await res.json();
       apiShops = lojas
@@ -4151,7 +4449,7 @@ async function initReviewsPage() {
 }
 
 // ── Autenticação do cliente ──────────────────────────────────────────────────
-async function initAuthPage() {
+function initAuthPage() {
   const signupForm = document.getElementById("signup-form");
   const loginForm = document.getElementById("login-form");
   const googleSignupButton = document.getElementById("google-signup-btn");
@@ -4276,32 +4574,43 @@ async function initAuthPage() {
     }
   }
 
-  function upsertGoogleUser(user) {
-    const profile = { name: user.nome, email: user.email, authProvider: "google" };
-    setCurrentUser(profile);
+  function upsertGoogleUser(name, email, token) {
+    if (!email) return;
+    const users = getUsersFromStorage();
+    const existingIndex = users.findIndex((u) => u.email === email);
+    const payload = {
+      name: name || email.split("@")[0],
+      email,
+      cpf: "",
+      phone: "",
+      authProvider: "google",
+      createdAt: new Date().toISOString(),
+    };
+    if (existingIndex >= 0) {
+      users[existingIndex] = { ...users[existingIndex], ...payload };
+    } else {
+      users.push(payload);
+    }
+    saveUsersToStorage(users);
+    setCurrentUser({ name: payload.name, email: payload.email, authProvider: "google" }, token);
   }
 
-  async function handleAuthQueryFeedback() {
+  function handleAuthQueryFeedback() {
     const auth = params.get("auth");
     if (!auth) return;
 
     if (auth === "success" && params.get("provider") === "google") {
-      const next = normalizedNextUrl();
-      window.history.replaceState({}, "", "cadastro.html");
-      try {
-        const response = await fetch("/api/auth/me", { credentials: "same-origin" });
-        const data = await response.json();
-        if (!response.ok || !data.authenticated || !data.user) {
-          notify("Não foi possível confirmar sua sessão Google. Tente novamente.");
-          return;
-        }
-        upsertGoogleUser(data.user);
-      } catch {
-        notify("Não foi possível confirmar sua sessão Google. Tente novamente.");
+      const name = String(params.get("name") || "").trim() || "Usuário Google";
+      const email = String(params.get("email") || "").trim().toLowerCase();
+      const token = params.get("token");
+      if (!token) {
+        notify("Login com Google concluído sem token de acesso. Tente novamente.");
         return;
       }
+      upsertGoogleUser(name, email, token);
       notify("Login com Google realizado com sucesso.");
-      window.location.href = next;
+      window.history.replaceState({}, "", "cadastro.html");
+      window.location.href = normalizedNextUrl();
       return;
     }
 
@@ -4361,9 +4670,12 @@ async function initAuthPage() {
       const data = await response.json();
       if (!response.ok) { notify(data.error || "E-mail ou senha inválidos."); return; }
 
-      setCurrentUser({ name: data.user.nome, email: data.user.email, authProvider: "email" });
+      setCurrentUser(
+        { name: data.user.nome, email: data.user.email, authProvider: "email" },
+        data.token,
+      );
       notify("Login realizado com sucesso.");
-      window.location.href = normalizedNextUrl();
+      window.location.href = "servicos.html";
     } catch {
       notify("Erro ao conectar com o servidor. Tente novamente.");
     }
@@ -4401,10 +4713,13 @@ async function initAuthPage() {
       const data = await response.json();
       if (!response.ok) { notify(data.error || "Erro ao criar conta."); return; }
 
-      setCurrentUser({ name: data.user.nome, email: data.user.email, authProvider: "email" });
+      setCurrentUser(
+        { name: data.user.nome, email: data.user.email, authProvider: "email" },
+        data.token,
+      );
       notify("Cadastro realizado com sucesso. Bem-vindo ao AutoShine.");
       signupForm.reset();
-      window.location.href = normalizedNextUrl();
+      window.location.href = "servicos.html";
     } catch {
       notify("Erro ao conectar com o servidor. Tente novamente.");
     }
@@ -4415,13 +4730,16 @@ async function initAuthPage() {
     window.location.href = `/auth/google?next=${nextUrl}`;
   }
 
-  googleSignupButton.addEventListener("click", startGoogleAuth);
+  googleSignupButton.addEventListener("click", () => {
+    const servicesUrl = encodeURIComponent("servicos.html");
+    window.location.href = `/auth/google?next=${servicesUrl}`;
+  });
   googleLoginButton.addEventListener("click", startGoogleAuth);
 
-  await handleAuthQueryFeedback();
+  handleAuthQueryFeedback();
 }
 
-let adminSessionActive = false;
+const adminTokenKey = "autoshine:admin-token";
 
 // ── Recuperação de senha ─────────────────────────────────────────────────────
 function initResetSenhaPage() {
@@ -4444,7 +4762,9 @@ function initResetSenhaPage() {
     confirmPanel?.classList.remove("hidden");
     if (tipoInput) tipoInput.value = tipo;
     if (loginLink) {
-      loginLink.href = tipo === "dono" ? "cadastro-dono.html" : "cadastro.html?mode=login";
+      loginLink.href = tipo === "dono"
+        ? "cadastro.html?perfil=empresa&mode=login"
+        : "cadastro.html?perfil=cliente&mode=login";
     }
 
     confirmForm?.addEventListener("submit", async (e) => {
@@ -4516,12 +4836,11 @@ function initResetSenhaPage() {
 }
 
 // ── Inicialização por página ─────────────────────────────────────────────────
-if (page === "home") {
+if (page === "home" || page === "servicos") {
   renderOwnerShopsOnHome();
   initCategoryFilter();
   initUseLocation();
   initSortBar();
-  initSearchFilter();
 }
 
 if (page === "mapa") {
@@ -4542,11 +4861,15 @@ if (page === "avaliacoes") {
 
 if (page === "cadastro") {
   initAuthPage();
+  initOwnerRegisterPage();
+  initUnifiedOwnerLogin();
+  initAccountTypeSelector();
 }
 
 if (page === "perfil") {
   initProfilePage();
 }
+if (page === "perfil-usuario") initUserProfilePage();
 
 if (page === "parceiro") {
   initPartnerPage();
@@ -4573,6 +4896,7 @@ initializePasswordVisibilityToggles();
 initializeAuthRequiredLinks();
 setActiveNavLink();
 updateNavAuthState();
+updatePartnerNavState();
 initializeSiteFooter();
 initializeReportActions();
 initFavoriteButtonHandling();
@@ -4585,6 +4909,10 @@ function initHamburgerMenu() {
   if (!toggle || !nav) return;
 
   function openMenu() {
+    document.querySelectorAll(".topbar > .user-menu .user-menu-panel").forEach((panel) => {
+      panel.hidden = true;
+      panel.closest(".user-menu")?.querySelector(".user-menu-button")?.setAttribute("aria-expanded", "false");
+    });
     nav.classList.add("is-open");
     toggle.setAttribute("aria-expanded", "true");
     document.body.style.overflow = "hidden";
@@ -4618,17 +4946,15 @@ function initHamburgerMenu() {
 }
 
 // ── Painel Admin ─────────────────────────────────────────────────────────────
-function getAdminToken() { return adminSessionActive; }
-function setAdminToken() { adminSessionActive = true; }
-function clearAdminToken() {
-  adminSessionActive = false;
-  localStorage.removeItem("autoshine:admin-token");
-  fetch("/api/admin/logout", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
-}
+function getAdminToken() { return localStorage.getItem(adminTokenKey); }
+function setAdminToken(t) { localStorage.setItem(adminTokenKey, t); }
+function clearAdminToken() { localStorage.removeItem(adminTokenKey); }
 
 function adminFetch(path, options = {}) {
+  const token = getAdminToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  return fetch(path, { ...options, credentials: "same-origin", headers });
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return fetch(path, { ...options, headers });
 }
 
 async function initAdminPage() {
@@ -4642,9 +4968,39 @@ async function initAdminPage() {
   const countLabel = document.getElementById("admin-shops-count");
   const emptyMsg = document.getElementById("admin-empty");
   const refreshBtn = document.getElementById("admin-refresh-btn");
-  const favoritesList = document.getElementById("admin-favorites-list");
-  const favoritesSummary = document.getElementById("admin-favorites-summary");
-  const favoritesEmpty = document.getElementById("admin-favorites-empty");
+  const shopHealthFilterButtons = document.querySelectorAll("[data-health-filter]");
+  const shopApprovalFilter = document.getElementById("admin-shop-approval-filter");
+  const adminPeriodButtons = document.querySelectorAll("[data-admin-period]");
+  const adminCustomDateForm = document.getElementById("admin-custom-date-form");
+  const adminCustomDateStart = document.getElementById("admin-custom-date-start");
+  const adminCustomDateEnd = document.getElementById("admin-custom-date-end");
+  const adminDashboardRefreshBtn = document.getElementById("admin-dashboard-refresh-btn");
+  const adminDashboardError = document.getElementById("admin-dashboard-error");
+  const adminBookingChart = document.getElementById("admin-booking-chart");
+  const adminRevenueChart = document.getElementById("admin-revenue-chart");
+  const adminChartModeButtons = document.querySelectorAll("[data-admin-chart-type]");
+  const adminChartModes = { revenue: "pie", bookings: "pie" };
+  let rerenderAdminCharts = () => {};
+  const adminDashboardRange = document.getElementById("admin-dashboard-range");
+  const adminTrendRevenueTotal = document.getElementById("admin-trend-revenue-total");
+  const adminTrendBookingsTotal = document.getElementById("admin-trend-bookings-total");
+  const adminRankingBookings = document.getElementById("admin-ranking-bookings");
+  const adminRankingRatings = document.getElementById("admin-ranking-ratings");
+  const adminRankingFavorites = document.getElementById("admin-ranking-favorites");
+  const adminPendingReports = document.getElementById("admin-pending-reports");
+  const adminPendingShops = document.getElementById("admin-pending-shops");
+  const adminPendingBookings = document.getElementById("admin-pending-bookings");
+  const adminQuickLinks = document.querySelectorAll("[data-admin-go-tab]");
+  const adminKpiSignups = document.getElementById("admin-kpi-signups");
+  const adminKpiBookings = document.getElementById("admin-kpi-bookings");
+  const adminKpiCancellations = document.getElementById("admin-kpi-cancellations");
+  const adminKpiRating = document.getElementById("admin-kpi-rating");
+  const adminKpiRatingCount = document.getElementById("admin-kpi-rating-count");
+  const adminKpiGmv = document.getElementById("admin-kpi-gmv");
+  const adminKpiPlatformRevenue = document.getElementById("admin-kpi-platform-revenue");
+  const adminKpiPlatformRate = document.getElementById("admin-kpi-platform-rate");
+  const adminKpiAverageTicket = document.getElementById("admin-kpi-average-ticket");
+  const adminFinanceNote = document.getElementById("admin-finance-note");
   const editPanel = document.getElementById("admin-edit-panel");
   const shopForm = document.getElementById("admin-shop-form");
   const formTitle = document.getElementById("admin-form-title");
@@ -4720,24 +5076,26 @@ async function initAdminPage() {
   const reviewCustomerNameInput = document.getElementById("admin-review-customer-name");
   const reviewPhotoInput = document.getElementById("admin-review-photo");
   const reviewCommentInput = document.getElementById("admin-review-comment");
-  const reviewApprovedInput = document.getElementById("admin-review-approved");
   const reviewSubmitBtn = document.getElementById("admin-review-submit");
   const reviewCancelBtn = document.getElementById("admin-review-cancel");
   const reviewFeedback = document.getElementById("admin-review-feedback");
 
-  const statFields = {
-    lojas: document.getElementById("admin-stat-shops"),
-    bloqueadas: document.getElementById("admin-stat-blocked"),
-    donos: document.getElementById("admin-stat-owners"),
-    usuarios: document.getElementById("admin-stat-users"),
-    agendamentos: document.getElementById("admin-stat-bookings"),
-    pendentes: document.getElementById("admin-stat-pending"),
-    avaliacoes: document.getElementById("admin-stat-reviews"),
-    denuncias: document.getElementById("admin-stat-reports"),
-    denunciasAbertas: document.getElementById("admin-stat-open-reports"),
-  };
-
   if (!authShell || !managementShell || !loginForm || !tbody) return;
+  let adminPeriod = 7;
+  let adminCustomDateRange = null;
+  const hojeDashboard = new Date();
+  const hojeDashboardLocal = new Date(hojeDashboard.getTime() - hojeDashboard.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const inicioPadraoDashboard = new Date(hojeDashboard);
+  inicioPadraoDashboard.setDate(inicioPadraoDashboard.getDate() - 6);
+  const inicioPadraoDashboardLocal = new Date(inicioPadraoDashboard.getTime() - inicioPadraoDashboard.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  if (adminCustomDateStart) {
+    adminCustomDateStart.value = inicioPadraoDashboardLocal;
+    adminCustomDateStart.max = hojeDashboardLocal;
+  }
+  if (adminCustomDateEnd) {
+    adminCustomDateEnd.value = hojeDashboardLocal;
+    adminCustomDateEnd.max = hojeDashboardLocal;
+  }
 
   function onlyDigitsAdmin(value) {
     return String(value || "").replace(/\D/g, "");
@@ -4813,10 +5171,6 @@ async function initAdminPage() {
     hideReviewEditPanel();
   }
 
-  function renderStat(key, value) {
-    if (statFields[key]) statFields[key].textContent = String(value ?? 0);
-  }
-
   function formatAdminDate(value) {
     if (!value) return "-";
     const date = new Date(value);
@@ -4834,9 +5188,9 @@ async function initAdminPage() {
     const value = String(status || "-");
     const safe = escapeHtml(value);
     const normalized = value.toLowerCase();
-    const className = normalized === "finalizado" || normalized === "resolvida"
+    const className = normalized === "finalizado" || normalized === "resolvida" || normalized === "ativo"
       ? "admin-status-active"
-      : normalized === "cancelado" || normalized === "arquivada"
+      : normalized === "cancelado" || normalized === "arquivada" || normalized === "bloqueado"
         ? "admin-status-blocked"
         : "admin-status-pending";
     return `<span class="admin-status ${className}">${safe}</span>`;
@@ -4976,57 +5330,308 @@ async function initAdminPage() {
     if (reviewCustomerNameInput) reviewCustomerNameInput.value = review.nomeCliente || "";
     if (reviewPhotoInput) reviewPhotoInput.value = review.fotoUrl || "";
     if (reviewCommentInput) reviewCommentInput.value = review.comentario || "";
-    if (reviewApprovedInput) reviewApprovedInput.checked = Boolean(review.aprovado);
     setResourceFeedback(reviewFeedback, "Editando avaliação selecionada.", "success");
     reviewEditPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function loadSummary() {
+  function renderAdminRanking(list, entries, valueLabel) {
+    if (!list) return;
+    if (!entries.length) {
+      list.innerHTML = `<li>Sem dados para este período.</li>`;
+      return;
+    }
+    list.innerHTML = entries.map((entry) => `
+      <li>
+        <strong title="${escapeHtml(entry.nome)}">${escapeHtml(entry.nome)}</strong>
+        <span>${valueLabel(entry)}</span>
+      </li>
+    `).join("");
+  }
+
+  function renderAdminTrendChart(container, series, key, color, formatValue, metricLabel, chartType = "line") {
+    if (!container) return;
+    if (!series.length) {
+      container.innerHTML = `<p class="admin-trend-empty">Sem dados para este período.</p>`;
+      return;
+    }
+
+    if (chartType === "pie") {
+      const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      });
+      const formatDayMonth = (date) => `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+      const bucketsByMonth = new Map();
+      series.forEach((item) => {
+        const [year, month, day] = item.data.split("-").map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+        let bucket = bucketsByMonth.get(monthKey);
+        if (!bucket) {
+          bucket = {
+            label: monthFormatter.format(date),
+            firstDate: date,
+            lastDate: date,
+            value: 0,
+          };
+          bucketsByMonth.set(monthKey, bucket);
+        }
+        bucket.lastDate = date;
+        bucket.value += Number(item[key]) || 0;
+      });
+      const buckets = [...bucketsByMonth.values()].map((bucket) => ({
+        ...bucket,
+        dateRange: `${formatDayMonth(bucket.firstDate)} a ${formatDayMonth(bucket.lastDate)}`,
+      }));
+
+      const total = buckets.reduce((sum, bucket) => sum + bucket.value, 0);
+      if (!total) {
+        container.innerHTML = `<p class="admin-trend-empty">Sem ${escapeHtml(metricLabel)} neste período.</p>`;
+        return;
+      }
+
+      const colors = ["#4dabf7", "#2dd4bf", "#fbbf24", "#c084fc", "#fb7185", "#22d3ee", "#a3e635", "#818cf8", "#f97316", "#14b8a6", "#e879f9", "#84cc16"];
+      const circumference = 2 * Math.PI * 72;
+      let offset = 0;
+      const segments = buckets.map((bucket, index) => {
+        if (bucket.value <= 0) return "";
+        const segmentLength = (bucket.value / total) * circumference;
+        const visibleLength = Math.max(0, segmentLength - 1.5);
+        const percentage = (bucket.value / total) * 100;
+        const percentageLabel = `${percentage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+        const description = `${bucket.label}, dias ${bucket.dateRange}: ${formatValue(bucket.value)} de ${metricLabel}, ${percentageLabel} do total`;
+        const segment = `
+          <circle class="admin-pie-segment" cx="100" cy="100" r="72" stroke="${colors[index % colors.length]}"
+            stroke-dasharray="${visibleLength} ${circumference - visibleLength}" stroke-dashoffset="${-offset}"
+            tabindex="0" role="img" aria-label="${escapeHtml(description)}">
+            <title>${escapeHtml(description)}</title>
+          </circle>`;
+        offset += segmentLength;
+        return segment;
+      }).join("");
+      const legend = buckets.map((bucket, index) => {
+        if (bucket.value <= 0) return "";
+        const percentage = (bucket.value / total) * 100;
+        return `
+          <li>
+            <span class="admin-pie-swatch" style="--admin-pie-color:${colors[index % colors.length]}"></span>
+            <span class="admin-pie-legend-copy">
+              <strong>${escapeHtml(bucket.label)}</strong>
+              <small>Dias ${escapeHtml(bucket.dateRange)} · ${escapeHtml(formatValue(bucket.value))} · ${percentage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do total</small>
+            </span>
+          </li>`;
+      }).join("");
+
+      container.innerHTML = `
+        <div class="admin-pie-layout">
+          <div class="admin-pie-visual">
+            <svg class="admin-pie-svg" viewBox="0 0 200 200" role="group" aria-label="Distribuição mensal de ${escapeHtml(metricLabel)} em ${buckets.length} meses. Passe o foco sobre uma fatia para consultar o mês, os dias incluídos, o valor e a porcentagem.">
+              <circle class="admin-pie-track" cx="100" cy="100" r="72"></circle>
+              <g transform="rotate(-90 100 100)">${segments}</g>
+            </svg>
+            <div class="admin-pie-center"><strong>${escapeHtml(formatValue(total))}</strong><span>Total no período</span></div>
+          </div>
+          <div class="admin-pie-details">
+            <p class="admin-pie-help">Cada cor representa um mês. “Dias” mostra o intervalo somado: quando o mês inteiro estiver selecionado, vai do dia 01 até o último dia do mês. O valor e o percentual mostram a participação desse intervalo no total.</p>
+            <ul class="admin-pie-legend">${legend}</ul>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const width = Math.max(680, series.length * 22 + 60);
+    const height = 230;
+    const margin = { top: 20, right: 18, bottom: 42, left: 58 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const maxValue = Math.max(1, ...series.map((item) => Number(item[key]) || 0));
+    const points = series.map((item, index) => {
+      const value = Number(item[key]) || 0;
+      const x = margin.left + (series.length === 1 ? plotWidth / 2 : (index / (series.length - 1)) * plotWidth);
+      const y = margin.top + plotHeight - (value / maxValue) * plotHeight;
+      return { item, value, x, y };
+    });
+    const line = points.map((point) => `${point.x},${point.y}`).join(" ");
+    const area = `${margin.left},${margin.top + plotHeight} ${line} ${margin.left + plotWidth},${margin.top + plotHeight}`;
+    const labelStride = Math.max(1, Math.ceil(series.length / 7));
+    const grid = [0, 0.5, 1].map((fraction) => {
+      const y = margin.top + plotHeight * fraction;
+      const value = maxValue * (1 - fraction);
+      return `
+        <line x1="${margin.left}" y1="${y}" x2="${margin.left + plotWidth}" y2="${y}" class="admin-trend-gridline" />
+        <text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" class="admin-trend-axis-label">${escapeHtml(formatValue(value))}</text>`;
+    }).join("");
+    const dateLabels = points.map((point, index) => {
+      if (index % labelStride !== 0 && index !== points.length - 1) return "";
+      return `<text x="${point.x}" y="${height - 12}" text-anchor="middle" class="admin-trend-axis-label">${escapeHtml(point.item.label)}</text>`;
+    }).join("");
+    const dots = points.map(({ item, value, x, y }) => {
+      const description = `${item.label}: ${formatValue(value)} ${metricLabel}`;
+      return `<circle cx="${x}" cy="${y}" r="4" class="admin-trend-point" tabindex="0" aria-label="${escapeHtml(description)}"><title>${escapeHtml(description)}</title></circle>`;
+    }).join("");
+    const gradientId = `admin-trend-gradient-${key}`;
+
+    container.innerHTML = `
+      <div class="admin-trend-scroll">
+        <svg class="admin-trend-svg" style="--admin-trend-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(metricLabel)} ao longo de ${series.length} dias">
+          <defs><linearGradient id="${gradientId}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".3" /><stop offset="100%" stop-color="${color}" stop-opacity="0" /></linearGradient></defs>
+          ${grid}
+          <polygon points="${area}" fill="url(#${gradientId})" />
+          <polyline points="${line}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          ${dots}
+          ${dateLabels}
+        </svg>
+      </div>`;
+  }
+
+  async function loadDashboard() {
     try {
-      const res = await adminFetch("/api/admin/resumo");
+      const dashboardQuery = adminCustomDateRange
+        ? `inicio=${encodeURIComponent(adminCustomDateRange.inicio)}&fim=${encodeURIComponent(adminCustomDateRange.fim)}`
+        : `periodo=${adminPeriod}`;
+      const res = await adminFetch(`/api/admin/dashboard?${dashboardQuery}`);
       if (res.status === 401 || res.status === 403) {
         clearAdminToken();
         showAuth();
         return;
       }
       const data = await res.json();
-      Object.entries(data.resumo || {}).forEach(([key, value]) => renderStat(key, value));
+      if (!res.ok) throw new Error(data.error || "Não foi possível carregar o painel.");
+      const indicadores = data.indicadores || {};
+      const pendencias = data.pendencias || {};
+      const rankings = data.rankings || {};
+      const serieDiaria = Array.isArray(data.agendamentosPorDia) ? data.agendamentosPorDia : [];
+      const formatCurrency = (value) => Number(value || 0).toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      });
+      if (adminDashboardError) adminDashboardError.textContent = "";
+      if (adminKpiSignups) adminKpiSignups.textContent = Number(indicadores.novosCadastros || 0).toLocaleString("pt-BR");
+      if (adminKpiBookings) adminKpiBookings.textContent = Number(indicadores.agendamentos || 0).toLocaleString("pt-BR");
+      if (adminKpiCancellations) adminKpiCancellations.textContent = `${Number(indicadores.taxaCancelamento || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+      if (adminKpiRating) adminKpiRating.textContent = indicadores.notaMedia == null ? "—" : Number(indicadores.notaMedia).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      if (adminKpiRatingCount) {
+        const total = Number(indicadores.totalAvaliacoes || 0);
+        adminKpiRatingCount.textContent = `${total} avaliação${total === 1 ? "" : "s"} no período`;
+      }
+      if (adminKpiGmv) adminKpiGmv.textContent = formatCurrency(indicadores.gmvEstimado);
+      if (adminKpiPlatformRevenue) adminKpiPlatformRevenue.textContent = formatCurrency(indicadores.receitaPlataformaEstimada);
+      if (adminKpiPlatformRate) {
+        const rate = Number(indicadores.taxaComissaoSimuladaPercent || 0);
+        adminKpiPlatformRate.textContent = `Comissão simulada: ${rate.toLocaleString("pt-BR")}%`;
+      }
+      if (adminKpiAverageTicket) adminKpiAverageTicket.textContent = formatCurrency(indicadores.ticketMedioEstimado);
+      if (adminFinanceNote) {
+        const legacyBookings = Number(indicadores.agendamentosSemValorHistorico || 0);
+        adminFinanceNote.textContent = legacyBookings
+          ? `Reservas canceladas ficam fora da soma. Não há pagamentos integrados; ${legacyBookings} reserva(s) sem preço histórico usa(m) o valor atual do serviço. A comissão é uma simulação.`
+          : "Reservas canceladas ficam fora da soma. Não há pagamentos integrados; o valor usa o preço salvo na reserva e a comissão é uma simulação.";
+      }
+      if (adminDashboardRange && data.intervalo) {
+        const formatDate = (value) => new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
+        adminDashboardRange.textContent = `Dados de ${formatDate(data.intervalo.inicio)} a ${formatDate(data.intervalo.fim)}`;
+      }
+      if (adminPendingReports) adminPendingReports.textContent = String(pendencias.denunciasAbertas ?? 0);
+      if (adminPendingShops) adminPendingShops.textContent = String(pendencias.lojasPendentes ?? 0);
+      if (adminPendingBookings) adminPendingBookings.textContent = String(pendencias.agendamentosAntigos ?? 0);
+      rerenderAdminCharts = () => {
+        renderAdminTrendChart(adminRevenueChart, serieDiaria, "receita", "#55a7ff", formatCurrency, "faturamento estimado", adminChartModes.revenue);
+        renderAdminTrendChart(adminBookingChart, serieDiaria, "total", "#50d6ae", (value) => Math.round(value).toLocaleString("pt-BR"), "agendamentos", adminChartModes.bookings);
+      };
+      rerenderAdminCharts();
+      if (adminTrendRevenueTotal) adminTrendRevenueTotal.textContent = formatCurrency(indicadores.gmvEstimado);
+      if (adminTrendBookingsTotal) adminTrendBookingsTotal.textContent = `${Number(indicadores.agendamentos || 0).toLocaleString("pt-BR")} agendamentos`;
+      renderAdminRanking(adminRankingBookings, rankings.agendamentos || [], (item) => `${item.total} agendamento${item.total === 1 ? "" : "s"}`);
+      renderAdminRanking(adminRankingRatings, rankings.avaliacoes || [], (item) => `★ ${Number(item.nota).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} · ${item.total}`);
+      renderAdminRanking(adminRankingFavorites, rankings.favoritos || [], (item) => `${item.total} favorito${item.total === 1 ? "" : "s"}`);
     } catch {
-      Object.keys(statFields).forEach((key) => renderStat(key, "-"));
+      if (adminDashboardError) adminDashboardError.textContent = "Não foi possível carregar os indicadores. Tente atualizar o painel.";
     }
   }
 
   async function loadShops() {
-    tbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Carregando...</td></tr>`;
+    if (emptyMsg) emptyMsg.classList.add("hidden");
     try {
-      const res = await adminFetch("/api/admin/lojas");
+      const filters = new URLSearchParams();
+      const selectedHealth = document.querySelector("[data-health-filter].is-active")?.dataset.healthFilter;
+      if (selectedHealth) filters.set("health", selectedHealth);
+      if (shopApprovalFilter?.value) filters.set("statusAprovacao", shopApprovalFilter.value);
+      const query = filters.toString();
+      const res = await adminFetch(`/api/admin/stores${query ? `?${query}` : ""}`);
       if (res.status === 401 || res.status === 403) {
         clearAdminToken();
         showAuth();
         return;
       }
-      const { lojas } = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao carregar lojas.");
+      const lojas = Array.isArray(data.lojas) ? data.lojas : [];
+      const healthCounts = data.healthCounts || {};
+      const totalHealthCount = ["healthy", "warning", "critical"]
+        .reduce((total, status) => total + Number(healthCounts[status] || 0), 0);
+      document.querySelectorAll("[data-health-count]").forEach((counter) => {
+        const status = counter.dataset.healthCount;
+        counter.textContent = String(status === "all" ? totalHealthCount : Number(healthCounts[status] || 0));
+      });
+
+      const healthLabels = { HEALTHY: "Saudáveis", WARNING: "Em atenção", CRITICAL: "Críticas" };
+      const approvalLabels = { aprovada: "Aprovadas", pendente: "Pendentes", rejeitada: "Rejeitadas" };
+      const activeFilters = [
+        selectedHealth ? healthLabels[selectedHealth] : "",
+        shopApprovalFilter?.value ? `Aprovação: ${approvalLabels[shopApprovalFilter.value]}` : "",
+      ].filter(Boolean);
+      if (countLabel) {
+        countLabel.textContent = activeFilters.length
+          ? `${lojas.length} de ${totalHealthCount} lojas · ${activeFilters.join(" · ")}`
+          : `${lojas.length} lava jato${lojas.length !== 1 ? "s" : ""} no total`;
+      }
 
       if (!lojas || !lojas.length) {
         tbody.innerHTML = "";
         if (emptyMsg) emptyMsg.classList.remove("hidden");
-        if (countLabel) countLabel.textContent = "Nenhum lava jato cadastrado.";
+        if (emptyMsg) {
+          emptyMsg.textContent = activeFilters.length
+            ? "Nenhuma loja corresponde aos filtros selecionados."
+            : "Nenhum lava jato cadastrado ainda.";
+        }
         return;
       }
 
       if (emptyMsg) emptyMsg.classList.add("hidden");
-      if (countLabel) countLabel.textContent = `${lojas.length} lava jato${lojas.length !== 1 ? "s" : ""} no total`;
 
       tbody.innerHTML = lojas.map((loja) => {
         const avg = loja.avaliacoes?.length
           ? (loja.avaliacoes.reduce((s, a) => s + a.nota, 0) / loja.avaliacoes.length).toFixed(1)
           : "-";
         const totalServicos = loja._count?.servicos ?? loja.servicos?.length ?? 0;
-        const statusClass = loja.bloqueado ? "admin-status-blocked" : "admin-status-active";
-        const statusLabel = loja.bloqueado ? "Bloqueado" : "Ativo";
-        const toggleBtn = loja.bloqueado
-          ? `<button class="btn btn-secondary admin-action-btn" data-action="desbloquear" data-id="${loja.id}">Desbloquear</button>`
-          : `<button class="btn btn-ghost admin-action-btn" data-action="bloquear" data-id="${loja.id}">Bloquear</button>`;
+        const healthMeta = {
+          healthy: { label: "Saudável", emoji: "🟢", className: "admin-health-healthy" },
+          warning: { label: "Em atenção", emoji: "🟡", className: "admin-health-warning" },
+          critical: { label: "Crítica", emoji: "🔴", className: "admin-health-critical" },
+        };
+        const health = healthMeta[loja.healthStatus] || { label: "Indisponível", emoji: "⚪", className: "admin-health-unknown" };
+        const healthReasons = Array.isArray(loja.healthReasons) ? loja.healthReasons.join("\n") : "";
+        const inativoAte = loja.inativoAte ? new Date(loja.inativoAte) : null;
+        const temporariamenteInativa = inativoAte && inativoAte > new Date();
+        const statusClass = loja.bloqueado || temporariamenteInativa || loja.statusAprovacao === "pendente" ? "admin-status-blocked" : "admin-status-active";
+        const statusLabel = loja.bloqueado
+          ? "Bloqueado"
+          : temporariamenteInativa
+            ? `Inativo até ${inativoAte.toLocaleDateString("pt-BR")}`
+            : loja.statusAprovacao === "pendente"
+              ? "Aguardando aprovação"
+              : "Ativo";
+        const toggleBtn = loja.bloqueado || temporariamenteInativa
+          ? `<button class="btn btn-secondary admin-action-btn" data-action="desbloquear" data-id="${loja.id}">${temporariamenteInativa && !loja.bloqueado ? "Reativar" : "Desbloquear"}</button>`
+          : `<button class="btn btn-secondary admin-action-btn" data-action="bloquear" data-id="${loja.id}">Bloquear</button>`;
+        const inactivateBtn = !loja.bloqueado && !temporariamenteInativa
+          ? `<button class="btn btn-danger admin-action-btn" data-action="inativar" data-id="${loja.id}" data-nome="${escapeHtml(loja.nome)}">Inativar 30 dias</button>`
+          : "";
+        const approvalBtn = loja.statusAprovacao === "pendente"
+          ? `<button class="btn btn-secondary admin-action-btn" data-action="aprovar" data-id="${loja.id}">Aprovar</button>`
+          : "";
 
         return `
           <tr data-shop-row="${loja.id}">
@@ -5045,112 +5650,88 @@ async function initAdminPage() {
             </td>
             <td>${totalServicos}</td>
             <td>${avg !== "-" ? `&#9733; ${avg}` : "-"}</td>
+            <td><span class="admin-health-badge ${health.className}" title="${escapeHtml(healthReasons || "Indicadores operacionais dentro da normalidade.")}">${health.emoji} ${health.label}</span></td>
             <td><span class="admin-status ${statusClass}">${statusLabel}</span></td>
             <td class="admin-actions">
               <button class="btn btn-secondary admin-action-btn" data-action="editar" data-id="${loja.id}">Editar</button>
+              ${approvalBtn}
               ${toggleBtn}
-              <button class="btn btn-danger admin-action-btn" data-action="excluir" data-id="${loja.id}" data-nome="${escapeHtml(loja.nome)}">Excluir</button>
+              ${inactivateBtn}
             </td>
           </tr>`;
       }).join("");
     } catch {
-      tbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar lojas.</td></tr>`;
-    }
-  }
-
-  async function loadFavoritedShopsAdmin() {
-    if (!favoritesList || !favoritesSummary || !favoritesEmpty) return;
-    favoritesList.innerHTML = `<li class="admin-loading">Carregando lojas favoritadas...</li>`;
-    favoritesEmpty.classList.add("hidden");
-    favoritesSummary.textContent = "Carregando favoritos...";
-
-    try {
-      const res = await adminFetch("/api/admin/lojas-favoritadas");
-      if (res.status === 401 || res.status === 403) {
-        clearAdminToken();
-        showAuth();
-        return;
-      }
-
-      const data = await res.json();
-      const lojas = Array.isArray(data.lojas) ? data.lojas : [];
-      const totalFavoritos = Number(data.totalFavoritos || 0);
-      const totalLojasFavoritadas = Number(data.totalLojasFavoritadas || lojas.length || 0);
-
-      favoritesSummary.textContent = `${totalFavoritos} favorito${totalFavoritos !== 1 ? "s" : ""} em ${totalLojasFavoritadas} loja${totalLojasFavoritadas !== 1 ? "s" : ""}.`;
-
-      if (!lojas.length) {
-        favoritesList.innerHTML = "";
-        favoritesEmpty.classList.remove("hidden");
-        return;
-      }
-
-      favoritesEmpty.classList.add("hidden");
-      favoritesList.innerHTML = lojas.map((loja, index) => `
-        <li class="admin-favorites-item">
-          <span class="admin-favorites-rank">${index + 1}</span>
-          <div class="admin-favorites-main">
-            <strong>${escapeHtml(loja.nome || "Loja")}</strong>
-            <p class="empty-copy">${escapeHtml(loja.endereco || "Sem endereço")}</p>
-          </div>
-          <div>
-            <span class="admin-favorites-count">${Number(loja.totalFavoritos || 0)} favorito${Number(loja.totalFavoritos || 0) !== 1 ? "s" : ""}</span>
-          </div>
-        </li>
-      `).join("");
-    } catch {
-      favoritesSummary.textContent = "Não foi possível carregar as lojas favoritadas.";
-      favoritesList.innerHTML = `<li class="admin-loading">Erro ao carregar favoritos.</li>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Erro ao carregar lojas.</td></tr>`;
     }
   }
 
   async function loadUsers() {
     if (!usersTbody) return;
-    usersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Carregando...</td></tr>`;
+    usersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
     try {
       const res = await adminFetch("/api/admin/usuarios");
       const { usuarios } = await res.json();
       if (!res.ok) throw new Error();
       if (usersCount) usersCount.textContent = `${usuarios.length} usuário${usuarios.length !== 1 ? "s" : ""} no total`;
       usersEmpty?.classList.toggle("hidden", Boolean(usuarios.length));
-      usersTbody.innerHTML = usuarios.length ? usuarios.map((usuario) => `
+      usersTbody.innerHTML = usuarios.length ? usuarios.map((usuario) => {
+        const suspenso = usuario.suspensoAte && new Date(usuario.suspensoAte) > new Date();
+        const status = usuario.bloqueado ? "Bloqueado" : suspenso ? `Suspenso até ${formatAdminDate(usuario.suspensoAte)}` : "Ativo";
+        const suspensionAction = !usuario.bloqueado
+          ? `<button class="btn ${suspenso ? "btn-secondary" : "btn-danger"} admin-action-btn" data-admin-resource-action="${suspenso ? "unsuspend-user" : "suspend-user"}" data-id="${usuario.id}" data-name="${escapeHtml(usuario.nome)}">${suspenso ? "Remover suspensão" : "Suspender 30 dias"}</button>`
+          : "";
+        return `
         <tr>
           <td><strong>${escapeHtml(usuario.nome)}</strong><p class="empty-copy">#${usuario.id}</p></td>
           <td>${escapeHtml(usuario.email)}<p class="empty-copy">${escapeHtml(usuario.telefone || "-")}</p></td>
           <td>${usuario._count?.agendamentos || 0} agend. / ${usuario._count?.avaliacoes || 0} aval.</td>
           <td>${formatAdminDate(usuario.createdAt)}</td>
+          <td>${statusBadge(status)}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="edit-user" data-id="${usuario.id}">Editar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="toggle-user-block" data-blocked="${usuario.bloqueado}" data-id="${usuario.id}" data-name="${escapeHtml(usuario.nome)}">${usuario.bloqueado ? "Desbloquear" : "Bloquear"}</button>
+            ${suspensionAction}
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-user" data-id="${usuario.id}" data-name="${escapeHtml(usuario.nome)}">Excluir</button>
           </td>
-        </tr>`).join("") : "";
+        </tr>`;
+      }).join("") : "";
     } catch {
-      usersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Erro ao carregar usuários.</td></tr>`;
+      usersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar usuários.</td></tr>`;
     }
   }
 
   async function loadOwners() {
     if (!ownersTbody) return;
-    ownersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Carregando...</td></tr>`;
+    ownersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
     try {
       const res = await adminFetch("/api/admin/donos");
       const { donos } = await res.json();
       if (!res.ok) throw new Error();
       if (ownersCount) ownersCount.textContent = `${donos.length} parceiro${donos.length !== 1 ? "s" : ""} no total`;
       ownersEmpty?.classList.toggle("hidden", Boolean(donos.length));
-      ownersTbody.innerHTML = donos.length ? donos.map((dono) => `
+      ownersTbody.innerHTML = donos.length ? donos.map((dono) => {
+        const suspenso = dono.suspensoAte && new Date(dono.suspensoAte) > new Date();
+        const status = dono.bloqueado ? "Bloqueado" : suspenso ? `Suspenso até ${formatAdminDate(dono.suspensoAte)}` : "Ativo";
+        const suspensionAction = !dono.bloqueado
+          ? `<button class="btn ${suspenso ? "btn-secondary" : "btn-danger"} admin-action-btn" data-admin-resource-action="${suspenso ? "unsuspend-owner" : "suspend-owner"}" data-id="${dono.id}" data-name="${escapeHtml(dono.nome)}">${suspenso ? "Remover suspensão" : "Suspender 30 dias"}</button>`
+          : "";
+        return `
         <tr>
           <td><strong>${escapeHtml(dono.nome)}</strong><p class="empty-copy">#${dono.id}</p></td>
           <td>${escapeHtml(dono.login)}<p class="empty-copy">${escapeHtml(dono.cnpj || "-")}</p></td>
           <td>${dono._count?.lojas || 0}</td>
           <td>${formatAdminDate(dono.createdAt)}</td>
+          <td>${statusBadge(status)}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="edit-owner" data-id="${dono.id}">Editar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="toggle-owner-block" data-blocked="${dono.bloqueado}" data-id="${dono.id}" data-name="${escapeHtml(dono.nome)}">${dono.bloqueado ? "Desbloquear" : "Bloquear"}</button>
+            ${suspensionAction}
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-owner" data-id="${dono.id}" data-name="${escapeHtml(dono.nome)}">Excluir</button>
           </td>
-        </tr>`).join("") : "";
+        </tr>`;
+      }).join("") : "";
     } catch {
-      ownersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Erro ao carregar parceiros.</td></tr>`;
+      ownersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar parceiros.</td></tr>`;
     }
   }
 
@@ -5172,7 +5753,7 @@ async function initAdminPage() {
           <td>${statusBadge(item.status)}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="booking-status" data-status="finalizado" data-id="${item.id}">Finalizar</button>
-            <button class="btn btn-ghost admin-action-btn" data-admin-resource-action="booking-status" data-status="cancelado" data-id="${item.id}">Cancelar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="booking-status" data-status="cancelado" data-id="${item.id}">Cancelar</button>
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-booking" data-id="${item.id}">Excluir</button>
           </td>
         </tr>`).join("") : "";
@@ -5183,7 +5764,7 @@ async function initAdminPage() {
 
   async function loadReviewsAdmin() {
     if (!reviewsTbody) return;
-    reviewsTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
+    reviewsTbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Carregando...</td></tr>`;
     try {
       const res = await adminFetch("/api/admin/avaliacoes");
       const { avaliacoes } = await res.json();
@@ -5194,17 +5775,18 @@ async function initAdminPage() {
         <tr>
           <td><strong>${escapeHtml(review.usuario?.nome || review.nomeCliente || "Cliente")}</strong><p class="empty-copy">${escapeHtml(review.usuario?.email || "-")}</p></td>
           <td>${escapeHtml(review.loja?.nome || "-")}</td>
-          <td><span class="stars">&#9733; ${Number(review.nota || 0).toFixed(1)}</span><p class="empty-copy">${review.aprovado ? "Aprovada" : "Pendente"}</p></td>
+          <td><span class="stars">&#9733; ${Number(review.nota || 0).toFixed(1)}</span></td>
           <td>${escapeHtml(review.comentario || "-")}</td>
           <td>${review._count?.denuncias || 0}</td>
+          <td>${statusBadge(review.bloqueado ? "Bloqueado" : "Ativo")}</td>
           <td class="admin-actions">
-            <button class="btn ${review.aprovado ? "btn-ghost" : "btn-secondary"} admin-action-btn" data-admin-resource-action="review-approval" data-approved="${review.aprovado ? "false" : "true"}" data-id="${review.id}">${review.aprovado ? "Ocultar" : "Aprovar"}</button>
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="edit-review" data-id="${review.id}">Editar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="toggle-review-block" data-blocked="${review.bloqueado}" data-id="${review.id}">${review.bloqueado ? "Desbloquear" : "Bloquear"}</button>
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-review" data-id="${review.id}">Excluir</button>
           </td>
         </tr>`).join("") : "";
     } catch {
-      reviewsTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar avaliações.</td></tr>`;
+      reviewsTbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Erro ao carregar avaliações.</td></tr>`;
     }
   }
 
@@ -5225,14 +5807,14 @@ async function initAdminPage() {
             : report.loja?.nome || "-";
         return `
         <tr>
-          <td><strong>${escapeHtml(report.tipo)}</strong><p class="empty-copy">${report.anonima ? "Anônima" : escapeHtml(report.usuario?.email || "sem usuário")}</p></td>
+          <td><strong>${escapeHtml(report.tipo)}</strong><p class="empty-copy">${escapeHtml(report.usuario?.email || "sem usuário")}</p></td>
           <td>${escapeHtml(target)}<p class="empty-copy">${escapeHtml(report.loja?.nome || "")}</p></td>
           <td>${escapeHtml(report.motivo)}</td>
           <td>${escapeHtml(report.detalhes || "-")}</td>
           <td>${statusBadge(report.status)}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="report-status" data-status="em_analise" data-id="${report.id}">Analisar</button>
-            <button class="btn btn-ghost admin-action-btn" data-admin-resource-action="report-status" data-status="resolvida" data-id="${report.id}">Resolver</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="report-status" data-status="resolvida" data-id="${report.id}">Resolver</button>
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-report" data-id="${report.id}">Excluir</button>
           </td>
         </tr>`;
@@ -5244,9 +5826,8 @@ async function initAdminPage() {
 
   async function refreshAdminData() {
     await Promise.all([
-      loadSummary(),
+      loadDashboard(),
       loadShops(),
-      loadFavoritedShopsAdmin(),
       loadUsers(),
       loadOwners(),
       loadBookingsAdmin(),
@@ -5327,14 +5908,25 @@ async function initAdminPage() {
       return;
     }
 
-    if (action === "excluir") {
-      if (!(await confirmAction(`Excluir permanentemente "${nome}"? Esta ação não pode ser desfeita.`, { danger: true, confirmLabel: "Excluir" }))) return;
-      const res = await adminFetch(`/api/admin/lojas/${id}`, { method: "DELETE" });
+    if (action === "inativar") {
+      if (!(await confirmAction(`Inativar "${nome}" por 30 dias? Os dados e agendamentos serão preservados, e a loja voltará a aparecer automaticamente após esse prazo.`, { danger: true, confirmLabel: "Inativar" }))) return;
+      const res = await adminFetch(`/api/admin/lojas/${id}/inativar`, { method: "PUT" });
       if (res.ok) {
-        if (shopIdInput?.value === id) hideEditPanel();
         await refreshAdminData();
       } else {
-        notify("Erro ao excluir loja.");
+        const data = await res.json();
+        notify(data.error || "Erro ao inativar loja.");
+      }
+      return;
+    }
+
+    if (action === "aprovar") {
+      const res = await adminFetch(`/api/admin/lojas/${id}/aprovar`, { method: "PUT" });
+      if (res.ok) {
+        await refreshAdminData();
+      } else {
+        const data = await res.json();
+        notify(data.error || "Erro ao aprovar loja.");
       }
       return;
     }
@@ -5528,7 +6120,7 @@ async function initAdminPage() {
     try {
       const res = await adminFetch(`/api/admin/avaliacoes/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ nota, nomeCliente, fotoUrl, comentario, aprovado: reviewApprovedInput?.checked === true }),
+        body: JSON.stringify({ nota, nomeCliente, fotoUrl, comentario }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -5557,6 +6149,93 @@ async function initAdminPage() {
   ownerCancelBtn?.addEventListener("click", hideOwnerEditPanel);
   reviewCancelBtn?.addEventListener("click", hideReviewEditPanel);
   refreshBtn?.addEventListener("click", refreshAdminData);
+  shopHealthFilterButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      shopHealthFilterButtons.forEach((filterButton) => {
+        const selected = filterButton === button;
+        filterButton.classList.toggle("is-active", selected);
+        filterButton.setAttribute("aria-pressed", String(selected));
+      });
+      loadShops();
+    });
+  });
+  shopApprovalFilter?.addEventListener("change", loadShops);
+  adminDashboardRefreshBtn?.addEventListener("click", refreshAdminData);
+  adminChartModeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const metric = button.dataset.adminChartType;
+      const mode = button.dataset.chartMode;
+      if (!(metric in adminChartModes) || !["pie", "line"].includes(mode)) return;
+      adminChartModes[metric] = mode;
+      adminChartModeButtons.forEach((modeButton) => {
+        if (modeButton.dataset.adminChartType !== metric) return;
+        const active = modeButton === button;
+        modeButton.classList.toggle("active", active);
+        modeButton.setAttribute("aria-pressed", String(active));
+      });
+      rerenderAdminCharts();
+    });
+  });
+
+  adminPeriodButtons.forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (button.dataset.adminPeriod === "custom") {
+        adminPeriodButtons.forEach((periodButton) => {
+          const active = periodButton === button;
+          periodButton.classList.toggle("active", active);
+          periodButton.setAttribute("aria-pressed", String(active));
+        });
+        adminCustomDateForm?.classList.remove("hidden");
+        adminCustomDateStart?.focus();
+        return;
+      }
+      adminPeriod = Number(button.dataset.adminPeriod);
+      adminCustomDateRange = null;
+      adminCustomDateForm?.classList.add("hidden");
+      adminPeriodButtons.forEach((periodButton) => {
+        const active = periodButton === button;
+        periodButton.classList.toggle("active", active);
+        periodButton.setAttribute("aria-pressed", String(active));
+      });
+      await loadDashboard();
+    });
+  });
+
+  adminCustomDateForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (adminDashboardError) adminDashboardError.textContent = "";
+    const inicio = adminCustomDateStart?.value;
+    const fim = adminCustomDateEnd?.value;
+    if (!inicio || !fim) {
+      if (adminDashboardError) adminDashboardError.textContent = "Informe as datas inicial e final.";
+      return;
+    }
+    if (inicio > fim) {
+      if (adminDashboardError) adminDashboardError.textContent = "A data inicial deve ser anterior ou igual à data final.";
+      return;
+    }
+    if (fim > hojeDashboardLocal) {
+      if (adminDashboardError) adminDashboardError.textContent = "A data final não pode estar no futuro.";
+      return;
+    }
+    const duracaoDias = (Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${inicio}T00:00:00Z`)) / 86400000 + 1;
+    if (duracaoDias > 366) {
+      if (adminDashboardError) adminDashboardError.textContent = "O intervalo personalizado deve ter no máximo 366 dias.";
+      return;
+    }
+    adminCustomDateRange = { inicio, fim };
+    adminPeriodButtons.forEach((periodButton) => {
+      const active = periodButton.dataset.adminPeriod === "custom";
+      periodButton.classList.toggle("active", active);
+      periodButton.setAttribute("aria-pressed", String(active));
+    });
+    adminCustomDateForm.classList.add("hidden");
+    await loadDashboard();
+  });
+
+  adminQuickLinks.forEach((button) => {
+    button.addEventListener("click", () => setAdminSection(button.dataset.adminGoTab));
+  });
 
   adminTabs.forEach((tab) => {
     tab.addEventListener("click", () => setAdminSection(tab.dataset.adminTab));
@@ -5567,8 +6246,49 @@ async function initAdminPage() {
     if (!actionBtn) return;
     const action = actionBtn.dataset.adminResourceAction;
     const id = actionBtn.dataset.id;
+    const suspensionResource = {
+      "suspend-user": { endpoint: "usuarios", label: "usuário", verb: "suspender" },
+      "unsuspend-user": { endpoint: "usuarios", label: "usuário", verb: "reativar" },
+      "suspend-owner": { endpoint: "donos", label: "parceiro", verb: "suspender" },
+      "unsuspend-owner": { endpoint: "donos", label: "parceiro", verb: "reativar" },
+    }[action];
 
     try {
+      if (suspensionResource) {
+        const name = actionBtn.dataset.name || `esta ${suspensionResource.label}`;
+        const confirmMessage = suspensionResource.verb === "suspender"
+          ? `Suspender "${name}" por 30 dias? O acesso será restaurado automaticamente ao fim do prazo.`
+          : `Remover a suspensão de "${name}" e restaurar o acesso imediatamente?`;
+        const confirmLabel = suspensionResource.verb === "suspender" ? "Suspender" : "Reativar";
+        if (!(await confirmAction(confirmMessage, { danger: suspensionResource.verb === "suspender", confirmLabel }))) return;
+        const res = await adminFetch(`/api/admin/${suspensionResource.endpoint}/${id}/suspensao/${suspensionResource.verb}`, { method: "PUT" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Não foi possível ${suspensionResource.verb} o ${suspensionResource.label}.`);
+        notify(suspensionResource.verb === "suspender"
+          ? `${suspensionResource.label.charAt(0).toUpperCase()}${suspensionResource.label.slice(1)} suspenso por 30 dias.`
+          : `Suspensão do ${suspensionResource.label} removida.`);
+        await refreshAdminData();
+        return;
+      }
+
+      const blockResource = {
+        "toggle-user-block": { endpoint: "usuarios", label: "usuário" },
+        "toggle-owner-block": { endpoint: "donos", label: "parceiro" },
+        "toggle-review-block": { endpoint: "avaliacoes", label: "avaliação" },
+      }[action];
+      if (blockResource) {
+        const blocked = actionBtn.dataset.blocked === "true";
+        const verb = blocked ? "desbloquear" : "bloquear";
+        const name = actionBtn.dataset.name || `esta ${blockResource.label}`;
+        if (!blocked && !(await confirmAction(`Bloquear ${blockResource.label} "${name}"?`, { danger: true, confirmLabel: "Bloquear" }))) return;
+        const res = await adminFetch(`/api/admin/${blockResource.endpoint}/${id}/${verb}`, { method: "PUT" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Não foi possível ${verb} ${blockResource.label}.`);
+        notify(`${blockResource.label.charAt(0).toUpperCase()}${blockResource.label.slice(1)} ${blocked ? "desbloqueado" : "bloqueado"} com sucesso.`);
+        await refreshAdminData();
+        return;
+      }
+
       if (action === "edit-user") {
         await loadUserForEdit(id);
         return;
@@ -5614,14 +6334,6 @@ async function initAdminPage() {
     if (!(await confirmAction("Excluir esta avaliação permanentemente?", { danger: true, confirmLabel: "Excluir" }))) return;
         const res = await adminFetch(`/api/admin/avaliacoes/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error("Erro ao excluir avaliação.");
-      }
-
-      if (action === "review-approval") {
-        const res = await adminFetch(`/api/admin/avaliacoes/${id}/aprovacao`, {
-          method: "PATCH",
-          body: JSON.stringify({ aprovado: actionBtn.dataset.approved === "true" }),
-        });
-        if (!res.ok) throw new Error("Erro ao moderar avaliação.");
       }
 
       if (action === "report-status") {
@@ -5690,7 +6402,7 @@ async function initAdminPage() {
         }
         return;
       }
-      setAdminToken();
+      setAdminToken(data.token);
       showPanel();
       hideEditPanel();
       hideAdminResourcePanels();
@@ -5711,9 +6423,7 @@ async function initAdminPage() {
 
   hideEditPanel();
   hideAdminResourcePanels();
-  const sessionResponse = await adminFetch("/api/admin/session");
-  if (sessionResponse.ok) {
-    setAdminToken();
+  if (getAdminToken()) {
     showPanel();
     await refreshAdminData();
   } else {
