@@ -6,6 +6,7 @@ import HomeScreen from "../screens/client/HomeScreen";
 import AgendamentosScreen from "../screens/client/AgendamentosScreen";
 import PerfilScreen from "../screens/client/PerfilScreen";
 import PerfilLojaScreen from "../screens/client/PerfilLojaScreen";
+import AgendamentoScreen from "../screens/client/AgendamentoScreen";
 import MapaScreen from "../screens/client/MapaScreen";
 import LoginScreen from "../screens/auth/LoginScreen";
 import CadastroScreen from "../screens/auth/CadastroScreen";
@@ -53,6 +54,9 @@ export default function AppNavigator() {
 
       {/* Detalhe do lava jato */}
       <Stack.Screen name="PerfilLoja" component={PerfilLojaScreen} />
+
+      {/* Agendamento */}
+      <Stack.Screen name="Agendamento" component={AgendamentoScreen} />
 
       {/* Auth como modais — abertos quando uma ação exige login */}
       <Stack.Screen name="Login" component={LoginScreen} options={{ presentation: "modal" }} />

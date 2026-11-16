@@ -116,6 +116,17 @@ export default function AgendamentosScreen({ navigation }: any) {
             <Text style={styles.servico}>{item.servico.nome}</Text>
             <Text style={styles.info}>📅 {formatarData(item.data)} às {item.hora}</Text>
             <Text style={styles.info}>💰 {formatarPreco(item.servico.preco)}</Text>
+            {item.veiculo ? <Text style={styles.info}>🚗 {item.veiculo}</Text> : null}
+
+            {/* Código de retirada — aparece quando não está cancelado/finalizado */}
+            {item.codigoRetirada && item.status !== "cancelado" && item.status !== "concluido" && (
+              <View style={styles.codigoBox}>
+                <Text style={styles.codigoLabel}>🔑 Código de retirada</Text>
+                <Text style={styles.codigoCodigo}>{item.codigoRetirada}</Text>
+                <Text style={styles.codigoHint}>Mostre este código ao retirar o veículo</Text>
+              </View>
+            )}
+
             {item.status === "pendente" && (
               <TouchableOpacity style={styles.botaoCancelar} onPress={() => handleCancelar(item.id)}>
                 <Text style={styles.botaoCancelarTexto}>Cancelar</Text>
@@ -157,4 +168,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   botaoCancelarTexto: { color: COLORS.danger, fontSize: 13, fontWeight: "600" },
+  codigoBox: {
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.bgSoft,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  codigoLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600", marginBottom: 4 },
+  codigoCodigo: { fontSize: 32, fontWeight: "900", color: COLORS.primary, letterSpacing: 8 },
+  codigoHint: { fontSize: 11, color: COLORS.muted, marginTop: 4, textAlign: "center" },
 });

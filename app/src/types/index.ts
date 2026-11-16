@@ -21,6 +21,7 @@ export interface Loja {
   endereco: string;
   fotoUrl: string;
   capaUrl?: string;
+  fotosAdicionais?: string;
   categoria: string;
   precoMedio: number;
   latitude: number;
@@ -46,6 +47,8 @@ export interface Agendamento {
   data: string;
   hora: string;
   status: "pendente" | "confirmado" | "concluido" | "cancelado";
+  codigoRetirada?: string;
+  veiculo?: string;
   loja: Pick<Loja, "id" | "nome" | "fotoUrl" | "endereco">;
   servico: Pick<Servico, "id" | "nome" | "preco" | "duracao">;
 }
