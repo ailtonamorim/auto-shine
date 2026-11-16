@@ -15,10 +15,13 @@ if (missingConfig.length) {
 }
 
 const { aplicarHeadersSeguranca } = require("./src/middlewares/security");
+const { autorizarPagina } = require("./src/middlewares/auth");
 const { garantirIndicesBanco } = require("./src/utils/loja");
 
 const authRouter = require("./src/routes/auth");
+const profileRouter = require("./src/routes/profile");
 const donoRouter = require("./src/routes/dono");
+const defesaDenunciaRouter = require("./src/routes/defesaDenuncia");
 const resetSenhaRouter = require("./src/routes/resetSenha");
 const lojasRouter = require("./src/routes/lojas");
 const favoritosRouter = require("./src/routes/favoritos");
@@ -34,9 +37,23 @@ const baseDir = __dirname;
 const uploadsDir = path.join(baseDir, "assets", "uploads");
 
 const publicPages = new Set([
-  "index.html", "mapa.html", "perfil.html", "agendamento.html", "meus-agendamentos.html",
-  "avaliacoes.html", "cadastro.html", "cadastro-dono.html", "admin.html", "termos.html",
-  "privacidade.html", "favoritos.html", "login.html", "reset-senha.html",
+  "index.html",
+  "mapa.html",
+  "perfil.html",
+  "perfil-usuario.html",
+  "perfil-dono.html",
+  "servicos.html",
+  "agendamento.html",
+  "meus-agendamentos.html",
+  "avaliacoes.html",
+  "cadastro.html",
+  "cadastro-dono.html",
+  "admin.html",
+  "termos.html",
+  "privacidade.html",
+  "favoritos.html",
+  "login.html",
+  "reset-senha.html",
 ]);
 
 fs.mkdir(uploadsDir, { recursive: true }).catch((err) => {
@@ -58,7 +75,9 @@ app.use(passport.session());
 app.use(express.json({ limit: "8mb" }));
 
 app.use(authRouter);
+app.use(profileRouter);
 app.use("/api/dono", donoRouter);
+app.use("/api/parceiro/denuncias", defesaDenunciaRouter);
 app.use("/api/reset-senha", resetSenhaRouter);
 app.use("/api/lojas", lojasRouter);
 app.use("/api/favoritos", favoritosRouter);
@@ -69,12 +88,14 @@ app.use("/api", utilsRouter);
 app.use("/api/admin", adminRouter);
 
 app.use("/assets", express.static(path.join(baseDir, "assets")));
-app.get("/", (_req, res) => res.sendFile(path.join(baseDir, "index.html")));
+app.get("/", (req, res, next) => {
+  autorizarPagina("index.html")(req, res, () => res.sendFile(path.join(baseDir, "index.html")));
+});
 app.get("/parceiro-cadastrar.html", (_req, res) => res.redirect(301, "/cadastro-dono.html"));
 app.get("/:page", (req, res, next) => {
   const { page } = req.params;
   if (!publicPages.has(page)) return next();
-  return res.sendFile(path.join(baseDir, page));
+  return autorizarPagina(page)(req, res, () => res.sendFile(path.join(baseDir, page)));
 });
 
 app.use((_req, res) => {

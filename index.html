@@ -1,64 +1,61 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AutoShine — Lava jatos e estética automotiva</title>
-  <link rel="stylesheet" href="assets/css/styles.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LavaJá | O Brilho que Seu Carro Merece</title>
+    <link rel="stylesheet" href="assets/css/index.css">
+    <!-- Importação combinada das fontes Anton (Títulos) e Montserrat (Textos) -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;500;600;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
 </head>
-<body data-page="home">
-  <div class="bg-decor"></div>
+<body data-page="landing">
 
-  <header class="topbar container">
-    <a class="brand" href="index.html">
-      <span>AutoShine</span>
-    </a>
+    <!-- HERO SECTION (Ocupa 100vh e contém o Background do Lava-Jato) -->
+    <main class="hero">
+        
+        <!-- NAVBAR INTEGRADA AO HERO -->
+        <header class="navbar">
+            <div class="logo">LavaJá</div>
+            
+            <nav class="nav-links" id="nav-links">
+                <a href="index.html" class="active">Início</a>
+                <a href="servicos.html">Serviços</a>
+                <a href="mapa.html">Mapa</a>
+            </nav>
+            
+               <a href ="login.html" class = "btn-acessar">Acessar</a>
+            <button class="menu-mobile-btn" id="menu-btn">☰</button>
+        </header>
 
-    <button class="nav-toggle" aria-label="Abrir menu" aria-expanded="false">
-      <span class="nav-toggle-bar"></span>
-      <span class="nav-toggle-bar"></span>
-      <span class="nav-toggle-bar"></span>
-    </button>
+        <!-- CONTEÚDO PRINCIPAL -->
+        <div class="hero-container">
+            
+            <!-- ESQUERDA: Headline -->
+            <section class="hero-left">
+                <h1 class="headline">O BRILHO QUE<br>SEU CARRO<br>MERECE.<br>O TEMPO QUE<br>VOCÊ PRECISA.</h1>
+            </section>
 
-    <nav class="main-nav">
-      <a href="index.html">Início</a>
-      <a href="favoritos.html">Favoritos</a>
-      <a href="mapa.html">Mapa</a>
-      <a href="meus-agendamentos.html">Agendamentos</a>
-      <a href="cadastro.html?mode=login">Acessar</a>
-    </nav>
-  </header>
+            <!-- DIREITA: Descrição e CTA -->
+            <section class="hero-right">
+                <div class="hero-copy">
+                    <p>Descubra, Compare E Agende Serviços De Estética Automotiva E Lava-Jatos Perto De Você. Sem Filas, Sem Surpresas.</p>
+                    <a href="servicos.html" class="cta-link">Explorar Serviços &rarr;</a>
+                </div>
+            </section>
 
-  <main class="container page-home reveal-root">
-
-    <section class="categories reveal-item">
-      <div class="categories-header">
-        <h1 class="categories-title">Lava-jatos perto de você</h1>
-        <div class="categories-actions">
-          <button class="label-location-cta chip chip-action" type="button" id="label-location-cta">📍 Detectar localização</button>
-          <a href="mapa.html" class="chip chip-action">&#128506; Ver no mapa</a>
         </div>
-      </div>
-      <p class="categories-subtitle">Compare preços, avaliações e agende seu serviço em poucos cliques.</p>
-      <button id="use-location-btn" type="button" aria-label="Usar minha localização" style="display:none"></button>
-      <p class="location-status" id="location-status"></p>
-    </section>
 
-    <section class="listing reveal-item">
-      <div class="sort-bar">
-        <span class="sort-bar-label">Ordenar por</span>
-        <div class="sort-bar-chips">
-          <button class="chip chip-action is-active" data-sort="default" id="sort-default">Relevância</button>
-          <button class="chip chip-action" data-sort="price" id="sort-price">Mais baratos</button>
-          <button class="chip chip-action" data-sort="rating" id="sort-rating">Melhor avaliados</button>
-          <button class="chip chip-action" data-sort="distance" id="sort-distance" style="display:none">Mais próximos</button>
+        <!-- O CARRO (Elemento independente para causar profundidade) -->
+        <div class="car-wrapper">
+            <!-- Utilize o asset do carro recortado que você já possui -->
+            <img src="assets/img/meu.carro.png" alt="Porsche Taycan Azul Brilhante" class="hero-car">
         </div>
-      </div>
 
-      <div id="shop-grid" class="shop-grid"></div>
-    </section>
-  </main>
+    </main>
 
-  <script src="assets/js/app.js"></script>
+    <script src="assets/js/index.js"></script>
 </body>
 </html>

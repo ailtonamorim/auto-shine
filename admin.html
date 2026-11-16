@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AutoShine — Painel Admin</title>
   <link rel="stylesheet" href="assets/css/styles.css" />
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
 </head>
 <body data-page="admin">
   <div class="bg-decor"></div>
@@ -468,10 +471,12 @@
             <thead>
               <tr>
                 <th>Origem</th>
-                <th>Alvo</th>
+                <th>Loja denunciada</th>
                 <th>Motivo</th>
-                <th>Detalhes</th>
+                <th>Data</th>
                 <th>Status</th>
+                <th>Defesa</th>
+                <th>Detalhes</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -479,6 +484,27 @@
           </table>
           <p id="admin-reports-empty" class="empty-copy hidden">Nenhuma denúncia registrada.</p>
         </div>
+        <dialog id="admin-report-dialog" class="admin-report-dialog">
+          <header class="admin-report-dialog-head">
+            <div><p class="eyebrow">Central de confiança</p><h2 id="admin-report-dialog-title">Denúncia</h2></div>
+            <button class="btn btn-ghost" type="button" data-close-admin-report aria-label="Fechar detalhes">Fechar</button>
+          </header>
+          <div class="admin-report-comparison">
+            <article><h3>Relato do cliente</h3><div id="admin-report-accusation"></div></article>
+            <article><h3>Resposta da loja</h3><div id="admin-report-defense"></div></article>
+          </div>
+          <div class="field admin-report-opinion-field">
+            <label for="admin-report-opinion">Parecer administrativo</label>
+            <textarea id="admin-report-opinion" rows="4" maxlength="5000" placeholder="Registre os motivos da decisão (mínimo de 10 caracteres para decisões finais)."></textarea>
+          </div>
+          <div class="admin-report-actions">
+            <button class="btn btn-secondary admin-action-btn" type="button" data-admin-resource-action="report-status" data-status="em_analise">Analisar</button>
+            <button class="btn btn-secondary admin-action-btn" type="button" data-admin-resource-action="report-status" data-status="aguardando_defesa">Solicitar defesa</button>
+            <button class="btn btn-primary admin-action-btn" type="button" data-admin-resource-action="report-status" data-status="procedente">Marcar procedente</button>
+            <button class="btn btn-ghost admin-action-btn" type="button" data-admin-resource-action="report-status" data-status="rejeitada">Rejeitar</button>
+            <button class="btn btn-danger admin-action-btn" type="button" data-admin-resource-action="report-block-shop">Bloquear loja</button>
+          </div>
+        </dialog>
       </section>
 
     </main>

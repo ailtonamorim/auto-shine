@@ -1,0 +1,375 @@
+.owner-profile-page {
+  padding-bottom: 72px;
+}
+
+.owner-profile-muted,
+.owner-section-subtitle {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-top: 4px;
+}
+
+.owner-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.owner-profile-stats article,
+.owner-shop-preview,
+.owner-shop-card,
+.owner-service-card,
+.owner-form-section,
+.owner-service-form {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 92%, #ffffff 8%);
+}
+
+.owner-profile-stats article {
+  padding: 12px 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.owner-profile-stats span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.owner-profile-stats strong {
+  color: var(--text);
+  font-size: 1.15rem;
+}
+
+.owner-shop-select {
+  min-width: min(320px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.owner-shops-list,
+.owner-services-list {
+  display: grid;
+  gap: 14px;
+}
+
+.owner-shop-card,
+.owner-service-card {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.owner-shop-card {
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.owner-shop-thumb {
+  min-height: 120px;
+  border-radius: 12px;
+  background: var(--bg-soft);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--line);
+}
+
+.owner-shop-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.owner-shop-title-row,
+.owner-service-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.owner-shop-title-row h3,
+.owner-service-title-row h3 {
+  margin: 0;
+}
+
+.owner-shop-meta,
+.owner-service-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.owner-shop-actions,
+.owner-service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.owner-shop-preview {
+  min-height: 190px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.owner-shop-preview-media {
+  background: var(--bg-soft);
+  background-size: cover;
+  background-position: center;
+  min-height: 190px;
+}
+
+.owner-shop-preview-copy {
+  padding: 18px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+}
+
+.owner-shop-preview-copy h3 {
+  margin: 0;
+}
+
+.owner-form-section {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.owner-form-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.owner-form-section-head h3 {
+  margin: 0;
+}
+
+.owner-form-section-head p {
+  margin-top: 4px;
+  max-width: 62ch;
+}
+
+.owner-step {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: var(--blue-soft, rgba(47, 127, 255, 0.16));
+  color: #9fc7ff;
+  font-weight: 800;
+}
+
+.owner-location-card {
+  display: grid;
+  gap: 12px;
+}
+
+.owner-location-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.owner-feedback {
+  min-height: 20px;
+  font-size: 0.86rem;
+}
+
+.owner-feedback.is-valid {
+  color: #38c378;
+}
+
+.owner-feedback.is-warning {
+  color: #f6c76b;
+}
+
+.owner-feedback.is-invalid {
+  color: #fc6767;
+}
+
+.owner-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.owner-gallery-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.owner-photo-uploader {
+  border: 1px dashed color-mix(in srgb, var(--blue) 45%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-soft) 78%, var(--blue) 10%);
+  display: grid;
+  gap: 8px;
+  align-content: end;
+  min-height: 188px;
+  padding: 14px;
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+.owner-photo-uploader.is-small {
+  min-height: 132px;
+}
+
+.owner-photo-uploader:hover {
+  border-color: var(--blue);
+  transform: translateY(-1px);
+}
+
+.owner-photo-uploader strong,
+.owner-photo-uploader small {
+  position: relative;
+  z-index: 1;
+}
+
+.owner-photo-uploader small {
+  color: var(--muted);
+}
+
+.owner-photo-preview {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 35%, rgba(0, 0, 0, 0.78)),
+    radial-gradient(circle at center, rgba(47, 127, 255, 0.2), transparent 60%);
+  background-size: cover;
+  background-position: center;
+}
+
+.owner-photo-preview.has-image::after {
+  content: "Trocar imagem";
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(5, 7, 11, 0.74);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.owner-weekdays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.owner-weekdays label {
+  min-width: 70px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft, rgba(255, 255, 255, 0.04));
+  color: var(--text);
+  font-weight: 700;
+}
+
+.owner-weekdays input {
+  width: 16px;
+  height: 16px;
+}
+
+.owner-sticky-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.owner-service-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.owner-service-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.owner-service-form {
+  margin-top: 16px;
+  padding: 18px;
+}
+
+.owner-empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+html[data-theme="light"] .owner-profile-stats article,
+html[data-theme="light"] .owner-shop-preview,
+html[data-theme="light"] .owner-shop-card,
+html[data-theme="light"] .owner-service-card,
+html[data-theme="light"] .owner-form-section,
+html[data-theme="light"] .owner-service-form {
+  background: var(--card);
+}
+
+html[data-theme="light"] .owner-photo-uploader {
+  background: var(--surface-soft);
+}
+
+@media (max-width: 900px) {
+  .owner-shop-card,
+  .owner-shop-preview,
+  .owner-service-card,
+  .owner-photo-grid,
+  .owner-gallery-row {
+    grid-template-columns: 1fr;
+  }
+
+  .owner-shop-thumb,
+  .owner-shop-preview-media {
+    min-height: 180px;
+  }
+}
+
+@media (max-width: 560px) {
+  .owner-profile-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .owner-shop-title-row,
+  .owner-service-title-row,
+  .profile-user-head,
+  .owner-sticky-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .owner-shop-actions .btn,
+  .owner-service-actions .btn,
+  .owner-shop-select {
+    width: 100%;
+  }
+}

@@ -8,7 +8,9 @@ Marketplace responsivo para lava jatos e estética automotiva, com cadastro de c
 - Node.js + Express
 - Prisma + SQLite
 - JWT para API autenticada
+- Papéis `client`, `partner` e `admin`, com páginas protegidas por cookie HttpOnly assinado
 - Passport Google OAuth 2.0
+- Tema claro/escuro compartilhado por tokens CSS
 
 ## Telas
 
@@ -63,6 +65,8 @@ npm run dev
 ```
 
 Acesse `http://localhost:3000`.
+
+Os logins emitem JWTs com papel explícito e os gravam também em cookie HttpOnly para que o servidor valide o acesso às páginas de cliente, parceiro e administração. As rotas de navegação do marketplace redirecionam sessões de parceiro/admin ao portal correspondente; as telas do parceiro usam navegação própria para gestão, sem links para o marketplace. Após esta mudança, sessões antigas devem entrar novamente para receber o cookie de acesso. O tema selecionado é compartilhado entre as telas e seus componentes flutuantes, incluindo campos autofill e sobreposições.
 
 Para validar o projeto:
 
