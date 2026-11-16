@@ -3,15 +3,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AutoShine — Parceiros</title>
+  <title>LavaJá | Painel da empresa</title>
   <link rel="stylesheet" href="assets/css/styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;500;600;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
 </head>
 <body data-page="cadastro-dono">
   <div class="bg-decor"></div>
   <header class="topbar container">
     <a class="brand" href="index.html">
-      <span>AutoShine</span>
+      <span>LavaJá</span>
     </a>
+
+    
+
+    <!-- Links de navegação atualizados -->
+    <nav class="main-nav" id="main-nav">
+     <a href="index.html">Início</a>
+     <a href="servicos.html">Serviços</a>
+     <a href="mapa.html">Mapa</a>
+  
+    <!-- Oculto por padrão para usuários não logados -->
+    <a href="meus-agendamentos.html" id="link-agendamentos" class="hidden">Agendamentos</a>
+    
+    </nav>
+  
     <p class="partner-header-tag">Painel do parceiro</p>
   </header>
 
@@ -368,6 +386,30 @@
           <label>Descrição</label>
           <input type="text" data-service-field="description" required placeholder="Ex: lavagem completa com aspiração e limpeza de vidros" />
         </div>
+      </div>
+      <div class="field-grid service-detail-fields">
+        <div class="field">
+          <label>O que está incluído <span class="field-hint">— um item por linha</span></label>
+          <textarea data-service-field="included" rows="4" placeholder="Aspiração interna&#10;Limpeza dos vidros&#10;Aplicação de cera"></textarea>
+        </div>
+        <div class="field">
+          <label>Etapas do serviço <span class="field-hint">— uma etapa por linha</span></label>
+          <textarea data-service-field="steps" rows="4" placeholder="Inspeção inicial&#10;Lavagem externa&#10;Acabamento e conferência"></textarea>
+        </div>
+      </div>
+      <div class="field-grid service-detail-fields">
+        <div class="field">
+          <label>Produtos e equipamentos</label>
+          <textarea data-service-field="products" rows="3" placeholder="Ex.: shampoo automotivo neutro e politriz profissional"></textarea>
+        </div>
+        <div class="field">
+          <label>Garantia</label>
+          <textarea data-service-field="warranty" rows="3" placeholder="Ex.: garantia de 7 dias para retorno de odores"></textarea>
+        </div>
+      </div>
+      <div class="field service-detail-fields">
+        <label>Orientações ao cliente</label>
+        <textarea data-service-field="guidance" rows="3" placeholder="Ex.: retire objetos pessoais antes do atendimento"></textarea>
       </div>
       <button type="button" class="btn btn-ghost remove-partner-service">Remover</button>
     </article>

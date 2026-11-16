@@ -1,0 +1,304 @@
+/* =========================================================
+   1. VARIÁVEIS E CORES DA IDENTIDADE LAVAJÁ
+========================================================= */
+:root {
+    /* Paleta Principal da Marca */
+    --bg-dark: #091526;
+    --bg-card: #0E2D57;
+    --text-light: #D9E7FF;
+    --accent: #fff; /* Amarelo vibrante para a chamada de ação (CTA) */
+    
+    /* Overlay para a imagem de fundo (Azul escuro translúcido) */
+    --overlay-color-start: rgba(9, 21, 38, 0.90); 
+    --overlay-color-end: rgba(9, 21, 38, 0.65);   
+}
+
+/* =========================================================
+   2. RESET E CONFIGURAÇÕES GLOBAIS
+========================================================= */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    /* Fonte padrão para textos corridos */
+    font-family: 'Montserrat', sans-serif;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-light);
+    overflow-x: hidden; 
+}
+
+/* =========================================================
+   3. O HERO E O BACKGROUND DA GARAGEM
+========================================================= */
+.hero {
+    position: relative;
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    
+    background: linear-gradient(135deg, var(--overlay-color-start) 0%, var(--overlay-color-end) 100%), 
+                url('../img/fundo.png') center center / cover no-repeat;
+}
+
+/* =========================================================
+   4. NAVBAR INTEGRADA
+========================================================= */
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2rem 5%;
+    z-index: 10; 
+}
+
+.logo {
+    /* Mantemos a fonte Anton que escolhemos anteriormente */
+    font-family: 'Anton', sans-serif;
+    font-size: 2rem;
+    font-weight: 400;
+    letter-spacing: 1px;
+    
+    /* 1. Criamos o degradê da esquerda para a direita */
+    /* Começa branco e termina num azul claro semelhante ao do AutoShine */
+    background: linear-gradient(to right, #FFFFFF, #9ECAFF);
+    
+    /* 2. Aplicamos as propriedades de recorte de texto */
+    -webkit-background-clip: text;
+    background-clip: text;
+    
+    /* 3. Tornamos a cor base do texto transparente */
+    -webkit-text-fill-color: transparent;
+    color: transparent; /* Fallback para alguns navegadores */
+}
+
+.nav-links {
+    display: flex;
+    gap: 3rem;
+}
+
+/* Estilo base dos links da navegação */
+.nav-links a {
+    text-decoration: none;
+    color: var(--text-light);
+    font-weight: 600;
+    font-size: 1rem;
+    
+    /* 1. Adicionamos padding para criar o espaço do "botão" fantasma */
+    padding: 8px 16px; 
+    
+    /* 2. Arredondamos os cantos para ficar igual ao vídeo */
+    border-radius: 8px; 
+    
+    /* 3. Definimos a transição suave para cor do texto e cor de fundo */
+    transition: background-color 0.3s ease, color 0.3s ease; 
+}
+
+/* Estilo quando o rato passa por cima (hover) ou quando a página está ativa */
+.nav-links a:hover, .nav-links a.active {
+    color: #FFFFFF;
+    /* 4. Aplicamos a nossa cor azul do card, mas com 80% de opacidade para um efeito subtil e elegante */
+    background-color: rgba(14, 45, 87, 0.8); 
+}
+
+/* =========================================================
+   ESTILOS DO BOTÃO ACESSAR (Atualizado para combinar com o Menu)
+========================================================= */
+.btn-acessar {
+    /* 1. Usamos a mesma cor de fundo translúcida que aplicamos no hover dos links */
+    background-color: rgba(14, 45, 87, 0.8); 
+    
+    color: #FFFFFF;
+    
+    /* 2. Removemos a borda para ficar igual ao "Mapa" */
+    border: none; 
+    
+    /* 3. Ajustamos o espaçamento para manter proporção com os links (8px no topo/base) */
+    padding: 8px 24px; 
+    
+    /* 4. Mudamos o arredondamento de 50px para 8px, criando a mesma forma do "Mapa" */
+    border-radius: 8px; 
+    
+    /* 5. Igualamos o peso da fonte e o tamanho aos links do menu */
+    font-weight: 600; 
+    font-size: 1rem;
+    
+    text-decoration: none;
+
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+/* Efeito ao passar o rato (Hover) no botão Acessar */
+.btn-acessar:hover {
+    /* Fica com uma cor sólida e levemente mais clara ao passar o rato */
+    background-color: #163e75;
+    /* Move o botão 2 pixels para cima para dar um efeito de clique/elevação */
+    transform: translateY(-2px); 
+}
+
+.menu-mobile-btn {
+    display: none; 
+    background: none;
+    border: none;
+    color: #FFF;
+    font-size: 1.8rem;
+    cursor: pointer;
+}
+
+/* =========================================================
+   5. CONTEÚDO PRINCIPAL (TEXTOS E CTA)
+========================================================= */
+.hero-container {
+    flex: 1;
+    display: flex;
+    padding: 0 5%;
+    position: relative;
+    z-index: 5;
+    margin-top: 4vh;
+}
+
+/* Coluna Esquerda: Headline de Impacto */
+.hero-left {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.headline {
+    /* Aplicando a fonte Anton */
+    font-family: 'Anton', sans-serif;
+    /* Aumentamos um pouco o tamanho máximo (6rem) porque a Anton é condensada */
+    font-size: clamp(3rem, 5.5vw, 6rem); 
+    font-weight: 400; /* A fonte Anton só tem peso 400 */
+    line-height: 1.1;
+    color: #C8DDFF;
+    letter-spacing: 2px; /* Dá um respiro entre as letras densas */
+    text-shadow: 0 4px 15px rgba(0, 0, 0, 0.6); 
+}
+
+/* Coluna Direita: Descrição e CTA (Posicionado ACIMA do carro) */
+.hero-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    /* Subimos o conteúdo removendo o padding-top excessivo */
+    padding-top: 0; 
+    padding-left: 2rem;
+    justify-content: flex-start;
+    margin-top: -1rem; /* Ajuste fino para alinhar melhor com o topo da headline */
+}
+
+.hero-copy {
+    max-width: 480px;
+    position: relative;
+    z-index: 10; /* Garante que fique acima do teto do carro */
+}
+
+.hero-copy p {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--text-light);
+    margin-bottom: 1.5rem;
+    font-weight: 500;
+}
+
+.cta-link {
+    /* Aplicando a fonte Anton também no Call to Action */
+    font-family: 'Anton', sans-serif;
+    color: var(--accent); 
+    text-decoration: none;
+    font-weight: 400;
+    font-size: 1.6rem; /* Aumentamos o tamanho para destacar mais */
+    display: inline-flex;
+    align-items: center;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    transition: transform 0.3s ease, color 0.3s ease;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5); /* Pequena sombra para destacar o amarelo */
+}
+
+.cta-link:hover {
+    transform: translateX(10px); 
+    color: #EBDE27;
+}
+
+/* =========================================================
+   6. O CARRO (ANCORADO E ATRÁS DO TEXTO SUPERIOR)
+========================================================= */
+.car-wrapper {
+    position: absolute;
+    bottom: 2%; 
+    right: 5%; 
+    width: 60vw; 
+    max-width: 1000px;
+    z-index: 4; /* Fica abaixo do z-index: 10 do .hero-copy */
+    pointer-events: none; 
+}
+
+.hero-car {
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(-15px 30px 25px rgba(0, 0, 0, 0.85)); 
+    transform: scale(1);
+}
+
+/* =========================================================
+   7. RESPONSIVIDADE (ADAPTAÇÃO PARA TABLETS E CELULARES)
+========================================================= */
+
+@media (max-width: 1024px) {
+    .nav-links { gap: 1.5rem; }
+    
+    .hero-container {
+        flex-direction: column;
+        margin-top: 2vh;
+    }
+    
+    .hero-right {
+        padding-top: 2rem;
+        padding-left: 0;
+        z-index: 10;
+    }
+    
+    .car-wrapper {
+        width: 75vw;
+        bottom: 0%;
+        right: -2%;
+    }
+}
+
+@media (max-width: 768px) {
+    .navbar { padding: 1.5rem 5%; }
+    
+    .nav-links, .btn-acessar { display: none; } 
+    .menu-mobile-btn { display: block; }
+    
+    .hero {
+        justify-content: flex-start;
+        min-height: 100vh;
+    }
+    
+    .hero-container {
+        flex-direction: column;
+        text-align: left;
+        padding-top: 2rem;
+    }
+    
+    .hero-copy {
+        margin-top: 1.5rem;
+    }
+    
+    .car-wrapper {
+        position: relative; 
+        width: 110vw;
+        left: -5vw;
+        margin-top: auto; 
+        margin-bottom: -5%;
+        z-index: 1;
+    }
+}

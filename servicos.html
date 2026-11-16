@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Serviços — LavaJá</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;500;600;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
+</head>
+<!-- O atributo data-page foi alterado para 'servicos' para o app.js identificar a tela -->
+<body data-page="servicos">
+  <div class="bg-decor"></div>
+
+  <header class="topbar container">
+  <a class="logo" href="index.html" aria-label="LavaJá - página inicial">
+    LavaJá
+  </a>
+
+  <button class="nav-toggle" type="button" aria-label="Abrir menu" aria-expanded="false">
+    <span class="nav-toggle-bar"></span>
+    <span class="nav-toggle-bar"></span>
+    <span class="nav-toggle-bar"></span>
+  </button>
+
+  <nav class="main-nav" id="main-nav">
+    <a href="index.html">Início</a>
+
+    <a href="servicos.html" class="active" aria-current="page">
+      Serviços
+    </a>
+
+    <a href="favoritos.html" id="link-favoritos" class="hidden">
+      Favoritos
+    </a>
+
+    <a href="mapa.html">Mapa</a>
+
+    <a href="meus-agendamentos.html" id="link-agendamentos" class="hidden">
+      Agendamentos
+    </a>
+  </nav>
+
+  <a
+    href="cadastro.html?mode=login"
+    class="btn btn-primary btn-acessar header-access"
+    id="btn-acessar"
+  >
+    Acessar
+  </a>
+</header>
+
+  <main class="container page-home reveal-root">
+    <section class="categories reveal-item">
+      <div class="categories-header">
+        <h1 class="categories-title">Lava-jatos perto de você</h1>
+        <div class="categories-actions">
+          <button class="label-location-cta chip chip-action" type="button" id="label-location-cta">📍 Detectar localização</button>
+          <a href="mapa.html" class="chip chip-action">&#128506; Ver no mapa</a>
+        </div>
+      </div>
+      <p class="categories-subtitle">Compare preços, avaliações e agende seu serviço em poucos cliques.</p>
+      <button id="use-location-btn" type="button" aria-label="Usar minha localização" style="display:none"></button>
+      <p class="location-status" id="location-status"></p>
+    </section>
+
+    <section class="listing reveal-item">
+      <div class="sort-bar">
+        <span class="sort-bar-label">Ordenar por</span>
+        <div class="sort-bar-chips">
+          <button class="chip chip-action is-active" data-sort="default" id="sort-default">Relevância</button>
+          <button class="chip chip-action" data-sort="price" id="sort-price">Mais baratos</button>
+          <button class="chip chip-action" data-sort="rating" id="sort-rating">Melhor avaliados</button>
+          <button class="chip chip-action" data-sort="distance" id="sort-distance" style="display:none">Mais próximos</button>
+        </div>
+      </div>
+
+      <div id="shop-grid" class="shop-grid"></div>
+    </section>
+  </main>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

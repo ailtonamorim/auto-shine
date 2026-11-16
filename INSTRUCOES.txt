@@ -1,0 +1,38 @@
+LAVAJÁ — DETALHES TRANSPARENTES DO SERVIÇO
+
+O pacote mantém os serviços existentes e acrescenta campos opcionais:
+- O que está incluído
+- Etapas do serviço
+- Produtos e equipamentos
+- Orientações ao cliente
+- Garantia
+
+1. Antes de substituir os arquivos, faça uma cópia da pasta atual do projeto.
+
+2. Copie o conteúdo deste pacote para a raiz do projeto auto-shine, mantendo as pastas:
+   cadastro-dono.html
+   assets/css/styles.css
+   assets/js/app.js
+   src/routes/lojas.js
+   prisma/schema.prisma
+   prisma/migrations/20260924190000_detalhes_servico/migration.sql
+
+3. Abra o PowerShell na raiz do projeto e confirme se o arquivo .env continua apontando para seu PostgreSQL na porta 5433.
+
+4. Atualize o Prisma Client:
+   npx prisma generate
+
+5. Aplique a nova migração, sem apagar os dados existentes:
+   npx prisma migrate deploy
+
+6. Inicie ou reinicie o servidor:
+   npm run dev
+
+7. Entre como parceiro, abra o cadastro/edição do estabelecimento e preencha os novos campos de cada serviço.
+
+8. Como cliente, abra o perfil do estabelecimento. Cada cartão terá os botões "Ver detalhes" e "Agendar". Em "Ver detalhes" será exibida uma janela com as abas "O que inclui", "Como funciona" e "Confiança".
+
+IMPORTANTE
+- Não execute prisma migrate reset: esse comando apagaria os dados do banco.
+- Os novos campos são opcionais. Serviços antigos continuam aparecendo com textos informativos padrão até serem atualizados pelo parceiro.
+- Se o servidor já estiver em execução, encerre-o com Ctrl+C antes de iniciar novamente.

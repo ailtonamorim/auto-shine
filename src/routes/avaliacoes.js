@@ -2,19 +2,17 @@ const express = require("express");
 const prisma = require("../config/database");
 const { autenticarUsuario } = require("../middlewares/auth");
 const { fotoAvaliacaoValida } = require("../utils/validators");
-const { sanitizarTexto, removerIdsInternos, mascararNomeCliente } = require("../utils/masking");
+const { filtroLojaDisponivel } = require("../utils/loja");
 
 const router = express.Router();
 
 router.get("/loja/:lojaId", async (req, res) => {
   try {
     const lojaId = Number(req.params.lojaId);
-    const avaliacoes = await prisma.avaliacao.findMany({ where: { lojaId, aprovado: true }, orderBy: { createdAt: "desc" } });
-    res.json({ avaliacoes: avaliacoes.map((avaliacao) => ({
-      ...removerIdsInternos(avaliacao),
-      nomeCliente: mascararNomeCliente(avaliacao.nomeCliente, avaliacao.usuarioId),
-      comentario: sanitizarTexto(avaliacao.comentario),
-    })) });
+    const loja = await prisma.loja.findFirst({ where: { id: lojaId, ...filtroLojaDisponivel() }, select: { id: true } });
+    if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
+    const avaliacoes = await prisma.avaliacao.findMany({ where: { lojaId, bloqueado: false }, orderBy: { createdAt: "desc" } });
+    res.json({ avaliacoes });
   } catch {
     res.status(500).json({ error: "Erro ao buscar avaliações." });
   }
@@ -27,7 +25,10 @@ router.post("/", autenticarUsuario, async (req, res) => {
     if (Number(nota) < 1 || Number(nota) > 5) return res.status(400).json({ error: "Nota deve ser entre 1 e 5." });
     if (String(comentario || "").trim().length < 8) return res.status(400).json({ error: "Comentário deve ter pelo menos 8 caracteres." });
     if (!fotoAvaliacaoValida(fotoUrl)) return res.status(400).json({ error: "Foto deve ser uma URL http/https ou imagem PNG, JPG ou WEBP de ate 2 MB." });
-    const loja = await prisma.loja.findFirst({ where: { id: Number(lojaId), bloqueado: false }, select: { id: true } });
+    const loja = await prisma.loja.findFirst({
+      where: { id: Number(lojaId), ...filtroLojaDisponivel() },
+      select: { id: true },
+    });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
     const existente = await prisma.avaliacao.findFirst({ where: { lojaId: Number(lojaId), usuarioId: req.usuario.id }, select: { id: true } });
     if (existente) return res.status(409).json({ error: "Voce ja avaliou este estabelecimento." });
@@ -41,10 +42,9 @@ router.post("/", autenticarUsuario, async (req, res) => {
       data: {
         lojaId: Number(lojaId),
         nota: Number(nota),
-        comentario: sanitizarTexto(String(comentario || "").trim()),
+        comentario: String(comentario || "").trim(),
         fotoUrl: fotoUrl || null,
         nomeCliente: String(nomeCliente || "").trim() || null,
-        aprovado: false,
         usuarioId: req.usuario.id,
         agendamentoId: agendamentoFinalizado.id,
       },

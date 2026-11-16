@@ -1,89 +1,105 @@
 const jwt = require("jsonwebtoken");
-const { jwtSecret, authCookieNames } = require("../utils/tokens");
+const prisma = require("../config/database");
+const { jwtSecret } = require("../utils/tokens");
 
-function lerCookie(req, nome) {
-  const cookies = String(req.headers.cookie || "").split(";");
-  const item = cookies.find((cookie) => cookie.trim().startsWith(`${nome}=`));
-  if (!item) return null;
+async function autenticarDono(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return res.status(401).json({ error: "Token não fornecido." });
+  let payload;
   try {
-    return decodeURIComponent(item.trim().slice(nome.length + 1));
+    payload = jwt.verify(auth.slice(7), jwtSecret);
   } catch {
-    return null;
+    return res.status(401).json({ error: "Token inválido ou expirado." });
   }
-}
-
-function origemValida(req) {
-  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return true;
-  const origin = req.get("origin");
-  if (!origin) return false;
+  if (!payload.donoId) return res.status(403).json({ error: "Token de dono inválido." });
   try {
-    return new URL(origin).host === req.get("host");
-  } catch {
-    return false;
+    const dono = await prisma.dono.findUnique({ where: { id: payload.donoId }, select: { bloqueado: true, suspensoAte: true } });
+    if (!dono) return res.status(401).json({ error: "Conta não encontrada." });
+    if (dono.bloqueado) return res.status(403).json({ error: "Conta de parceiro bloqueada. Entre em contato com o suporte." });
+    if (dono.suspensoAte && dono.suspensoAte > new Date()) return res.status(403).json({ error: `Conta de parceiro suspensa até ${dono.suspensoAte.toLocaleDateString("pt-BR")}.` });
+    req.dono = payload;
+    next();
+  } catch (error) {
+    console.error("Erro ao verificar status da conta de parceiro:", error);
+    res.status(500).json({ error: "Não foi possível verificar o status da conta." });
   }
 }
 
-function autorizarCookie(req, res, nomeCookie, verificarClaim, mensagem) {
-  const token = lerCookie(req, nomeCookie);
-  if (!token) {
-    res.status(401).json({ error: "Sessão não fornecida." });
-    return null;
-  }
-  if (!origemValida(req)) {
-    res.status(403).json({ error: "Origem da requisição inválida." });
-    return null;
-  }
+async function autenticarUsuario(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return res.status(401).json({ error: "Token não fornecido." });
+  let payload;
   try {
-    const payload = jwt.verify(token, jwtSecret);
-    if (!verificarClaim(payload)) {
-      res.status(403).json({ error: mensagem });
-      return null;
-    }
-    return payload;
+    payload = jwt.verify(auth.slice(7), jwtSecret);
   } catch {
-    res.status(401).json({ error: "Sessão inválida ou expirada." });
-    return null;
+    return res.status(401).json({ error: "Token inválido ou expirado." });
   }
-}
-
-function autenticarDono(req, res, next) {
-  const payload = autorizarCookie(req, res, authCookieNames.dono, (claim) => Boolean(claim.donoId), "Sessão de parceiro inválida.");
-  if (!payload) return;
-  req.dono = payload;
-  next();
-}
-
-function autenticarUsuario(req, res, next) {
-  const payload = autorizarCookie(req, res, authCookieNames.usuario, (claim) => Boolean(claim.id), "Sessão de usuário inválida.");
-  if (!payload) return;
-  req.usuario = payload;
-  next();
+  if (!payload.id) return res.status(403).json({ error: "Token de usuário inválido." });
+  try {
+    const usuario = await prisma.usuario.findUnique({ where: { id: payload.id }, select: { bloqueado: true, suspensoAte: true } });
+    if (!usuario) return res.status(401).json({ error: "Conta não encontrada." });
+    if (usuario.bloqueado) return res.status(403).json({ error: "Conta de usuário bloqueada. Entre em contato com o suporte." });
+    if (usuario.suspensoAte && usuario.suspensoAte > new Date()) return res.status(403).json({ error: `Conta suspensa até ${usuario.suspensoAte.toLocaleDateString("pt-BR")}.` });
+    req.usuario = payload;
+    next();
+  } catch (error) {
+    console.error("Erro ao verificar status da conta de usuário:", error);
+    res.status(500).json({ error: "Não foi possível verificar o status da conta." });
+  }
 }
 
 function autenticarAdmin(req, res, next) {
-  const payload = autorizarCookie(req, res, authCookieNames.admin, (claim) => Boolean(claim.adminRole), "Acesso restrito a administradores.");
-  if (!payload) return;
-  next();
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return res.status(401).json({ error: "Token não fornecido." });
+  try {
+    const payload = jwt.verify(auth.slice(7), jwtSecret);
+    if (!payload.adminRole) return res.status(403).json({ error: "Acesso restrito a administradores." });
+    next();
+  } catch {
+    res.status(401).json({ error: "Token inválido ou expirado." });
+  }
 }
 
 function tentarAutenticarUsuario(req, _res, next) {
-  const token = lerCookie(req, authCookieNames.usuario);
-  if (token) {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith("Bearer ")) {
     try {
-      const payload = jwt.verify(token, jwtSecret);
+      const payload = jwt.verify(auth.slice(7), jwtSecret);
       if (payload.id) req.usuario = payload;
     } catch {}
   }
   next();
 }
 
-function autenticarUpload(req, res, next) {
-  const roleCookie = ["admin", "dono", "usuario"].find((role) => lerCookie(req, authCookieNames[role]));
-  if (!roleCookie) return res.status(401).json({ error: "Sessão não fornecida." });
-  const payload = autorizarCookie(req, res, authCookieNames[roleCookie], (claim) => Boolean(claim.id || claim.donoId || claim.adminRole), "Sessão sem permissão para upload.");
-  if (!payload) return;
-  req.uploadUser = payload;
-  next();
+async function autenticarUpload(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return res.status(401).json({ error: "Token não fornecido." });
+  let payload;
+  try {
+    payload = jwt.verify(auth.slice(7), jwtSecret);
+  } catch {
+    return res.status(401).json({ error: "Token inválido ou expirado." });
+  }
+  if (!payload.id && !payload.donoId && !payload.adminRole) return res.status(403).json({ error: "Token sem permissão para upload." });
+  try {
+    if (payload.id) {
+      const usuario = await prisma.usuario.findUnique({ where: { id: payload.id }, select: { bloqueado: true, suspensoAte: true } });
+      if (!usuario) return res.status(401).json({ error: "Conta não encontrada." });
+      if (usuario.bloqueado) return res.status(403).json({ error: "Conta de usuário bloqueada. Entre em contato com o suporte." });
+      if (usuario.suspensoAte && usuario.suspensoAte > new Date()) return res.status(403).json({ error: `Conta suspensa até ${usuario.suspensoAte.toLocaleDateString("pt-BR")}.` });
+    }
+    if (payload.donoId) {
+      const dono = await prisma.dono.findUnique({ where: { id: payload.donoId }, select: { bloqueado: true, suspensoAte: true } });
+      if (!dono) return res.status(401).json({ error: "Conta não encontrada." });
+      if (dono.bloqueado) return res.status(403).json({ error: "Conta de parceiro bloqueada. Entre em contato com o suporte." });
+      if (dono.suspensoAte && dono.suspensoAte > new Date()) return res.status(403).json({ error: `Conta de parceiro suspensa até ${dono.suspensoAte.toLocaleDateString("pt-BR")}.` });
+    }
+    req.uploadUser = payload;
+    next();
+  } catch (error) {
+    console.error("Erro ao verificar status da conta para upload:", error);
+    res.status(500).json({ error: "Não foi possível verificar o status da conta." });
+  }
 }
 
 module.exports = { autenticarDono, autenticarUsuario, autenticarAdmin, tentarAutenticarUsuario, autenticarUpload };

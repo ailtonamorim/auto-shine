@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AutoShine — Painel Admin</title>
   <link rel="stylesheet" href="assets/css/styles.css" />
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
 </head>
 <body data-page="admin">
   <div class="bg-decor"></div>
@@ -44,48 +47,9 @@
     </header>
 
     <main class="container admin-main">
-      <section class="admin-stats-grid" aria-label="Resumo do sistema">
-        <article class="admin-stat-card">
-          <span>Lojas</span>
-          <strong id="admin-stat-shops">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Bloqueadas</span>
-          <strong id="admin-stat-blocked">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Parceiros</span>
-          <strong id="admin-stat-owners">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Clientes</span>
-          <strong id="admin-stat-users">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Agendamentos</span>
-          <strong id="admin-stat-bookings">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Agendamentos Pendentes</span>
-          <strong id="admin-stat-pending">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Avaliações</span>
-          <strong id="admin-stat-reviews">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Denúncias</span>
-          <strong id="admin-stat-reports">0</strong>
-        </article>
-        <article class="admin-stat-card">
-          <span>Denúncias Abertas</span>
-          <strong id="admin-stat-open-reports">0</strong>
-        </article>
-      </section>
-
-      <nav class="panel admin-tabs" aria-label="Seções administrativas">
-        <button class="admin-tab active" type="button" data-admin-tab="lojas">Lojas</button>
-        <button class="admin-tab" type="button" data-admin-tab="favoritos">Favoritos</button>
+      <nav class="panel admin-tabs" aria-label="Módulos administrativos">
+        <button class="admin-tab active" type="button" data-admin-tab="dashboard">Dashboard</button>
+        <button class="admin-tab" type="button" data-admin-tab="lojas">Lojas</button>
         <button class="admin-tab" type="button" data-admin-tab="usuarios">Usuários</button>
         <button class="admin-tab" type="button" data-admin-tab="donos">Parceiros</button>
         <button class="admin-tab" type="button" data-admin-tab="agendamentos">Agendamentos</button>
@@ -93,7 +57,174 @@
         <button class="admin-tab" type="button" data-admin-tab="denuncias">Denúncias</button>
       </nav>
 
-      <section class="admin-section active" data-admin-section="lojas">
+      <section class="admin-dashboard admin-section active" data-admin-section="dashboard" aria-label="Dashboard: indicadores e pendências">
+        <p id="admin-dashboard-error" class="admin-feedback is-error" role="status"></p>
+        <div class="admin-dashboard-heading">
+          <div>
+            <h1>Dashboard</h1>
+            <p class="empty-copy">Resumo da atividade do marketplace.</p>
+          </div>
+          <div class="admin-dashboard-controls">
+            <span class="admin-period-label">Período</span>
+            <div class="admin-period-filter" role="group" aria-label="Período dos indicadores">
+              <button type="button" class="admin-period-btn" data-admin-period="1" aria-pressed="false">Hoje</button>
+              <button type="button" class="admin-period-btn active" data-admin-period="7" aria-pressed="true">7 dias</button>
+              <button type="button" class="admin-period-btn" data-admin-period="30" aria-pressed="false">30 dias</button>
+              <button type="button" class="admin-period-btn" data-admin-period="custom" aria-pressed="false">Personalizado</button>
+            </div>
+            <button id="admin-dashboard-refresh-btn" class="btn btn-ghost" type="button">Atualizar</button>
+          </div>
+        </div>
+        <form id="admin-custom-date-form" class="admin-custom-date-form hidden" novalidate>
+          <label for="admin-custom-date-start">De</label>
+          <input id="admin-custom-date-start" type="date" required />
+          <label for="admin-custom-date-end">Até</label>
+          <input id="admin-custom-date-end" type="date" required />
+          <button class="btn btn-primary" type="submit">Aplicar período</button>
+        </form>
+        <p id="admin-dashboard-range" class="admin-dashboard-range" aria-live="polite"></p>
+
+        <section class="admin-kpi-group" aria-labelledby="admin-activity-heading">
+          <div class="admin-kpi-group-heading">
+            <h2 id="admin-activity-heading">Atividade</h2>
+            <p>O que aconteceu no período</p>
+          </div>
+          <div class="admin-stats-grid">
+            <article class="admin-stat-card">
+              <span>Novos cadastros</span>
+              <strong id="admin-kpi-signups">—</strong>
+              <small>Clientes e parceiros</small>
+            </article>
+            <article class="admin-stat-card">
+              <span>Agendamentos</span>
+              <strong id="admin-kpi-bookings">—</strong>
+              <small>Criados no período</small>
+            </article>
+            <article class="admin-stat-card">
+              <span>Cancelamentos</span>
+              <strong id="admin-kpi-cancellations">—</strong>
+              <small>Percentual dos agendamentos</small>
+            </article>
+            <article class="admin-stat-card">
+              <span>Avaliação média</span>
+              <strong id="admin-kpi-rating">—</strong>
+              <small id="admin-kpi-rating-count">Avaliações no período</small>
+            </article>
+          </div>
+        </section>
+
+        <section class="admin-kpi-group admin-finance-group" aria-labelledby="admin-finance-heading">
+          <div class="admin-kpi-group-heading">
+            <h2 id="admin-finance-heading">Financeiro estimado</h2>
+            <p>Reservas não canceladas · não são pagamentos recebidos</p>
+          </div>
+          <div class="admin-stats-grid admin-finance-grid">
+            <article class="admin-stat-card admin-stat-card-finance">
+              <span>Volume em reservas</span>
+              <strong id="admin-kpi-gmv">—</strong>
+              <small>Valor dos serviços reservados</small>
+            </article>
+            <article class="admin-stat-card admin-stat-card-finance">
+              <span>Comissão da plataforma</span>
+              <strong id="admin-kpi-platform-revenue">—</strong>
+              <small id="admin-kpi-platform-rate">Taxa simulada</small>
+            </article>
+            <article class="admin-stat-card admin-stat-card-finance">
+              <span>Valor médio por reserva</span>
+              <strong id="admin-kpi-average-ticket">—</strong>
+              <small>Ticket médio dos serviços</small>
+            </article>
+          </div>
+          <details class="admin-finance-details">
+            <summary>Como os valores são calculados?</summary>
+            <p id="admin-finance-note" role="note"></p>
+          </details>
+        </section>
+
+        <section class="admin-trends-grid" aria-label="Tendências diárias">
+          <article class="panel admin-chart-panel admin-trend-panel">
+            <div class="section-head section-head-compact">
+              <div>
+                <h2>Faturamento estimado</h2>
+                <p class="empty-copy">Valor diário de serviços reservados, sem cancelamentos.</p>
+                <div class="admin-chart-mode" role="group" aria-label="Tipo de gráfico de faturamento">
+                  <button class="active" type="button" data-admin-chart-type="revenue" data-chart-mode="pie" aria-pressed="true">Pizza</button>
+                  <button type="button" data-admin-chart-type="revenue" data-chart-mode="line" aria-pressed="false">Linha</button>
+                </div>
+              </div>
+              <strong id="admin-trend-revenue-total" class="admin-trend-total"></strong>
+            </div>
+            <div id="admin-revenue-chart" class="admin-trend-chart" role="group" aria-label="Gráfico diário de faturamento estimado"></div>
+          </article>
+          <article class="panel admin-chart-panel admin-trend-panel">
+            <div class="section-head section-head-compact">
+              <div>
+                <h2>Agendamentos por dia</h2>
+                <p class="empty-copy">Quantidade criada em cada dia do período.</p>
+                <div class="admin-chart-mode" role="group" aria-label="Tipo de gráfico de agendamentos">
+                  <button class="active" type="button" data-admin-chart-type="bookings" data-chart-mode="pie" aria-pressed="true">Pizza</button>
+                  <button type="button" data-admin-chart-type="bookings" data-chart-mode="line" aria-pressed="false">Linha</button>
+                </div>
+              </div>
+              <strong id="admin-trend-bookings-total" class="admin-trend-total"></strong>
+            </div>
+            <div id="admin-booking-chart" class="admin-trend-chart" role="group" aria-label="Gráfico diário de agendamentos"></div>
+          </article>
+        </section>
+
+        <section class="panel admin-pending-panel" aria-label="Fila de pendências">
+          <div class="section-head section-head-compact">
+            <div>
+              <h2>Precisa da sua atenção</h2>
+              <p class="empty-copy">Selecione uma fila para revisar.</p>
+            </div>
+          </div>
+          <div class="admin-pending-grid">
+            <button class="admin-pending-card" type="button" data-admin-go-tab="denuncias">
+              <span>Denúncias abertas</span>
+              <strong id="admin-pending-reports">—</strong>
+              <small>Revisar relatos</small>
+            </button>
+            <button class="admin-pending-card" type="button" data-admin-go-tab="lojas">
+              <span>Lojas para aprovar</span>
+              <strong id="admin-pending-shops">—</strong>
+              <small>Abrir lojas</small>
+            </button>
+            <button class="admin-pending-card" type="button" data-admin-go-tab="agendamentos">
+              <span>Agendamentos há mais de 24h</span>
+              <strong id="admin-pending-bookings">—</strong>
+              <small>Ver pendentes</small>
+            </button>
+          </div>
+        </section>
+
+        <div class="admin-dashboard-grid">
+          <section class="panel admin-rankings-panel" aria-label="Rankings de lojas">
+            <div class="section-head section-head-compact">
+              <div>
+                <h2>Rankings de lojas</h2>
+                <p class="empty-copy">Desempenho no período; favoritos acumulados.</p>
+              </div>
+            </div>
+            <div class="admin-rankings-grid">
+              <section class="admin-ranking">
+                <h3>Mais agendadas</h3>
+                <ol id="admin-ranking-bookings" class="admin-ranking-list"></ol>
+              </section>
+              <section class="admin-ranking">
+                <h3>Melhor avaliadas</h3>
+                <ol id="admin-ranking-ratings" class="admin-ranking-list"></ol>
+              </section>
+              <section class="admin-ranking">
+                <h3>Mais favoritadas</h3>
+                <ol id="admin-ranking-favorites" class="admin-ranking-list"></ol>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="admin-section hidden" data-admin-section="lojas">
       <section id="admin-edit-panel" class="panel admin-form hidden" aria-label="Editar loja selecionada">
         <div class="section-head section-head-compact">
           <div>
@@ -213,7 +344,35 @@
             <h2>Lava jatos cadastrados</h2>
             <p id="admin-shops-count" class="empty-copy"></p>
           </div>
-          <button id="admin-refresh-btn" class="btn btn-ghost" type="button">Atualizar</button>
+          <div class="admin-shop-toolbar">
+            <div class="admin-shop-health-control">
+              <span class="admin-shop-filter-caption">Saúde operacional</span>
+              <div class="admin-shop-health-filters" role="group" aria-label="Filtrar lojas por saúde operacional">
+                <button class="admin-shop-health-filter is-active" type="button" data-health-filter="" aria-pressed="true">
+                  Todas <span class="admin-shop-filter-count" data-health-count="all">0</span>
+                </button>
+                <button class="admin-shop-health-filter" type="button" data-health-filter="HEALTHY" aria-pressed="false">
+                  <span class="admin-shop-health-dot is-healthy" aria-hidden="true"></span>Saudáveis <span class="admin-shop-filter-count" data-health-count="healthy">0</span>
+                </button>
+                <button class="admin-shop-health-filter" type="button" data-health-filter="WARNING" aria-pressed="false">
+                  <span class="admin-shop-health-dot is-warning" aria-hidden="true"></span>Em atenção <span class="admin-shop-filter-count" data-health-count="warning">0</span>
+                </button>
+                <button class="admin-shop-health-filter" type="button" data-health-filter="CRITICAL" aria-pressed="false">
+                  <span class="admin-shop-health-dot is-critical" aria-hidden="true"></span>Críticas <span class="admin-shop-filter-count" data-health-count="critical">0</span>
+                </button>
+              </div>
+            </div>
+            <label class="admin-shop-approval-control">
+              <span class="admin-shop-filter-caption">Aprovação</span>
+              <select id="admin-shop-approval-filter">
+                <option value="">Todas</option>
+                <option value="aprovada">Aprovada</option>
+                <option value="pendente">Pendente</option>
+                <option value="rejeitada">Rejeitada</option>
+              </select>
+            </label>
+            <button id="admin-refresh-btn" class="btn btn-ghost" type="button">Atualizar</button>
+          </div>
         </div>
 
         <div class="admin-table-wrap panel">
@@ -224,6 +383,7 @@
                 <th>Dono</th>
                 <th>Serviços</th>
                 <th>Avaliação</th>
+                <th>Saúde</th>
                 <th>Status</th>
                 <th>Ações</th>
               </tr>
@@ -233,19 +393,6 @@
           <p id="admin-empty" class="empty-copy hidden">Nenhum lava jato cadastrado ainda.</p>
         </div>
       </section>
-      </section>
-
-      <section class="admin-section hidden" data-admin-section="favoritos">
-        <section class="panel admin-favorites-card" aria-label="Lojas favoritadas">
-          <div class="section-head section-head-compact">
-            <div>
-              <h2>Lojas favoritadas</h2>
-              <p id="admin-favorites-summary" class="empty-copy">Carregando favoritos...</p>
-            </div>
-          </div>
-          <ul id="admin-favorites-list" class="admin-favorites-list"></ul>
-          <p id="admin-favorites-empty" class="empty-copy hidden">Nenhuma loja foi favoritada ate agora.</p>
-        </section>
       </section>
 
       <section class="admin-section hidden" data-admin-section="usuarios">
@@ -303,6 +450,7 @@
                 <th>Contato</th>
                 <th>Histórico</th>
                 <th>Cadastro</th>
+                <th>Status</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -363,6 +511,7 @@
                 <th>Login/CNPJ</th>
                 <th>Lojas</th>
                 <th>Cadastro</th>
+                <th>Status</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -431,10 +580,6 @@
               <label for="admin-review-comment">Comentário</label>
               <textarea id="admin-review-comment" rows="4"></textarea>
             </div>
-            <label class="admin-checkbox">
-              <input id="admin-review-approved" type="checkbox" />
-              <span>Avaliação aprovada para exibição pública</span>
-            </label>
             <p id="admin-review-feedback" class="admin-feedback" role="status"></p>
             <div class="admin-form-actions">
               <button id="admin-review-submit" class="btn btn-primary" type="submit">Salvar avaliação</button>
@@ -451,6 +596,7 @@
                 <th>Nota</th>
                 <th>Comentário</th>
                 <th>Denúncias</th>
+                <th>Status</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -491,5 +637,3 @@
   <script src="assets/js/app.js"></script>
 </body>
 </html>
-
-

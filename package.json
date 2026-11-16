@@ -6,11 +6,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "prisma generate && prisma migrate deploy && npm run migrate:sensitive-data",
+    "build": "prisma generate && prisma migrate deploy",
     "check": "node scripts/check.js",
+    "test": "node --test",
     "seed": "prisma db seed",
-    "migrate": "prisma migrate dev",
-    "migrate:sensitive-data": "node scripts/migrar-dados-sensiveis.js"
+    "migrate": "prisma migrate dev"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -25,7 +25,8 @@
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^9.0.1",
     "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0"
+    "passport-google-oauth20": "^2.0.0",
+    "prisma": "^6.19.3"
   },
   "keywords": [
     "marketplace",
@@ -36,8 +37,5 @@
     "node"
   ],
   "author": "",
-  "license": "MIT",
-  "devDependencies": {
-    "prisma": "^6.19.3"
-  }
+  "license": "MIT"
 }

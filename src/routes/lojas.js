@@ -3,20 +3,18 @@ const prisma = require("../config/database");
 const { autenticarDono } = require("../middlewares/auth");
 const { coordenadasValidas, imagemLojaValida, serializarFotosAdicionais, serializarListaTexto, dataEhPassado } = require("../utils/validators");
 const { serializarAgendaDias, serializarAgendaHorarios, montarDisponibilidadeLoja } = require("../utils/agenda");
-const { deletarLojaComRelacionados } = require("../utils/loja");
-const { mascararListaLojas, mascararListaAvaliacoes, mascararEndereco, arredondarGPS } = require("../utils/masking");
-const { descriptografarSeNecessario } = require("../utils/crypto");
+const { deletarLojaComRelacionados, filtroLojaDisponivel } = require("../utils/loja");
 
 const router = express.Router();
 
 router.get("/", async (_req, res) => {
   try {
     const lojas = await prisma.loja.findMany({
-      where: { bloqueado: false },
-      include: { servicos: true, avaliacoes: { where: { aprovado: true }, select: { nota: true } } },
+      where: filtroLojaDisponivel(),
+      include: { servicos: true, avaliacoes: { where: { bloqueado: false }, select: { nota: true } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ lojas: mascararListaLojas(lojas) });
+    res.json({ lojas });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao buscar lojas." });
@@ -33,13 +31,7 @@ router.get("/minhas", autenticarDono, async (req, res) => {
       },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ lojas: lojas.map((loja) => ({
-      ...loja,
-      avaliacoes: loja.avaliacoes.map((avaliacao) => ({
-        ...avaliacao,
-        usuario: avaliacao.usuario ? { ...avaliacao.usuario, email: descriptografarSeNecessario(avaliacao.usuario.email) } : null,
-      })),
-    })) });
+    res.json({ lojas });
   } catch {
     res.status(500).json({ error: "Erro ao buscar lojas." });
   }
@@ -50,19 +42,11 @@ router.get("/:id", async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID de loja invalido." });
     const loja = await prisma.loja.findFirst({
-      where: { id, bloqueado: false },
-      include: { servicos: true, avaliacoes: { where: { aprovado: true }, orderBy: { createdAt: "desc" } } },
+      where: { id, ...filtroLojaDisponivel() },
+      include: { servicos: true, avaliacoes: { where: { bloqueado: false }, orderBy: { createdAt: "desc" } } },
     });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
-    const coordenadas = arredondarGPS(loja.latitude, loja.longitude);
-    res.json({ loja: {
-      ...loja,
-      donoId: undefined,
-      endereco: mascararEndereco(loja.endereco),
-      latitude: coordenadas.latitude,
-      longitude: coordenadas.longitude,
-      avaliacoes: mascararListaAvaliacoes(loja.avaliacoes),
-    } });
+    res.json({ loja });
   } catch {
     res.status(500).json({ error: "Erro interno." });
   }
@@ -75,7 +59,7 @@ router.get("/:id/disponibilidade", async (req, res) => {
     const ignorarId = req.query.ignorarAgendamentoId ? Number(req.query.ignorarAgendamentoId) : null;
     if (!lojaId) return res.status(400).json({ error: "ID invalido." });
     if (dataEhPassado(data)) return res.status(400).json({ error: "Informe uma data valida a partir de hoje." });
-    const loja = await prisma.loja.findFirst({ where: { id: lojaId, bloqueado: false } });
+    const loja = await prisma.loja.findFirst({ where: { id: lojaId, ...filtroLojaDisponivel() } });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
     res.json(await montarDisponibilidadeLoja({ loja, data, ignorarId }));
   } catch {
@@ -105,9 +89,20 @@ router.post("/", autenticarDono, async (req, res) => {
         politicaCancelamento: String(politicaCancelamento || "").trim() || "Cancelamentos e reagendamentos podem ser feitos até 2 horas antes do horário marcado.",
         agendaDias: serializarAgendaDias(agendaDias),
         agendaHorarios: serializarAgendaHorarios(agendaHorarios),
+        statusAprovacao: "pendente",
         donoId: req.dono.donoId,
         servicos: Array.isArray(servicos) && servicos.length
-          ? { create: servicos.map((s) => ({ nome: s.name || s.nome || "", descricao: s.description || s.descricao || "", preco: Number(s.price ?? s.preco) || 0, duracao: s.duration || s.duracao || "" })) }
+          ? { create: servicos.map((s) => ({
+              nome: s.name || s.nome || "",
+              descricao: s.description || s.descricao || "",
+              preco: Number(s.price ?? s.preco) || 0,
+              duracao: s.duration || s.duracao || "",
+              inclusos: s.inclusos || null,
+              etapas: s.etapas || null,
+              produtos: s.produtos || null,
+              orientacoes: s.orientacoes || null,
+              garantia: s.garantia || null,
+            })) }
           : undefined,
       },
       include: { servicos: true },
@@ -172,9 +167,22 @@ router.post("/:lojaId/servicos", autenticarDono, async (req, res) => {
     const lojaId = Number(req.params.lojaId);
     const loja = await prisma.loja.findFirst({ where: { id: lojaId, donoId: req.dono.donoId } });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
-    const { nome, descricao, preco, duracao } = req.body;
+    const { nome, descricao, preco, duracao, inclusos, etapas, produtos, orientacoes, garantia } = req.body;
     if (!nome || !descricao || !duracao) return res.status(400).json({ error: "Preencha todos os campos do serviço." });
-    const servico = await prisma.servicoLoja.create({ data: { nome, descricao, preco: Number(preco) || 0, duracao, lojaId } });
+    const servico = await prisma.servicoLoja.create({
+      data: {
+        nome,
+        descricao,
+        preco: Number(preco) || 0,
+        duracao,
+        inclusos: inclusos || null,
+        etapas: etapas || null,
+        produtos: produtos || null,
+        orientacoes: orientacoes || null,
+        garantia: garantia || null,
+        lojaId,
+      },
+    });
     res.status(201).json({ servico });
   } catch {
     res.status(500).json({ error: "Erro ao criar serviço." });
@@ -189,10 +197,20 @@ router.put("/:lojaId/servicos/:id", autenticarDono, async (req, res) => {
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
     const servico = await prisma.servicoLoja.findFirst({ where: { id, lojaId } });
     if (!servico) return res.status(404).json({ error: "Serviço não encontrado." });
-    const { nome, descricao, preco, duracao } = req.body;
+    const { nome, descricao, preco, duracao, inclusos, etapas, produtos, orientacoes, garantia } = req.body;
     const atualizado = await prisma.servicoLoja.update({
       where: { id },
-      data: { nome: nome ?? servico.nome, descricao: descricao ?? servico.descricao, preco: preco !== undefined ? Number(preco) : servico.preco, duracao: duracao ?? servico.duracao },
+      data: {
+        nome: nome ?? servico.nome,
+        descricao: descricao ?? servico.descricao,
+        preco: preco !== undefined ? Number(preco) : servico.preco,
+        duracao: duracao ?? servico.duracao,
+        inclusos: inclusos !== undefined ? (inclusos || null) : servico.inclusos,
+        etapas: etapas !== undefined ? (etapas || null) : servico.etapas,
+        produtos: produtos !== undefined ? (produtos || null) : servico.produtos,
+        orientacoes: orientacoes !== undefined ? (orientacoes || null) : servico.orientacoes,
+        garantia: garantia !== undefined ? (garantia || null) : servico.garantia,
+      },
     });
     res.json({ servico: atualizado });
   } catch {
