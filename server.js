@@ -17,6 +17,7 @@ if (missingConfig.length) {
 const { aplicarHeadersSeguranca } = require("./src/middlewares/security");
 const { autorizarPagina } = require("./src/middlewares/auth");
 const { garantirIndicesBanco } = require("./src/utils/loja");
+const { iniciarHealthWorker } = require("./src/services/health-worker");
 
 const authRouter = require("./src/routes/auth");
 const profileRouter = require("./src/routes/profile");
@@ -106,6 +107,7 @@ let server;
 
 async function iniciarServidor() {
   await garantirIndicesBanco();
+  await iniciarHealthWorker();
   server = app.listen(PORT, () => {
     console.log(`AutoShine ativo em http://localhost:${PORT}`);
     const googleOAuthConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);

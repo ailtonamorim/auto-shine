@@ -716,7 +716,19 @@ html[data-theme="light"] .menu-mobile-btn { color: var(--text); }
   .topbar > .theme-toggle { margin-left: auto; margin-right: 0; }
   .topbar > .user-menu { margin-left: 8px; }
   .topbar .user-menu-label { max-width: 82px; }
-  .main-nav .user-menu-panel { position: static; margin-top: 8px; }
+  .main-nav .user-menu {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .main-nav .user-menu-button { width: 90%; }
+  .main-nav .user-menu-panel {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    margin-top: 8px;
+  }
   html[data-theme="light"] .main-nav { background: var(--card); }
 }
 @media (max-width: 768px) {
@@ -754,6 +766,108 @@ html[data-theme="light"] .site-footer h2 { -webkit-background-clip: text; backgr
   .topbar > .main-nav { position: static; order: 10; flex: 1 0 100%; transform: none; margin-top: 12px; }
   .topbar > .theme-toggle { margin-right: auto; }
 }
+body[data-page="cadastro-dono"] .topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  column-gap: 16px;
+}
+body[data-page="cadastro-dono"] .topbar > .main-nav {
+  position: static;
+  left: auto;
+  transform: none;
+  min-width: 0;
+  gap: 6px;
+}
+body[data-page="cadastro-dono"] .topbar > .main-nav a {
+  padding-inline: 8px;
+}
+body[data-page="cadastro-dono"] .topbar > .user-menu {
+  margin-left: 0;
+}
+body[data-page="cadastro-dono"] .partner-header-tag {
+  margin: 0;
+  white-space: nowrap;
+}
+@media (min-width: 761px) and (max-width: 1000px) {
+  body[data-page="cadastro-dono"] .topbar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    row-gap: 8px;
+  }
+  body[data-page="cadastro-dono"] .topbar > .main-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: center;
+    margin-top: 0;
+  }
+}
+@media (max-width: 760px) {
+  body[data-page="cadastro-dono"] .topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 8px;
+    row-gap: 4px;
+  }
+  body[data-page="cadastro-dono"] .topbar > .logo,
+  body[data-page="cadastro-dono"] .topbar > .brand {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
+  body[data-page="cadastro-dono"] .topbar > .user-menu {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    margin: 0;
+  }
+  body[data-page="cadastro-dono"] .topbar .user-menu-label {
+    max-width: 82px;
+  }
+  body[data-page="cadastro-dono"] .partner-header-tag {
+    grid-column: 3;
+    grid-row: 1;
+    padding: 8px;
+    font-size: 0.78rem;
+  }
+  body[data-page="cadastro-dono"] .topbar > .main-nav {
+    position: static;
+    top: auto;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    justify-content: flex-start;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 4px;
+    margin: 0;
+    width: 100%;
+    padding: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: transparent;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    transition: none;
+    backdrop-filter: none;
+  }
+  body[data-page="cadastro-dono"] .topbar > .main-nav::before {
+    content: none;
+  }
+  body[data-page="cadastro-dono"] .topbar > .main-nav a {
+    width: auto;
+    min-height: 42px;
+    padding: 8px 10px;
+    font-size: 0.88rem;
+  }
+}
+@media (max-width: 360px) {
+  body[data-page="cadastro-dono"] .partner-header-tag {
+    display: none;
+  }
+}
 /* O painel do parceiro tem paleta própria: acompanha o tema global. */
 html[data-theme="light"] .owner-dashboard-shell {
   --owner-bg-primary: #edf4ff; --owner-bg-secondary: #f7faff; --owner-bg-card: #ffffff;
@@ -768,7 +882,8 @@ html[data-theme="light"] .owner-dashboard-metrics article,
 html[data-theme="light"] .owner-dashboard-card,
 html[data-theme="light"] .owner-service-row,
 html[data-theme="light"] .owner-timeline-item,
-html[data-theme="light"] .owner-review-card { background: var(--card); border-color: var(--line); }
+html[data-theme="light"] .owner-review-card,
+html[data-theme="light"] .partner-bookings-shell { background: var(--card); border-color: var(--line); }
 html[data-theme="light"] .owner-sidebar-toggle,
 html[data-theme="light"] .owner-nav-icon,
 html[data-theme="light"] .owner-dashboard-shop-select,

@@ -25,12 +25,22 @@ Marketplace responsivo para lava jatos e estética automotiva, com cadastro de c
 9. `admin.html` - painel administrativo
 10. `termos.html` e `privacidade.html` - páginas legais básicas
 
+O painel administrativo oferece indicadores com filtros de hoje, 7 ou 30 dias ou intervalo personalizado (até 366 dias), fila de pendências, gráficos diários interativos de agendamentos e faturamento estimado, além de rankings de lojas por agendamentos, avaliações e favoritos. Lojas cadastradas por parceiros aguardam aprovação administrativa antes de serem exibidas publicamente; lojas existentes permanecem aprovadas.
+
+O dashboard também apresenta GMV reservado, receita estimada da plataforma e ticket médio nos mesmos períodos. Esses números são estimativas de reservas não canceladas, não pagamentos recebidos: o sistema ainda não integra checkout nem confirma liquidação. Novos agendamentos guardam o preço do serviço no momento da reserva; registros anteriores sem esse histórico usam o preço atual. A comissão ilustrativa é configurável por `PLATFORM_COMMISSION_RATE_PERCENT` (padrão demonstrativo de 10%).
+
+Nos módulos de usuários, parceiros e avaliações, o administrador pode bloquear e desbloquear contas e avaliações. Usuários e parceiros também podem receber suspensão disciplinar por 30 dias, com restauração automática do acesso ao fim do prazo ou reativação antecipada pelo painel. Contas bloqueadas perdem acesso às rotas autenticadas e ao login; avaliações bloqueadas deixam de ser exibidas publicamente, mas permanecem disponíveis no painel para auditoria e eventual desbloqueio.
+
+No painel administrativo, lojas podem ser inativadas por 30 dias sem apagar seus dados, serviços ou agendamentos. Elas deixam de aparecer nas listagens públicas durante esse período e voltam automaticamente ao fim do prazo; também podem ser reativadas manualmente pelo painel.
+
+O painel também mostra a saúde operacional de cada loja. A classificação considera cancelamentos e avaliações dos últimos 30 dias e o tempo desde o último agendamento concluído. A análise roda ao iniciar o servidor e diariamente às 02:00; filtros rápidos de saúde e aprovação exibem contagens e atualizam a listagem sem recarregar a página. A API administrativa aceita `health` (`HEALTHY`, `WARNING` ou `CRITICAL`), `statusAprovacao` e `bloqueado` em `/api/admin/stores` (o filtro de saúde também aceita `healthStatus` em `/api/admin/lojas`).
+
 ## Configuração
 
 Copie `.env.example` para `.env` e preencha:
 
 ```env
-DATABASE_URL="file:./data/dev.db"
+DATABASE_URL="file:./dev.db"
 PORT=3000
 SESSION_SECRET=troque-para-uma-chave-segura
 JWT_SECRET=troque-para-uma-chave-jwt-segura
@@ -72,11 +82,12 @@ Para validar o projeto:
 
 ```bash
 npm run check
+npm test
 ```
 
 ## Seed
 
-O seed cria lojas, serviços, avaliações, usuários demo e agendamentos de apresentação.
+O seed cria lojas, serviços, avaliações, usuários demo e 30 agendamentos fictícios distribuídos pelos últimos 30 dias para apresentar os indicadores e gráficos administrativos.
 
 - Cliente: `cliente@autoshine.local` / `cliente123`
 - O cliente demo possui agendamentos pendente, confirmado e finalizado para testar histórico e publicação de avaliação.

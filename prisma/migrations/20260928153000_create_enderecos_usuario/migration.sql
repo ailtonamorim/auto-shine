@@ -15,5 +15,4 @@ CREATE TABLE "EnderecoUsuario" (
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "EnderecoUsuario_usuarioId_fkey" FOREIGN KEY ("usuarioId") REFERENCES "Usuario" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-
 CREATE INDEX "EnderecoUsuario_usuarioId_idx" ON "EnderecoUsuario"("usuarioId");

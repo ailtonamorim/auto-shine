@@ -538,7 +538,11 @@ function updatePartnerNavState() {
   const partnerPage = page === "cadastro-dono" || page === "parceiro" || page === "perfil-dono";
 
   document.querySelectorAll("[data-partner-session-link]").forEach((item) => item.remove());
-  if (!partnerPage) return;
+  if (partnerLogged) {
+    document.querySelectorAll('header a[href*="cadastro-dono.html"]').forEach((link) => {
+      if (!link.closest(".main-nav")) link.remove();
+    });
+  }
 
   const navItems = page === "perfil-dono"
     ? [
@@ -557,18 +561,40 @@ function updatePartnerNavState() {
       ];
 
   document.querySelectorAll(".topbar .main-nav").forEach((nav) => {
-    nav.replaceChildren();
-    nav.hidden = !partnerLogged;
+    if (partnerPage) {
+      nav.replaceChildren();
+      nav.hidden = !partnerLogged;
+      if (!partnerLogged) return;
+
+      for (const [label, href, tab] of navItems) {
+        const link = document.createElement("a");
+        link.href = href;
+        link.textContent = label;
+        if (tab && page === "perfil-dono") link.dataset.ownerTab = tab;
+        if (tab && page !== "perfil-dono") link.dataset.goTab = tab;
+        nav.append(link);
+      }
+      return;
+    }
+
+    nav.hidden = false;
     if (!partnerLogged) return;
 
-    for (const [label, href, tab] of navItems) {
-      const link = document.createElement("a");
-      link.href = href;
-      link.textContent = label;
-      if (tab && page === "perfil-dono") link.dataset.ownerTab = tab;
-      if (tab && page !== "perfil-dono") link.dataset.goTab = tab;
-      nav.append(link);
+    let partnerLink = nav.querySelector('a[href*="cadastro-dono.html"]');
+    if (!partnerLink) {
+      partnerLink = document.createElement("a");
+      partnerLink.href = "cadastro-dono.html";
+      partnerLink.textContent = "Painel do parceiro";
+      const servicesLink = Array.from(nav.querySelectorAll("a")).find((link) =>
+        (link.getAttribute("href") || "").includes("servicos.html"),
+      );
+      if (servicesLink) servicesLink.insertAdjacentElement("afterend", partnerLink);
+      else nav.prepend(partnerLink);
     }
+
+    partnerLink.dataset.partnerSessionLink = "panel";
+    partnerLink.classList.remove("active");
+    partnerLink.removeAttribute("aria-current");
   });
 }
 
@@ -1029,7 +1055,7 @@ async function renderOwnerShopsOnHome() {
 
   try {
     const favoriteIds = await fetchUserFavoriteShopIds();
-    const res = await fetch("/api/lojas");
+    const res = await fetch("/api/lojas", { cache: "no-store" });
     if (!res.ok) return;
     const { lojas } = await res.json();
     lojas.forEach((loja) => {
@@ -1820,6 +1846,14 @@ async function initPartnerPage() {
           const safeCategory = escapeHtml(loja.categoria || "serviços gerais");
           const safeAddress = escapeHtml(loja.endereco || "");
           const safeSchedule = escapeHtml(formatScheduleSummary(loja.agendaDias, loja.agendaHorarios));
+          const approvalLabel = loja.bloqueado
+            ? "Bloqueado pelo administrador"
+            : loja.statusAprovacao === "pendente"
+              ? "Aguardando aprovação"
+              : "Publicado no marketplace";
+          const approvalClass = loja.statusAprovacao === "pendente" || loja.bloqueado
+            ? "owned-shop-approval-pending"
+            : "owned-shop-approval-active";
           const servicos = Array.isArray(loja.servicos) ? loja.servicos : [];
 
           const servicesHtml = servicos.length
@@ -1852,6 +1886,7 @@ async function initPartnerPage() {
                 <h3>${safeName}</h3>
                 <div class="owned-shop-meta-row">
                   <span class="owned-shop-badge">${safeCategory}</span>
+                  <span class="owned-shop-approval ${approvalClass}">${approvalLabel}</span>
                   <span class="owned-shop-meta">${safeAddress}</span>
                 </div>
                 <span class="owned-shop-meta">Agenda: ${safeSchedule}</span>
@@ -2553,7 +2588,7 @@ async function initPartnerPage() {
       resetPartnerForm();
       await renderOwnedShops();
       await renderReceivedBookings();
-      notify(editingId ? "Lava jato atualizado com sucesso." : "Lava jato publicado com sucesso no marketplace.");
+      notify(editingId ? "Lava jato atualizado com sucesso." : "Cadastro enviado para aprovação. Sua loja ficará visível no marketplace após a aprovação da equipe.");
       switchTab("dashboard");
     } catch (err) {
       notify(err.message || "Erro de conexão. Tente novamente.");
@@ -3757,7 +3792,7 @@ async function initMapInteractions() {
 
   let apiShops = [];
   try {
-    const res = await fetch("/api/lojas");
+    const res = await fetch("/api/lojas", { cache: "no-store" });
     if (res.ok) {
       const { lojas } = await res.json();
       apiShops = lojas
@@ -4968,7 +5003,7 @@ function initAuthPage() {
         data.token,
       );
       notify("Login realizado com sucesso.");
-      window.location.href = normalizedNextUrl();
+      window.location.href = "servicos.html";
     } catch {
       notify("Erro ao conectar com o servidor. Tente novamente.");
     }
@@ -5012,7 +5047,7 @@ function initAuthPage() {
       );
       notify("Cadastro realizado com sucesso. Bem-vindo ao AutoShine.");
       signupForm.reset();
-      window.location.href = normalizedNextUrl();
+      window.location.href = "servicos.html";
     } catch {
       notify("Erro ao conectar com o servidor. Tente novamente.");
     }
@@ -5204,6 +5239,10 @@ function initHamburgerMenu() {
   if (!toggle || !nav) return;
 
   function openMenu() {
+    document.querySelectorAll(".topbar > .user-menu .user-menu-panel").forEach((panel) => {
+      panel.hidden = true;
+      panel.closest(".user-menu")?.querySelector(".user-menu-button")?.setAttribute("aria-expanded", "false");
+    });
     nav.classList.add("is-open");
     toggle.setAttribute("aria-expanded", "true");
     document.body.style.overflow = "hidden";
@@ -5279,9 +5318,39 @@ async function initAdminPage() {
   const countLabel = document.getElementById("admin-shops-count");
   const emptyMsg = document.getElementById("admin-empty");
   const refreshBtn = document.getElementById("admin-refresh-btn");
-  const favoritesList = document.getElementById("admin-favorites-list");
-  const favoritesSummary = document.getElementById("admin-favorites-summary");
-  const favoritesEmpty = document.getElementById("admin-favorites-empty");
+  const shopHealthFilterButtons = document.querySelectorAll("[data-health-filter]");
+  const shopApprovalFilter = document.getElementById("admin-shop-approval-filter");
+  const adminPeriodButtons = document.querySelectorAll("[data-admin-period]");
+  const adminCustomDateForm = document.getElementById("admin-custom-date-form");
+  const adminCustomDateStart = document.getElementById("admin-custom-date-start");
+  const adminCustomDateEnd = document.getElementById("admin-custom-date-end");
+  const adminDashboardRefreshBtn = document.getElementById("admin-dashboard-refresh-btn");
+  const adminDashboardError = document.getElementById("admin-dashboard-error");
+  const adminBookingChart = document.getElementById("admin-booking-chart");
+  const adminRevenueChart = document.getElementById("admin-revenue-chart");
+  const adminChartModeButtons = document.querySelectorAll("[data-admin-chart-type]");
+  const adminChartModes = { revenue: "pie", bookings: "pie" };
+  let rerenderAdminCharts = () => {};
+  const adminDashboardRange = document.getElementById("admin-dashboard-range");
+  const adminTrendRevenueTotal = document.getElementById("admin-trend-revenue-total");
+  const adminTrendBookingsTotal = document.getElementById("admin-trend-bookings-total");
+  const adminRankingBookings = document.getElementById("admin-ranking-bookings");
+  const adminRankingRatings = document.getElementById("admin-ranking-ratings");
+  const adminRankingFavorites = document.getElementById("admin-ranking-favorites");
+  const adminPendingReports = document.getElementById("admin-pending-reports");
+  const adminPendingShops = document.getElementById("admin-pending-shops");
+  const adminPendingBookings = document.getElementById("admin-pending-bookings");
+  const adminQuickLinks = document.querySelectorAll("[data-admin-go-tab]");
+  const adminKpiSignups = document.getElementById("admin-kpi-signups");
+  const adminKpiBookings = document.getElementById("admin-kpi-bookings");
+  const adminKpiCancellations = document.getElementById("admin-kpi-cancellations");
+  const adminKpiRating = document.getElementById("admin-kpi-rating");
+  const adminKpiRatingCount = document.getElementById("admin-kpi-rating-count");
+  const adminKpiGmv = document.getElementById("admin-kpi-gmv");
+  const adminKpiPlatformRevenue = document.getElementById("admin-kpi-platform-revenue");
+  const adminKpiPlatformRate = document.getElementById("admin-kpi-platform-rate");
+  const adminKpiAverageTicket = document.getElementById("admin-kpi-average-ticket");
+  const adminFinanceNote = document.getElementById("admin-finance-note");
   const editPanel = document.getElementById("admin-edit-panel");
   const shopForm = document.getElementById("admin-shop-form");
   const formTitle = document.getElementById("admin-form-title");
@@ -5369,19 +5438,22 @@ async function initAdminPage() {
   const reviewCancelBtn = document.getElementById("admin-review-cancel");
   const reviewFeedback = document.getElementById("admin-review-feedback");
 
-  const statFields = {
-    lojas: document.getElementById("admin-stat-shops"),
-    bloqueadas: document.getElementById("admin-stat-blocked"),
-    donos: document.getElementById("admin-stat-owners"),
-    usuarios: document.getElementById("admin-stat-users"),
-    agendamentos: document.getElementById("admin-stat-bookings"),
-    pendentes: document.getElementById("admin-stat-pending"),
-    avaliacoes: document.getElementById("admin-stat-reviews"),
-    denuncias: document.getElementById("admin-stat-reports"),
-    denunciasAbertas: document.getElementById("admin-stat-open-reports"),
-  };
-
   if (!authShell || !managementShell || !loginForm || !tbody) return;
+  let adminPeriod = 7;
+  let adminCustomDateRange = null;
+  const hojeDashboard = new Date();
+  const hojeDashboardLocal = new Date(hojeDashboard.getTime() - hojeDashboard.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const inicioPadraoDashboard = new Date(hojeDashboard);
+  inicioPadraoDashboard.setDate(inicioPadraoDashboard.getDate() - 6);
+  const inicioPadraoDashboardLocal = new Date(inicioPadraoDashboard.getTime() - inicioPadraoDashboard.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  if (adminCustomDateStart) {
+    adminCustomDateStart.value = inicioPadraoDashboardLocal;
+    adminCustomDateStart.max = hojeDashboardLocal;
+  }
+  if (adminCustomDateEnd) {
+    adminCustomDateEnd.value = hojeDashboardLocal;
+    adminCustomDateEnd.max = hojeDashboardLocal;
+  }
 
   function onlyDigitsAdmin(value) {
     return String(value || "").replace(/\D/g, "");
@@ -5457,10 +5529,6 @@ async function initAdminPage() {
     hideReviewEditPanel();
   }
 
-  function renderStat(key, value) {
-    if (statFields[key]) statFields[key].textContent = String(value ?? 0);
-  }
-
   function formatAdminDate(value) {
     if (!value) return "-";
     const date = new Date(value);
@@ -5478,8 +5546,10 @@ async function initAdminPage() {
     const value = String(status || "-");
     const normalized = value.toLowerCase();
     const labels = {
+      ativo: "Ativo",
       aberta: "Pendente",
       pendente: "Pendente",
+      bloqueado: "Bloqueado",
       em_analise: "Em análise",
       aguardando_defesa: "Aguardando defesa",
       contestada: "Contestada",
@@ -5489,9 +5559,9 @@ async function initAdminPage() {
       arquivada: "Arquivada",
     };
     const safe = escapeHtml(labels[normalized] || value);
-    const className = normalized === "finalizado" || normalized === "resolvida" || normalized === "procedente"
+    const className = normalized === "finalizado" || normalized === "resolvida" || normalized === "procedente" || normalized === "ativo"
       ? "admin-status-active"
-      : normalized === "cancelado" || normalized === "arquivada" || normalized === "rejeitada"
+      : normalized === "cancelado" || normalized === "arquivada" || normalized === "rejeitada" || normalized === "bloqueado"
         ? "admin-status-blocked"
         : "admin-status-pending";
     return `<span class="admin-status ${className}">${safe}</span>`;
@@ -5635,52 +5705,304 @@ async function initAdminPage() {
     reviewEditPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function loadSummary() {
+  function renderAdminRanking(list, entries, valueLabel) {
+    if (!list) return;
+    if (!entries.length) {
+      list.innerHTML = `<li>Sem dados para este período.</li>`;
+      return;
+    }
+    list.innerHTML = entries.map((entry) => `
+      <li>
+        <strong title="${escapeHtml(entry.nome)}">${escapeHtml(entry.nome)}</strong>
+        <span>${valueLabel(entry)}</span>
+      </li>
+    `).join("");
+  }
+
+  function renderAdminTrendChart(container, series, key, color, formatValue, metricLabel, chartType = "line") {
+    if (!container) return;
+    if (!series.length) {
+      container.innerHTML = `<p class="admin-trend-empty">Sem dados para este período.</p>`;
+      return;
+    }
+
+    if (chartType === "pie") {
+      const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      });
+      const formatDayMonth = (date) => `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+      const bucketsByMonth = new Map();
+      series.forEach((item) => {
+        const [year, month, day] = item.data.split("-").map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+        let bucket = bucketsByMonth.get(monthKey);
+        if (!bucket) {
+          bucket = {
+            label: monthFormatter.format(date),
+            firstDate: date,
+            lastDate: date,
+            value: 0,
+          };
+          bucketsByMonth.set(monthKey, bucket);
+        }
+        bucket.lastDate = date;
+        bucket.value += Number(item[key]) || 0;
+      });
+      const buckets = [...bucketsByMonth.values()].map((bucket) => ({
+        ...bucket,
+        dateRange: `${formatDayMonth(bucket.firstDate)} a ${formatDayMonth(bucket.lastDate)}`,
+      }));
+
+      const total = buckets.reduce((sum, bucket) => sum + bucket.value, 0);
+      if (!total) {
+        container.innerHTML = `<p class="admin-trend-empty">Sem ${escapeHtml(metricLabel)} neste período.</p>`;
+        return;
+      }
+
+      const colors = ["#4dabf7", "#2dd4bf", "#fbbf24", "#c084fc", "#fb7185", "#22d3ee", "#a3e635", "#818cf8", "#f97316", "#14b8a6", "#e879f9", "#84cc16"];
+      const circumference = 2 * Math.PI * 72;
+      let offset = 0;
+      const segments = buckets.map((bucket, index) => {
+        if (bucket.value <= 0) return "";
+        const segmentLength = (bucket.value / total) * circumference;
+        const visibleLength = Math.max(0, segmentLength - 1.5);
+        const percentage = (bucket.value / total) * 100;
+        const percentageLabel = `${percentage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+        const description = `${bucket.label}, dias ${bucket.dateRange}: ${formatValue(bucket.value)} de ${metricLabel}, ${percentageLabel} do total`;
+        const segment = `
+          <circle class="admin-pie-segment" cx="100" cy="100" r="72" stroke="${colors[index % colors.length]}"
+            stroke-dasharray="${visibleLength} ${circumference - visibleLength}" stroke-dashoffset="${-offset}"
+            tabindex="0" role="img" aria-label="${escapeHtml(description)}">
+            <title>${escapeHtml(description)}</title>
+          </circle>`;
+        offset += segmentLength;
+        return segment;
+      }).join("");
+      const legend = buckets.map((bucket, index) => {
+        if (bucket.value <= 0) return "";
+        const percentage = (bucket.value / total) * 100;
+        return `
+          <li>
+            <span class="admin-pie-swatch" style="--admin-pie-color:${colors[index % colors.length]}"></span>
+            <span class="admin-pie-legend-copy">
+              <strong>${escapeHtml(bucket.label)}</strong>
+              <small>Dias ${escapeHtml(bucket.dateRange)} · ${escapeHtml(formatValue(bucket.value))} · ${percentage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do total</small>
+            </span>
+          </li>`;
+      }).join("");
+
+      container.innerHTML = `
+        <div class="admin-pie-layout">
+          <div class="admin-pie-visual">
+            <svg class="admin-pie-svg" viewBox="0 0 200 200" role="group" aria-label="Distribuição mensal de ${escapeHtml(metricLabel)} em ${buckets.length} meses. Passe o foco sobre uma fatia para consultar o mês, os dias incluídos, o valor e a porcentagem.">
+              <circle class="admin-pie-track" cx="100" cy="100" r="72"></circle>
+              <g transform="rotate(-90 100 100)">${segments}</g>
+            </svg>
+            <div class="admin-pie-center"><strong>${escapeHtml(formatValue(total))}</strong><span>Total no período</span></div>
+          </div>
+          <div class="admin-pie-details">
+            <p class="admin-pie-help">Cada cor representa um mês. “Dias” mostra o intervalo somado: quando o mês inteiro estiver selecionado, vai do dia 01 até o último dia do mês. O valor e o percentual mostram a participação desse intervalo no total.</p>
+            <ul class="admin-pie-legend">${legend}</ul>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const width = Math.max(680, series.length * 22 + 60);
+    const height = 230;
+    const margin = { top: 20, right: 18, bottom: 42, left: 58 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const maxValue = Math.max(1, ...series.map((item) => Number(item[key]) || 0));
+    const points = series.map((item, index) => {
+      const value = Number(item[key]) || 0;
+      const x = margin.left + (series.length === 1 ? plotWidth / 2 : (index / (series.length - 1)) * plotWidth);
+      const y = margin.top + plotHeight - (value / maxValue) * plotHeight;
+      return { item, value, x, y };
+    });
+    const line = points.map((point) => `${point.x},${point.y}`).join(" ");
+    const area = `${margin.left},${margin.top + plotHeight} ${line} ${margin.left + plotWidth},${margin.top + plotHeight}`;
+    const labelStride = Math.max(1, Math.ceil(series.length / 7));
+    const grid = [0, 0.5, 1].map((fraction) => {
+      const y = margin.top + plotHeight * fraction;
+      const value = maxValue * (1 - fraction);
+      return `
+        <line x1="${margin.left}" y1="${y}" x2="${margin.left + plotWidth}" y2="${y}" class="admin-trend-gridline" />
+        <text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" class="admin-trend-axis-label">${escapeHtml(formatValue(value))}</text>`;
+    }).join("");
+    const dateLabels = points.map((point, index) => {
+      if (index % labelStride !== 0 && index !== points.length - 1) return "";
+      return `<text x="${point.x}" y="${height - 12}" text-anchor="middle" class="admin-trend-axis-label">${escapeHtml(point.item.label)}</text>`;
+    }).join("");
+    const dots = points.map(({ item, value, x, y }) => {
+      const description = `${item.label}: ${formatValue(value)} ${metricLabel}`;
+      return `<circle cx="${x}" cy="${y}" r="4" class="admin-trend-point" tabindex="0" aria-label="${escapeHtml(description)}"><title>${escapeHtml(description)}</title></circle>`;
+    }).join("");
+    const gradientId = `admin-trend-gradient-${key}`;
+
+    container.innerHTML = `
+      <div class="admin-trend-scroll">
+        <svg class="admin-trend-svg" style="--admin-trend-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(metricLabel)} ao longo de ${series.length} dias">
+          <defs><linearGradient id="${gradientId}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".3" /><stop offset="100%" stop-color="${color}" stop-opacity="0" /></linearGradient></defs>
+          ${grid}
+          <polygon points="${area}" fill="url(#${gradientId})" />
+          <polyline points="${line}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          ${dots}
+          ${dateLabels}
+        </svg>
+      </div>`;
+  }
+
+  async function loadDashboard() {
     try {
-      const res = await adminFetch("/api/admin/resumo");
+      const dashboardQuery = adminCustomDateRange
+        ? `inicio=${encodeURIComponent(adminCustomDateRange.inicio)}&fim=${encodeURIComponent(adminCustomDateRange.fim)}`
+        : `periodo=${adminPeriod}`;
+      const res = await adminFetch(`/api/admin/dashboard?${dashboardQuery}`);
       if (res.status === 401 || res.status === 403) {
         clearAdminToken();
         showAuth();
         return;
       }
       const data = await res.json();
-      Object.entries(data.resumo || {}).forEach(([key, value]) => renderStat(key, value));
+      if (!res.ok) throw new Error(data.error || "Não foi possível carregar o painel.");
+      const indicadores = data.indicadores || {};
+      const pendencias = data.pendencias || {};
+      const rankings = data.rankings || {};
+      const serieDiaria = Array.isArray(data.agendamentosPorDia) ? data.agendamentosPorDia : [];
+      const formatCurrency = (value) => Number(value || 0).toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      });
+      if (adminDashboardError) adminDashboardError.textContent = "";
+      if (adminKpiSignups) adminKpiSignups.textContent = Number(indicadores.novosCadastros || 0).toLocaleString("pt-BR");
+      if (adminKpiBookings) adminKpiBookings.textContent = Number(indicadores.agendamentos || 0).toLocaleString("pt-BR");
+      if (adminKpiCancellations) adminKpiCancellations.textContent = `${Number(indicadores.taxaCancelamento || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+      if (adminKpiRating) adminKpiRating.textContent = indicadores.notaMedia == null ? "—" : Number(indicadores.notaMedia).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      if (adminKpiRatingCount) {
+        const total = Number(indicadores.totalAvaliacoes || 0);
+        adminKpiRatingCount.textContent = `${total} avaliação${total === 1 ? "" : "s"} no período`;
+      }
+      if (adminKpiGmv) adminKpiGmv.textContent = formatCurrency(indicadores.gmvEstimado);
+      if (adminKpiPlatformRevenue) adminKpiPlatformRevenue.textContent = formatCurrency(indicadores.receitaPlataformaEstimada);
+      if (adminKpiPlatformRate) {
+        const rate = Number(indicadores.taxaComissaoSimuladaPercent || 0);
+        adminKpiPlatformRate.textContent = `Comissão simulada: ${rate.toLocaleString("pt-BR")}%`;
+      }
+      if (adminKpiAverageTicket) adminKpiAverageTicket.textContent = formatCurrency(indicadores.ticketMedioEstimado);
+      if (adminFinanceNote) {
+        const legacyBookings = Number(indicadores.agendamentosSemValorHistorico || 0);
+        adminFinanceNote.textContent = legacyBookings
+          ? `Reservas canceladas ficam fora da soma. Não há pagamentos integrados; ${legacyBookings} reserva(s) sem preço histórico usa(m) o valor atual do serviço. A comissão é uma simulação.`
+          : "Reservas canceladas ficam fora da soma. Não há pagamentos integrados; o valor usa o preço salvo na reserva e a comissão é uma simulação.";
+      }
+      if (adminDashboardRange && data.intervalo) {
+        const formatDate = (value) => new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
+        adminDashboardRange.textContent = `Dados de ${formatDate(data.intervalo.inicio)} a ${formatDate(data.intervalo.fim)}`;
+      }
+      if (adminPendingReports) adminPendingReports.textContent = String(pendencias.denunciasAbertas ?? 0);
+      if (adminPendingShops) adminPendingShops.textContent = String(pendencias.lojasPendentes ?? 0);
+      if (adminPendingBookings) adminPendingBookings.textContent = String(pendencias.agendamentosAntigos ?? 0);
+      rerenderAdminCharts = () => {
+        renderAdminTrendChart(adminRevenueChart, serieDiaria, "receita", "#55a7ff", formatCurrency, "faturamento estimado", adminChartModes.revenue);
+        renderAdminTrendChart(adminBookingChart, serieDiaria, "total", "#50d6ae", (value) => Math.round(value).toLocaleString("pt-BR"), "agendamentos", adminChartModes.bookings);
+      };
+      rerenderAdminCharts();
+      if (adminTrendRevenueTotal) adminTrendRevenueTotal.textContent = formatCurrency(indicadores.gmvEstimado);
+      if (adminTrendBookingsTotal) adminTrendBookingsTotal.textContent = `${Number(indicadores.agendamentos || 0).toLocaleString("pt-BR")} agendamentos`;
+      renderAdminRanking(adminRankingBookings, rankings.agendamentos || [], (item) => `${item.total} agendamento${item.total === 1 ? "" : "s"}`);
+      renderAdminRanking(adminRankingRatings, rankings.avaliacoes || [], (item) => `★ ${Number(item.nota).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} · ${item.total}`);
+      renderAdminRanking(adminRankingFavorites, rankings.favoritos || [], (item) => `${item.total} favorito${item.total === 1 ? "" : "s"}`);
     } catch {
-      Object.keys(statFields).forEach((key) => renderStat(key, "-"));
+      if (adminDashboardError) adminDashboardError.textContent = "Não foi possível carregar os indicadores. Tente atualizar o painel.";
     }
   }
 
   async function loadShops() {
-    tbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Carregando...</td></tr>`;
+    if (emptyMsg) emptyMsg.classList.add("hidden");
     try {
-      const res = await adminFetch("/api/admin/lojas");
+      const filters = new URLSearchParams();
+      const selectedHealth = document.querySelector("[data-health-filter].is-active")?.dataset.healthFilter;
+      if (selectedHealth) filters.set("health", selectedHealth);
+      if (shopApprovalFilter?.value) filters.set("statusAprovacao", shopApprovalFilter.value);
+      const query = filters.toString();
+      const res = await adminFetch(`/api/admin/stores${query ? `?${query}` : ""}`);
       if (res.status === 401 || res.status === 403) {
         clearAdminToken();
         showAuth();
         return;
       }
-      const { lojas } = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao carregar lojas.");
+      const lojas = Array.isArray(data.lojas) ? data.lojas : [];
+      const healthCounts = data.healthCounts || {};
+      const totalHealthCount = ["healthy", "warning", "critical"]
+        .reduce((total, status) => total + Number(healthCounts[status] || 0), 0);
+      document.querySelectorAll("[data-health-count]").forEach((counter) => {
+        const status = counter.dataset.healthCount;
+        counter.textContent = String(status === "all" ? totalHealthCount : Number(healthCounts[status] || 0));
+      });
+
+      const healthLabels = { HEALTHY: "Saudáveis", WARNING: "Em atenção", CRITICAL: "Críticas" };
+      const approvalLabels = { aprovada: "Aprovadas", pendente: "Pendentes", rejeitada: "Rejeitadas" };
+      const activeFilters = [
+        selectedHealth ? healthLabels[selectedHealth] : "",
+        shopApprovalFilter?.value ? `Aprovação: ${approvalLabels[shopApprovalFilter.value]}` : "",
+      ].filter(Boolean);
+      if (countLabel) {
+        countLabel.textContent = activeFilters.length
+          ? `${lojas.length} de ${totalHealthCount} lojas · ${activeFilters.join(" · ")}`
+          : `${lojas.length} lava jato${lojas.length !== 1 ? "s" : ""} no total`;
+      }
 
       if (!lojas || !lojas.length) {
         tbody.innerHTML = "";
         if (emptyMsg) emptyMsg.classList.remove("hidden");
-        if (countLabel) countLabel.textContent = "Nenhum lava jato cadastrado.";
+        if (emptyMsg) {
+          emptyMsg.textContent = activeFilters.length
+            ? "Nenhuma loja corresponde aos filtros selecionados."
+            : "Nenhum lava jato cadastrado ainda.";
+        }
         return;
       }
 
       if (emptyMsg) emptyMsg.classList.add("hidden");
-      if (countLabel) countLabel.textContent = `${lojas.length} lava jato${lojas.length !== 1 ? "s" : ""} no total`;
 
       tbody.innerHTML = lojas.map((loja) => {
         const avg = loja.avaliacoes?.length
           ? (loja.avaliacoes.reduce((s, a) => s + a.nota, 0) / loja.avaliacoes.length).toFixed(1)
           : "-";
         const totalServicos = loja._count?.servicos ?? loja.servicos?.length ?? 0;
-        const statusClass = loja.bloqueado ? "admin-status-blocked" : "admin-status-active";
-        const statusLabel = loja.bloqueado ? "Bloqueado" : "Ativo";
-        const toggleBtn = loja.bloqueado
-          ? `<button class="btn btn-secondary admin-action-btn" data-action="desbloquear" data-id="${loja.id}">Desbloquear</button>`
-          : `<button class="btn btn-ghost admin-action-btn" data-action="bloquear" data-id="${loja.id}">Bloquear</button>`;
+        const healthMeta = {
+          healthy: { label: "Saudável", emoji: "🟢", className: "admin-health-healthy" },
+          warning: { label: "Em atenção", emoji: "🟡", className: "admin-health-warning" },
+          critical: { label: "Crítica", emoji: "🔴", className: "admin-health-critical" },
+        };
+        const health = healthMeta[loja.healthStatus] || { label: "Indisponível", emoji: "⚪", className: "admin-health-unknown" };
+        const healthReasons = Array.isArray(loja.healthReasons) ? loja.healthReasons.join("\n") : "";
+        const inativoAte = loja.inativoAte ? new Date(loja.inativoAte) : null;
+        const temporariamenteInativa = inativoAte && inativoAte > new Date();
+        const statusClass = loja.bloqueado || temporariamenteInativa || loja.statusAprovacao === "pendente" ? "admin-status-blocked" : "admin-status-active";
+        const statusLabel = loja.bloqueado
+          ? "Bloqueado"
+          : temporariamenteInativa
+            ? `Inativo até ${inativoAte.toLocaleDateString("pt-BR")}`
+            : loja.statusAprovacao === "pendente"
+              ? "Aguardando aprovação"
+              : "Ativo";
+        const toggleBtn = loja.bloqueado || temporariamenteInativa
+          ? `<button class="btn btn-secondary admin-action-btn" data-action="desbloquear" data-id="${loja.id}">${temporariamenteInativa && !loja.bloqueado ? "Reativar" : "Desbloquear"}</button>`
+          : `<button class="btn btn-secondary admin-action-btn" data-action="bloquear" data-id="${loja.id}">Bloquear</button>`;
+        const inactivateBtn = !loja.bloqueado && !temporariamenteInativa
+          ? `<button class="btn btn-danger admin-action-btn" data-action="inativar" data-id="${loja.id}" data-nome="${escapeHtml(loja.nome)}">Inativar 30 dias</button>`
+          : "";
+        const approvalBtn = loja.statusAprovacao === "pendente"
+          ? `<button class="btn btn-secondary admin-action-btn" data-action="aprovar" data-id="${loja.id}">Aprovar</button>`
+          : "";
 
         return `
           <tr data-shop-row="${loja.id}">
@@ -5699,112 +6021,88 @@ async function initAdminPage() {
             </td>
             <td>${totalServicos}</td>
             <td>${avg !== "-" ? `&#9733; ${avg}` : "-"}</td>
+            <td><span class="admin-health-badge ${health.className}" title="${escapeHtml(healthReasons || "Indicadores operacionais dentro da normalidade.")}">${health.emoji} ${health.label}</span></td>
             <td><span class="admin-status ${statusClass}">${statusLabel}</span></td>
             <td class="admin-actions">
               <button class="btn btn-secondary admin-action-btn" data-action="editar" data-id="${loja.id}">Editar</button>
+              ${approvalBtn}
               ${toggleBtn}
-              <button class="btn btn-danger admin-action-btn" data-action="excluir" data-id="${loja.id}" data-nome="${escapeHtml(loja.nome)}">Excluir</button>
+              ${inactivateBtn}
             </td>
           </tr>`;
       }).join("");
     } catch {
-      tbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar lojas.</td></tr>`;
-    }
-  }
-
-  async function loadFavoritedShopsAdmin() {
-    if (!favoritesList || !favoritesSummary || !favoritesEmpty) return;
-    favoritesList.innerHTML = `<li class="admin-loading">Carregando lojas favoritadas...</li>`;
-    favoritesEmpty.classList.add("hidden");
-    favoritesSummary.textContent = "Carregando favoritos...";
-
-    try {
-      const res = await adminFetch("/api/admin/lojas-favoritadas");
-      if (res.status === 401 || res.status === 403) {
-        clearAdminToken();
-        showAuth();
-        return;
-      }
-
-      const data = await res.json();
-      const lojas = Array.isArray(data.lojas) ? data.lojas : [];
-      const totalFavoritos = Number(data.totalFavoritos || 0);
-      const totalLojasFavoritadas = Number(data.totalLojasFavoritadas || lojas.length || 0);
-
-      favoritesSummary.textContent = `${totalFavoritos} favorito${totalFavoritos !== 1 ? "s" : ""} em ${totalLojasFavoritadas} loja${totalLojasFavoritadas !== 1 ? "s" : ""}.`;
-
-      if (!lojas.length) {
-        favoritesList.innerHTML = "";
-        favoritesEmpty.classList.remove("hidden");
-        return;
-      }
-
-      favoritesEmpty.classList.add("hidden");
-      favoritesList.innerHTML = lojas.map((loja, index) => `
-        <li class="admin-favorites-item">
-          <span class="admin-favorites-rank">${index + 1}</span>
-          <div class="admin-favorites-main">
-            <strong>${escapeHtml(loja.nome || "Loja")}</strong>
-            <p class="empty-copy">${escapeHtml(loja.endereco || "Sem endereço")}</p>
-          </div>
-          <div>
-            <span class="admin-favorites-count">${Number(loja.totalFavoritos || 0)} favorito${Number(loja.totalFavoritos || 0) !== 1 ? "s" : ""}</span>
-          </div>
-        </li>
-      `).join("");
-    } catch {
-      favoritesSummary.textContent = "Não foi possível carregar as lojas favoritadas.";
-      favoritesList.innerHTML = `<li class="admin-loading">Erro ao carregar favoritos.</li>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Erro ao carregar lojas.</td></tr>`;
     }
   }
 
   async function loadUsers() {
     if (!usersTbody) return;
-    usersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Carregando...</td></tr>`;
+    usersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
     try {
       const res = await adminFetch("/api/admin/usuarios");
       const { usuarios } = await res.json();
       if (!res.ok) throw new Error();
       if (usersCount) usersCount.textContent = `${usuarios.length} usuário${usuarios.length !== 1 ? "s" : ""} no total`;
       usersEmpty?.classList.toggle("hidden", Boolean(usuarios.length));
-      usersTbody.innerHTML = usuarios.length ? usuarios.map((usuario) => `
+      usersTbody.innerHTML = usuarios.length ? usuarios.map((usuario) => {
+        const suspenso = usuario.suspensoAte && new Date(usuario.suspensoAte) > new Date();
+        const status = usuario.bloqueado ? "Bloqueado" : suspenso ? `Suspenso até ${formatAdminDate(usuario.suspensoAte)}` : "Ativo";
+        const suspensionAction = !usuario.bloqueado
+          ? `<button class="btn ${suspenso ? "btn-secondary" : "btn-danger"} admin-action-btn" data-admin-resource-action="${suspenso ? "unsuspend-user" : "suspend-user"}" data-id="${usuario.id}" data-name="${escapeHtml(usuario.nome)}">${suspenso ? "Remover suspensão" : "Suspender 30 dias"}</button>`
+          : "";
+        return `
         <tr>
           <td><strong>${escapeHtml(usuario.nome)}</strong><p class="empty-copy">#${usuario.id}</p></td>
           <td>${escapeHtml(usuario.email)}<p class="empty-copy">${escapeHtml(usuario.telefone || "-")}</p></td>
           <td>${usuario._count?.agendamentos || 0} agend. / ${usuario._count?.avaliacoes || 0} aval.</td>
           <td>${formatAdminDate(usuario.createdAt)}</td>
+          <td>${statusBadge(status)}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="edit-user" data-id="${usuario.id}">Editar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="toggle-user-block" data-blocked="${usuario.bloqueado}" data-id="${usuario.id}" data-name="${escapeHtml(usuario.nome)}">${usuario.bloqueado ? "Desbloquear" : "Bloquear"}</button>
+            ${suspensionAction}
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-user" data-id="${usuario.id}" data-name="${escapeHtml(usuario.nome)}">Excluir</button>
           </td>
-        </tr>`).join("") : "";
+        </tr>`;
+      }).join("") : "";
     } catch {
-      usersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Erro ao carregar usuários.</td></tr>`;
+      usersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar usuários.</td></tr>`;
     }
   }
 
   async function loadOwners() {
     if (!ownersTbody) return;
-    ownersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Carregando...</td></tr>`;
+    ownersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
     try {
       const res = await adminFetch("/api/admin/donos");
       const { donos } = await res.json();
       if (!res.ok) throw new Error();
       if (ownersCount) ownersCount.textContent = `${donos.length} parceiro${donos.length !== 1 ? "s" : ""} no total`;
       ownersEmpty?.classList.toggle("hidden", Boolean(donos.length));
-      ownersTbody.innerHTML = donos.length ? donos.map((dono) => `
+      ownersTbody.innerHTML = donos.length ? donos.map((dono) => {
+        const suspenso = dono.suspensoAte && new Date(dono.suspensoAte) > new Date();
+        const status = dono.bloqueado ? "Bloqueado" : suspenso ? `Suspenso até ${formatAdminDate(dono.suspensoAte)}` : "Ativo";
+        const suspensionAction = !dono.bloqueado
+          ? `<button class="btn ${suspenso ? "btn-secondary" : "btn-danger"} admin-action-btn" data-admin-resource-action="${suspenso ? "unsuspend-owner" : "suspend-owner"}" data-id="${dono.id}" data-name="${escapeHtml(dono.nome)}">${suspenso ? "Remover suspensão" : "Suspender 30 dias"}</button>`
+          : "";
+        return `
         <tr>
           <td><strong>${escapeHtml(dono.nome)}</strong><p class="empty-copy">#${dono.id}</p></td>
           <td>${escapeHtml(dono.login)}<p class="empty-copy">${escapeHtml(dono.cnpj || "-")}</p></td>
           <td>${dono._count?.lojas || 0}</td>
           <td>${formatAdminDate(dono.createdAt)}</td>
+          <td>${statusBadge(status)}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="edit-owner" data-id="${dono.id}">Editar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="toggle-owner-block" data-blocked="${dono.bloqueado}" data-id="${dono.id}" data-name="${escapeHtml(dono.nome)}">${dono.bloqueado ? "Desbloquear" : "Bloquear"}</button>
+            ${suspensionAction}
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-owner" data-id="${dono.id}" data-name="${escapeHtml(dono.nome)}">Excluir</button>
           </td>
-        </tr>`).join("") : "";
+        </tr>`;
+      }).join("") : "";
     } catch {
-      ownersTbody.innerHTML = `<tr><td colspan="5" class="admin-loading">Erro ao carregar parceiros.</td></tr>`;
+      ownersTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar parceiros.</td></tr>`;
     }
   }
 
@@ -5826,7 +6124,7 @@ async function initAdminPage() {
           <td>${statusBadge(item.status)}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="booking-status" data-status="finalizado" data-id="${item.id}">Finalizar</button>
-            <button class="btn btn-ghost admin-action-btn" data-admin-resource-action="booking-status" data-status="cancelado" data-id="${item.id}">Cancelar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="booking-status" data-status="cancelado" data-id="${item.id}">Cancelar</button>
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-booking" data-id="${item.id}">Excluir</button>
           </td>
         </tr>`).join("") : "";
@@ -5837,7 +6135,7 @@ async function initAdminPage() {
 
   async function loadReviewsAdmin() {
     if (!reviewsTbody) return;
-    reviewsTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
+    reviewsTbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Carregando...</td></tr>`;
     try {
       const res = await adminFetch("/api/admin/avaliacoes");
       const { avaliacoes } = await res.json();
@@ -5851,13 +6149,15 @@ async function initAdminPage() {
           <td><span class="stars">&#9733; ${Number(review.nota || 0).toFixed(1)}</span></td>
           <td>${escapeHtml(review.comentario || "-")}</td>
           <td>${review._count?.denuncias || 0}</td>
+          <td>${statusBadge(review.bloqueado ? "Bloqueado" : "Ativo")}</td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="edit-review" data-id="${review.id}">Editar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="toggle-review-block" data-blocked="${review.bloqueado}" data-id="${review.id}">${review.bloqueado ? "Desbloquear" : "Bloquear"}</button>
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-review" data-id="${review.id}">Excluir</button>
           </td>
         </tr>`).join("") : "";
     } catch {
-      reviewsTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar avaliações.</td></tr>`;
+      reviewsTbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Erro ao carregar avaliações.</td></tr>`;
     }
   }
 
@@ -5885,6 +6185,9 @@ async function initAdminPage() {
           <td><details><summary>Ver detalhes</summary><p>${escapeHtml(report.detalhes || "Nenhum detalhe adicional.")}</p></details></td>
           <td class="admin-actions">
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="view-report-defense" data-id="${report.id}">${String(report.status).toLowerCase() === "contestada" ? "Ver defesa e decidir" : "Ver detalhes e decidir"}</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="report-status" data-status="em_analise" data-id="${report.id}">Analisar</button>
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="report-status" data-status="resolvida" data-id="${report.id}">Resolver</button>
+            <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-report" data-id="${report.id}">Excluir</button>
           </td>
         </tr>`;
       }).join("") : "";
@@ -5895,9 +6198,8 @@ async function initAdminPage() {
 
   async function refreshAdminData() {
     await Promise.all([
-      loadSummary(),
+      loadDashboard(),
       loadShops(),
-      loadFavoritedShopsAdmin(),
       loadUsers(),
       loadOwners(),
       loadBookingsAdmin(),
@@ -5978,14 +6280,25 @@ async function initAdminPage() {
       return;
     }
 
-    if (action === "excluir") {
-      if (!(await confirmAction(`Excluir permanentemente "${nome}"? Esta ação não pode ser desfeita.`, { danger: true, confirmLabel: "Excluir" }))) return;
-      const res = await adminFetch(`/api/admin/lojas/${id}`, { method: "DELETE" });
+    if (action === "inativar") {
+      if (!(await confirmAction(`Inativar "${nome}" por 30 dias? Os dados e agendamentos serão preservados, e a loja voltará a aparecer automaticamente após esse prazo.`, { danger: true, confirmLabel: "Inativar" }))) return;
+      const res = await adminFetch(`/api/admin/lojas/${id}/inativar`, { method: "PUT" });
       if (res.ok) {
-        if (shopIdInput?.value === id) hideEditPanel();
         await refreshAdminData();
       } else {
-        notify("Erro ao excluir loja.");
+        const data = await res.json();
+        notify(data.error || "Erro ao inativar loja.");
+      }
+      return;
+    }
+
+    if (action === "aprovar") {
+      const res = await adminFetch(`/api/admin/lojas/${id}/aprovar`, { method: "PUT" });
+      if (res.ok) {
+        await refreshAdminData();
+      } else {
+        const data = await res.json();
+        notify(data.error || "Erro ao aprovar loja.");
       }
       return;
     }
@@ -6208,6 +6521,93 @@ async function initAdminPage() {
   ownerCancelBtn?.addEventListener("click", hideOwnerEditPanel);
   reviewCancelBtn?.addEventListener("click", hideReviewEditPanel);
   refreshBtn?.addEventListener("click", refreshAdminData);
+  shopHealthFilterButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      shopHealthFilterButtons.forEach((filterButton) => {
+        const selected = filterButton === button;
+        filterButton.classList.toggle("is-active", selected);
+        filterButton.setAttribute("aria-pressed", String(selected));
+      });
+      loadShops();
+    });
+  });
+  shopApprovalFilter?.addEventListener("change", loadShops);
+  adminDashboardRefreshBtn?.addEventListener("click", refreshAdminData);
+  adminChartModeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const metric = button.dataset.adminChartType;
+      const mode = button.dataset.chartMode;
+      if (!(metric in adminChartModes) || !["pie", "line"].includes(mode)) return;
+      adminChartModes[metric] = mode;
+      adminChartModeButtons.forEach((modeButton) => {
+        if (modeButton.dataset.adminChartType !== metric) return;
+        const active = modeButton === button;
+        modeButton.classList.toggle("active", active);
+        modeButton.setAttribute("aria-pressed", String(active));
+      });
+      rerenderAdminCharts();
+    });
+  });
+
+  adminPeriodButtons.forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (button.dataset.adminPeriod === "custom") {
+        adminPeriodButtons.forEach((periodButton) => {
+          const active = periodButton === button;
+          periodButton.classList.toggle("active", active);
+          periodButton.setAttribute("aria-pressed", String(active));
+        });
+        adminCustomDateForm?.classList.remove("hidden");
+        adminCustomDateStart?.focus();
+        return;
+      }
+      adminPeriod = Number(button.dataset.adminPeriod);
+      adminCustomDateRange = null;
+      adminCustomDateForm?.classList.add("hidden");
+      adminPeriodButtons.forEach((periodButton) => {
+        const active = periodButton === button;
+        periodButton.classList.toggle("active", active);
+        periodButton.setAttribute("aria-pressed", String(active));
+      });
+      await loadDashboard();
+    });
+  });
+
+  adminCustomDateForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (adminDashboardError) adminDashboardError.textContent = "";
+    const inicio = adminCustomDateStart?.value;
+    const fim = adminCustomDateEnd?.value;
+    if (!inicio || !fim) {
+      if (adminDashboardError) adminDashboardError.textContent = "Informe as datas inicial e final.";
+      return;
+    }
+    if (inicio > fim) {
+      if (adminDashboardError) adminDashboardError.textContent = "A data inicial deve ser anterior ou igual à data final.";
+      return;
+    }
+    if (fim > hojeDashboardLocal) {
+      if (adminDashboardError) adminDashboardError.textContent = "A data final não pode estar no futuro.";
+      return;
+    }
+    const duracaoDias = (Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${inicio}T00:00:00Z`)) / 86400000 + 1;
+    if (duracaoDias > 366) {
+      if (adminDashboardError) adminDashboardError.textContent = "O intervalo personalizado deve ter no máximo 366 dias.";
+      return;
+    }
+    adminCustomDateRange = { inicio, fim };
+    adminPeriodButtons.forEach((periodButton) => {
+      const active = periodButton.dataset.adminPeriod === "custom";
+      periodButton.classList.toggle("active", active);
+      periodButton.setAttribute("aria-pressed", String(active));
+    });
+    adminCustomDateForm.classList.add("hidden");
+    await loadDashboard();
+  });
+
+  adminQuickLinks.forEach((button) => {
+    button.addEventListener("click", () => setAdminSection(button.dataset.adminGoTab));
+  });
 
   adminTabs.forEach((tab) => {
     tab.addEventListener("click", () => setAdminSection(tab.dataset.adminTab));
@@ -6228,6 +6628,47 @@ async function initAdminPage() {
     const id = actionBtn.dataset.id || String(selectedAdminReport?.id || "");
 
     try {
+      const suspensionResource = {
+        "suspend-user": { endpoint: "usuarios", label: "usuário", verb: "suspender" },
+        "unsuspend-user": { endpoint: "usuarios", label: "usuário", verb: "reativar" },
+        "suspend-owner": { endpoint: "donos", label: "parceiro", verb: "suspender" },
+        "unsuspend-owner": { endpoint: "donos", label: "parceiro", verb: "reativar" },
+      }[action];
+      if (suspensionResource) {
+        const name = actionBtn.dataset.name || `esta ${suspensionResource.label}`;
+        const confirmMessage = suspensionResource.verb === "suspender"
+          ? `Suspender "${name}" por 30 dias? O acesso será restaurado automaticamente ao fim do prazo.`
+          : `Remover a suspensão de "${name}" e restaurar o acesso imediatamente?`;
+        const confirmLabel = suspensionResource.verb === "suspender" ? "Suspender" : "Reativar";
+        if (!(await confirmAction(confirmMessage, { danger: suspensionResource.verb === "suspender", confirmLabel }))) return;
+        const res = await adminFetch(`/api/admin/${suspensionResource.endpoint}/${id}/suspensao/${suspensionResource.verb}`, { method: "PUT" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Não foi possível ${suspensionResource.verb} o ${suspensionResource.label}.`);
+        notify(suspensionResource.verb === "suspender"
+          ? `${suspensionResource.label.charAt(0).toUpperCase()}${suspensionResource.label.slice(1)} suspenso por 30 dias.`
+          : `Suspensão do ${suspensionResource.label} removida.`);
+        await refreshAdminData();
+        return;
+      }
+
+      const blockResource = {
+        "toggle-user-block": { endpoint: "usuarios", label: "usuário" },
+        "toggle-owner-block": { endpoint: "donos", label: "parceiro" },
+        "toggle-review-block": { endpoint: "avaliacoes", label: "avaliação" },
+      }[action];
+      if (blockResource) {
+        const blocked = actionBtn.dataset.blocked === "true";
+        const verb = blocked ? "desbloquear" : "bloquear";
+        const name = actionBtn.dataset.name || `esta ${blockResource.label}`;
+        if (!blocked && !(await confirmAction(`Bloquear ${blockResource.label} "${name}"?`, { danger: true, confirmLabel: "Bloquear" }))) return;
+        const res = await adminFetch(`/api/admin/${blockResource.endpoint}/${id}/${verb}`, { method: "PUT" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Não foi possível ${verb} ${blockResource.label}.`);
+        notify(`${blockResource.label.charAt(0).toUpperCase()}${blockResource.label.slice(1)} ${blocked ? "desbloqueado" : "bloqueado"} com sucesso.`);
+        await refreshAdminData();
+        return;
+      }
+
       if (action === "view-report-defense") {
         selectedAdminReport = adminReports.find((report) => String(report.id) === String(id));
         if (!selectedAdminReport) throw new Error("Não foi possível carregar os detalhes desta denúncia.");

@@ -65,7 +65,9 @@ router.post("/login", limitarAuth, async (req, res) => {
     if (!login || !senha) return res.status(400).json({ error: "Informe login e senha." });
     const loginNorm = String(login).trim().toLowerCase();
     const dono = await prisma.dono.findUnique({ where: { login: loginNorm } });
-    if (!dono) return res.status(401).json({ error: "Login ou senha invalidos." });
+    if (!dono) return res.status(401).json({ error: "Login ou senha inválidos." });
+    if (dono.bloqueado) return res.status(403).json({ error: "Conta de parceiro bloqueada. Entre em contato com o suporte." });
+    if (dono.suspensoAte && dono.suspensoAte > new Date()) return res.status(403).json({ error: `Conta de parceiro suspensa até ${dono.suspensoAte.toLocaleDateString("pt-BR")}.` });
     if (!dono.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
     if (!(await bcrypt.compare(senha, dono.senha))) return res.status(401).json({ error: "Login ou senha invalidos." });
     const token = gerarTokenDono(dono);

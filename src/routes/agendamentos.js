@@ -3,6 +3,7 @@ const prisma = require("../config/database");
 const { autenticarUsuario, autenticarDono } = require("../middlewares/auth");
 const { dataEhPassado } = require("../utils/validators");
 const { horarioOcupado, montarDisponibilidadeLoja, statusValidos, statusBloqueiamHorario, erroHorarioReservado } = require("../utils/agenda");
+const { filtroLojaDisponivel } = require("../utils/loja");
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ router.post("/", autenticarUsuario, async (req, res) => {
     const { lojaId, servicoId, data, hora, veiculo, notas, nomeCliente, emailCliente } = req.body;
     if (!lojaId || !servicoId || !data || !hora) return res.status(400).json({ error: "Dados incompletos para agendamento." });
     if (dataEhPassado(data)) return res.status(400).json({ error: "Escolha uma data valida a partir de hoje." });
-    const loja = await prisma.loja.findFirst({ where: { id: Number(lojaId), bloqueado: false } });
+    const loja = await prisma.loja.findFirst({ where: { id: Number(lojaId), ...filtroLojaDisponivel() } });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada ou indisponível." });
     const disponibilidade = await montarDisponibilidadeLoja({ loja, data });
     const horarioDisponivel = disponibilidade.horarios.find((item) => item.hora === hora && item.disponivel);
@@ -20,7 +21,7 @@ router.post("/", autenticarUsuario, async (req, res) => {
     if (!servico) return res.status(404).json({ error: "Serviço não encontrado nesta loja." });
     if (await horarioOcupado({ lojaId, data, hora })) return res.status(409).json({ error: "Este horário já foi reservado. Escolha outro horário." });
     const agendamento = await prisma.agendamento.create({
-      data: { data, hora, veiculo: veiculo || "Carro", notas: notas || null, nomeCliente: nomeCliente || null, emailCliente: emailCliente || null, usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId) },
+      data: { data, hora, veiculo: veiculo || "Carro", notas: notas || null, nomeCliente: nomeCliente || null, emailCliente: emailCliente || null, valorServico: servico.preco, usuarioId: req.usuario.id, lojaId: Number(lojaId), servicoId: Number(servicoId) },
       include: { loja: { select: { nome: true } }, servico: { select: { nome: true } } },
     });
     res.status(201).json({ agendamento });

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LavaJá | O Brilho que Seu Carro Merece</title>
+    <link rel="stylesheet" href="assets/css/index.css">
+    <!-- Importação combinada das fontes Anton (Títulos) e Montserrat (Textos) -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;500;600;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
+</head>
+<body data-page="landing">
+
+    <!-- HERO SECTION (Ocupa 100vh e contém o Background do Lava-Jato) -->
+    <main class="hero">
+        
+        <!-- NAVBAR INTEGRADA AO HERO -->
+        <header class="navbar">
+            <div class="logo">LavaJá</div>
+            
+            <nav class="nav-links" id="nav-links">
+                <a href="index.html" class="active">Início</a>
+                <a href="servicos.html">Serviços</a>
+                <a href="mapa.html">Mapa</a>
+            </nav>
+            
+               <a href ="login.html" class = "btn-acessar">Acessar</a>
+            <button class="menu-mobile-btn" id="menu-btn">☰</button>
+        </header>
+
+        <!-- CONTEÚDO PRINCIPAL -->
+        <div class="hero-container">
+            
+            <!-- ESQUERDA: Headline -->
+            <section class="hero-left">
+                <h1 class="headline">O BRILHO QUE<br>SEU CARRO<br>MERECE.<br>O TEMPO QUE<br>VOCÊ PRECISA.</h1>
+            </section>
+
+            <!-- DIREITA: Descrição e CTA -->
+            <section class="hero-right">
+                <div class="hero-copy">
+                    <p>Descubra, Compare E Agende Serviços De Estética Automotiva E Lava-Jatos Perto De Você. Sem Filas, Sem Surpresas.</p>
+                    <a href="servicos.html" class="cta-link">Explorar Serviços &rarr;</a>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- O CARRO (Elemento independente para causar profundidade) -->
+        <div class="car-wrapper">
+            <!-- Utilize o asset do carro recortado que você já possui -->
+            <img src="assets/img/meu.carro.png" alt="Porsche Taycan Azul Brilhante" class="hero-car">
+        </div>
+
+    </main>
+
+    <script src="assets/js/index.js"></script>
+</body>
+</html>

@@ -65,6 +65,7 @@ async function upsertDemoAgendamento({ usuario, loja, servicoNome, data, hora, s
     data,
     hora,
     status,
+    valorServico: servico.preco,
     veiculo,
     nomeCliente: usuario.nome,
     emailCliente: usuario.email,
@@ -88,6 +89,96 @@ async function upsertDemoAgendamento({ usuario, loja, servicoNome, data, hora, s
     return prisma.agendamento.update({ where: { id: manter.id }, data: payload });
   }
   return prisma.agendamento.create({ data: payload });
+}
+
+async function seedDashboardDemoData(lojas) {
+  const nomes = [
+    "Ana Martins", "Rafael Gomes", "Beatriz Souza", "Lucas Ferreira", "Camila Rocha",
+    "Pedro Lima", "Mariana Alves", "Gabriel Costa", "Isabela Nunes", "Felipe Ribeiro",
+  ];
+  const clientes = [];
+
+  for (let index = 0; index < 30; index += 1) {
+    const nomeBase = nomes[index % nomes.length];
+    const nome = index < nomes.length ? nomeBase : `${nomeBase} ${Math.floor(index / nomes.length) + 1}`;
+    const email = `dashboard.demo.booking.${String(index + 1).padStart(2, "0")}@autoshine.local`;
+    const createdAt = new Date();
+    createdAt.setDate(createdAt.getDate() - index * 3);
+    createdAt.setHours(12, 0, 0, 0);
+    const cliente = await prisma.usuario.upsert({
+      where: { email },
+      update: { nome, createdAt },
+      create: { nome, email, createdAt },
+    });
+    clientes.push(cliente);
+  }
+
+  const servicosPorLoja = new Map();
+  for (const loja of lojas) {
+    const servicos = await prisma.servicoLoja.findMany({
+      where: { lojaId: loja.id },
+      orderBy: { id: "asc" },
+    });
+    if (!servicos.length) throw new Error(`Nenhum serviço demo encontrado para ${loja.nome}`);
+    servicosPorLoja.set(loja.id, servicos);
+  }
+
+  const statusDemo = [
+    "finalizado", "confirmado", "pendente", "finalizado", "cancelado",
+    "finalizado", "confirmado", "finalizado", "pendente", "finalizado",
+  ];
+  const horarios = ["08:00", "09:30", "11:00", "13:30", "15:00", "16:30"];
+  const agora = new Date();
+  const demoUsuarioIds = clientes.map((cliente) => cliente.id);
+  const agendamentosExistentes = await prisma.agendamento.findMany({
+    select: { usuarioId: true, lojaId: true, data: true, hora: true },
+  });
+  const horariosOcupados = new Set(
+    agendamentosExistentes
+      .filter((agendamento) => !demoUsuarioIds.includes(agendamento.usuarioId))
+      .map((agendamento) => `${agendamento.lojaId}|${agendamento.data}|${agendamento.hora}`),
+  );
+
+  for (let index = 0; index < 30; index += 1) {
+    const offsetDias = 29 - index;
+    const loja = lojas[index % lojas.length];
+    const servicos = servicosPorLoja.get(loja.id);
+    const servico = servicos[(index * 3) % servicos.length];
+    const status = statusDemo[index % statusDemo.length];
+    const usuario = clientes[index];
+    const agendadoNoFuturo = status === "pendente" || status === "confirmado";
+    const hora = horarios[index % horarios.length];
+    let deslocamentoAgenda = agendadoNoFuturo ? offsetDias + 31 : -Math.max(1, offsetDias);
+    let data = localDateKey(deslocamentoAgenda);
+    while (horariosOcupados.has(`${loja.id}|${data}|${hora}`)) {
+      deslocamentoAgenda += agendadoNoFuturo ? 1 : -1;
+      data = localDateKey(deslocamentoAgenda);
+    }
+    horariosOcupados.add(`${loja.id}|${data}|${hora}`);
+    const createdAt = new Date(agora);
+    createdAt.setDate(createdAt.getDate() - offsetDias);
+    createdAt.setHours(10 + (index % 7), 0, 0, 0);
+    const payload = {
+      data,
+      hora,
+      status,
+      valorServico: servico.preco,
+      veiculo: ["carro", "moto", "caminhonete"][index % 3],
+      nomeCliente: usuario.nome,
+      emailCliente: usuario.email,
+      usuarioId: usuario.id,
+      lojaId: loja.id,
+      servicoId: servico.id,
+      createdAt,
+    };
+    const existente = await prisma.agendamento.findFirst({ where: { usuarioId: usuario.id } });
+
+    if (existente) {
+      await prisma.agendamento.update({ where: { id: existente.id }, data: payload });
+    } else {
+      await prisma.agendamento.create({ data: payload });
+    }
+  }
 }
 
 function normalizarNomeServico(nome) {
@@ -471,6 +562,11 @@ async function main() {
     status: "confirmado",
     veiculo: "moto",
   });
+
+  await seedDashboardDemoData([
+    lojaCentro, lojaPremium, lojaPrime, lojaFast,
+    lojaEco, lojaStudio, lojaTruck, lojaMall,
+  ]);
 
   void lojaPrime;
   void lojaFast;

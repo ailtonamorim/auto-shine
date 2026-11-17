@@ -3,15 +3,15 @@ const prisma = require("../config/database");
 const { autenticarDono } = require("../middlewares/auth");
 const { coordenadasValidas, imagemLojaValida, serializarFotosAdicionais, serializarListaTexto, dataEhPassado } = require("../utils/validators");
 const { serializarAgendaDias, serializarAgendaHorarios, montarDisponibilidadeLoja } = require("../utils/agenda");
-const { deletarLojaComRelacionados } = require("../utils/loja");
+const { deletarLojaComRelacionados, filtroLojaDisponivel } = require("../utils/loja");
 
 const router = express.Router();
 
 router.get("/", async (_req, res) => {
   try {
     const lojas = await prisma.loja.findMany({
-      where: { bloqueado: false },
-      include: { servicos: true, avaliacoes: { select: { nota: true } } },
+      where: filtroLojaDisponivel(),
+      include: { servicos: true, avaliacoes: { where: { bloqueado: false }, select: { nota: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ lojas });
@@ -42,8 +42,8 @@ router.get("/:id", async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "ID de loja invalido." });
     const loja = await prisma.loja.findFirst({
-      where: { id, bloqueado: false },
-      include: { servicos: true, avaliacoes: { orderBy: { createdAt: "desc" } } },
+      where: { id, ...filtroLojaDisponivel() },
+      include: { servicos: true, avaliacoes: { where: { bloqueado: false }, orderBy: { createdAt: "desc" } } },
     });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
     res.json({ loja });
@@ -59,7 +59,7 @@ router.get("/:id/disponibilidade", async (req, res) => {
     const ignorarId = req.query.ignorarAgendamentoId ? Number(req.query.ignorarAgendamentoId) : null;
     if (!lojaId) return res.status(400).json({ error: "ID invalido." });
     if (dataEhPassado(data)) return res.status(400).json({ error: "Informe uma data valida a partir de hoje." });
-    const loja = await prisma.loja.findFirst({ where: { id: lojaId, bloqueado: false } });
+    const loja = await prisma.loja.findFirst({ where: { id: lojaId, ...filtroLojaDisponivel() } });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
     res.json(await montarDisponibilidadeLoja({ loja, data, ignorarId }));
   } catch {
@@ -87,6 +87,7 @@ router.post("/", autenticarDono, async (req, res) => {
         politicaCancelamento: String(politicaCancelamento || "").trim() || "Cancelamentos e reagendamentos podem ser feitos até 2 horas antes do horário marcado.",
         agendaDias: serializarAgendaDias(agendaDias),
         agendaHorarios: serializarAgendaHorarios(agendaHorarios),
+        statusAprovacao: "pendente",
         donoId: req.dono.donoId,
         servicos: Array.isArray(servicos) && servicos.length
           ? { create: servicos.map((s) => ({

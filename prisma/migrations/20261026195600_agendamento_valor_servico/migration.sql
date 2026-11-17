@@ -1,0 +1,2 @@
+ALTER TABLE "Agendamento"
+ADD COLUMN "valorServico" DOUBLE PRECISION;

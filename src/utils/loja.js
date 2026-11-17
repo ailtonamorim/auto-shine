@@ -2,6 +2,15 @@ const prisma = require("../config/database");
 const { coordenadasValidas, imagemLojaValida, serializarFotosAdicionais, serializarListaTexto } = require("./validators");
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("./agenda");
 
+function filtroLojaDisponivel(agora = new Date()) {
+  return {
+    bloqueado: false,
+    statusAprovacao: "aprovada",
+    dono: { is: { bloqueado: false } },
+    OR: [{ inativoAte: null }, { inativoAte: { lte: agora } }],
+  };
+}
+
 async function deletarLojaComRelacionados(id) {
   const agendamentos = await prisma.agendamento.findMany({ where: { lojaId: id }, select: { id: true } });
   const agendamentoIds = agendamentos.map((a) => a.id);
@@ -56,4 +65,4 @@ function prepararServicosAdmin(servicos = []) {
     .filter((servico) => servico.nome || servico.descricao || servico.duracao || Number.isFinite(servico.preco));
 }
 
-module.exports = { deletarLojaComRelacionados, garantirIndicesBanco, prepararLojaAdmin, prepararServicosAdmin };
+module.exports = { deletarLojaComRelacionados, filtroLojaDisponivel, garantirIndicesBanco, prepararLojaAdmin, prepararServicosAdmin };

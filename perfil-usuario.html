@@ -63,7 +63,8 @@
         </div>
 
         <nav class="profile-user-menu" aria-label="Navegação do perfil">
-          <button class="profile-user-tab is-active" type="button" data-profile-tab="dados">Dados e endereços</button>
+          <button class="profile-user-tab is-active" type="button" data-profile-tab="dados">Dados pessoais</button>
+          <button class="profile-user-tab" type="button" data-profile-tab="enderecos">Endereços</button>
           <button class="profile-user-tab" type="button" data-profile-tab="historico">Histórico</button>
           <button class="profile-user-tab" type="button" data-profile-tab="seguranca">Segurança</button>
           <button class="profile-user-tab" type="button" data-profile-tab="preferencias">Preferências</button>
@@ -73,7 +74,7 @@
       <div class="profile-user-content">
         <section class="profile-user-panel is-active" data-profile-panel="dados">
           <div class="section-head profile-user-head">
-            <h2>Dados e endereços</h2>
+            <h2>Informações pessoais</h2>
           </div>
 
           <form id="profile-form" class="profile-form" novalidate>
@@ -114,78 +115,78 @@
               <button class="btn btn-primary" id="profile-save-btn" type="submit">Salvar alterações</button>
             </div>
           </form>
+        </section>
 
-          <div class="profile-combined-address">
-            <div class="section-head profile-user-head">
-              <h2>Endereços</h2>
-              <button class="btn btn-secondary" id="profile-address-add-btn" type="button">Adicionar endereço</button>
+        <section class="profile-user-panel" data-profile-panel="enderecos">
+          <div class="section-head profile-user-head">
+            <h2>Endereços</h2>
+            <button class="btn btn-secondary" id="profile-address-add-btn" type="button">Adicionar endereço</button>
+          </div>
+
+          <form id="profile-address-form" class="profile-form profile-address-form hidden" novalidate>
+            <div class="field-grid">
+              <div class="field">
+                <label for="address-name">Apelido</label>
+                <input id="address-name" name="nome" type="text" maxlength="40" placeholder="Casa, Escritório, etc." required />
+              </div>
+              <div class="field">
+                <label for="address-cep">CEP</label>
+                <input id="address-cep" name="cep" type="text" inputmode="numeric" maxlength="9" placeholder="00000-000" />
+              </div>
             </div>
 
-            <form id="profile-address-form" class="profile-form profile-address-form hidden" novalidate>
-              <div class="field-grid">
-                <div class="field">
-                  <label for="address-name">Apelido</label>
-                  <input id="address-name" name="nome" type="text" maxlength="40" placeholder="Casa, Escritório, etc." required />
-                </div>
-                <div class="field">
-                  <label for="address-cep">CEP</label>
-                  <input id="address-cep" name="cep" type="text" inputmode="numeric" maxlength="9" placeholder="00000-000" />
-                </div>
+            <div class="field-grid">
+              <div class="field field-span-2">
+                <label for="address-logradouro">Logradouro</label>
+                <input id="address-logradouro" name="logradouro" type="text" maxlength="160" placeholder="Rua, avenida ou travessa" required />
               </div>
+            </div>
 
-              <div class="field-grid">
-                <div class="field field-span-2">
-                  <label for="address-logradouro">Logradouro</label>
-                  <input id="address-logradouro" name="logradouro" type="text" maxlength="160" placeholder="Rua, avenida ou travessa" required />
-                </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="address-number">Número</label>
+                <input id="address-number" name="numero" type="text" maxlength="20" placeholder="123" required />
               </div>
-
-              <div class="field-grid">
-                <div class="field">
-                  <label for="address-number">Número</label>
-                  <input id="address-number" name="numero" type="text" maxlength="20" placeholder="123" required />
-                </div>
-                <div class="field">
-                  <label for="address-complemento">Complemento</label>
-                  <input id="address-complemento" name="complemento" type="text" maxlength="80" placeholder="Apartamento, bloco, etc." />
-                </div>
+              <div class="field">
+                <label for="address-complemento">Complemento</label>
+                <input id="address-complemento" name="complemento" type="text" maxlength="80" placeholder="Apartamento, bloco, etc." />
               </div>
+            </div>
 
-              <div class="field-grid">
-                <div class="field">
-                  <label for="address-bairro">Bairro</label>
-                  <input id="address-bairro" name="bairro" type="text" maxlength="80" placeholder="Seu bairro" required />
-                </div>
-                <div class="field">
-                  <label for="address-cidade">Cidade</label>
-                  <input id="address-cidade" name="cidade" type="text" maxlength="80" placeholder="Sua cidade" required />
-                </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="address-bairro">Bairro</label>
+                <input id="address-bairro" name="bairro" type="text" maxlength="80" placeholder="Seu bairro" required />
               </div>
-
-              <div class="field-grid">
-                <div class="field">
-                  <label for="address-uf">UF</label>
-                  <input id="address-uf" name="uf" type="text" maxlength="2" placeholder="SP" required />
-                </div>
-                <div class="field">
-                  <label for="address-referencia">Ponto de referência</label>
-                  <input id="address-referencia" name="referencia" type="text" maxlength="120" placeholder="Próximo à padaria" />
-                </div>
+              <div class="field">
+                <label for="address-cidade">Cidade</label>
+                <input id="address-cidade" name="cidade" type="text" maxlength="80" placeholder="Sua cidade" required />
               </div>
+            </div>
 
-              <label class="checkbox-row">
-                <input id="address-principal" name="principal" type="checkbox" />
-                <span>Definir como endereço principal</span>
-              </label>
-
-              <div class="profile-form-actions inline-actions">
-                <button class="btn btn-primary" id="profile-address-submit-btn" type="submit">Salvar endereço</button>
-                <button class="btn btn-ghost" id="profile-address-cancel-btn" type="button">Cancelar</button>
+            <div class="field-grid">
+              <div class="field">
+                <label for="address-uf">UF</label>
+                <input id="address-uf" name="uf" type="text" maxlength="2" placeholder="SP" required />
               </div>
-            </form>
+              <div class="field">
+                <label for="address-referencia">Ponto de referência</label>
+                <input id="address-referencia" name="referencia" type="text" maxlength="120" placeholder="Próximo à padaria" />
+              </div>
+            </div>
 
-            <div id="profile-address-list" class="profile-address-list"></div>
-          </div>
+            <label class="checkbox-row">
+              <input id="address-principal" name="principal" type="checkbox" />
+              <span>Definir como endereço principal</span>
+            </label>
+
+            <div class="profile-form-actions inline-actions">
+              <button class="btn btn-primary" id="profile-address-submit-btn" type="submit">Salvar endereço</button>
+              <button class="btn btn-ghost" id="profile-address-cancel-btn" type="button">Cancelar</button>
+            </div>
+          </form>
+
+          <div id="profile-address-list" class="profile-address-list"></div>
         </section>
 
         <section class="profile-user-panel" data-profile-panel="historico">

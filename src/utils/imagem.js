@@ -18,6 +18,12 @@ const imageModerationBlockedCategories = new Set(
 
 const uploadsDir = path.join(__dirname, "..", "..", "assets", "uploads");
 
+function normalizarNomeArquivoExterno(nomeArquivo) {
+  const extensao = path.extname(path.basename(String(nomeArquivo || ""))).toLowerCase();
+  const extensaoPermitida = [".png", ".jpg", ".jpeg", ".webp"].includes(extensao) ? extensao : "";
+  return `imagem-${crypto.randomBytes(8).toString("hex")}${extensaoPermitida}`;
+}
+
 function detectarMimeImagem(buffer) {
   if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
@@ -114,7 +120,7 @@ async function consultarModeracaoImagemExterna(upload) {
   try {
     const headers = { "Content-Type": "application/json" };
     if (imageModerationApiToken) headers.Authorization = `Bearer ${imageModerationApiToken}`;
-    const resposta = await fetch(imageModerationApiUrl, { method: "POST", headers, signal: controller.signal, body: JSON.stringify({ imagem: upload.dataUrl, mimeType: upload.mimeType, nomeArquivo: upload.nomeArquivo, escopo: upload.escopo, tamanhoBytes: upload.buffer.length, dimensoes: upload.dimensoes }) });
+    const resposta = await fetch(imageModerationApiUrl, { method: "POST", headers, signal: controller.signal, body: JSON.stringify({ imagem: upload.dataUrl, mimeType: upload.mimeType, nomeArquivo: normalizarNomeArquivoExterno(upload.nomeArquivo), escopo: upload.escopo, tamanhoBytes: upload.buffer.length, dimensoes: upload.dimensoes }) });
     if (!resposta.ok) throw new Error(`moderacao respondeu ${resposta.status}`);
     return normalizarResultadoModeracao(await resposta.json(), "externa");
   } finally {
@@ -162,4 +168,4 @@ async function salvarImagemUpload({ imagem, nomeArquivo = "imagem", escopo = "ge
   return { url: `assets/uploads/${nomeFinal}`, moderacao };
 }
 
-module.exports = { prepararImagemUpload, moderarImagemUpload, exigirImagemPermitida, salvarImagemUpload };
+module.exports = { normalizarNomeArquivoExterno, prepararImagemUpload, moderarImagemUpload, exigirImagemPermitida, salvarImagemUpload };

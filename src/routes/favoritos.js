@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../config/database");
 const { autenticarUsuario } = require("../middlewares/auth");
+const { filtroLojaDisponivel } = require("../utils/loja");
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ router.get("/", autenticarUsuario, async (req, res) => {
     `;
     const lojaIds = favoritos.map((item) => item.lojaId);
     const lojasEncontradas = lojaIds.length
-      ? await prisma.loja.findMany({ where: { id: { in: lojaIds }, bloqueado: false }, include: { servicos: true, avaliacoes: { select: { nota: true } } } })
+      ? await prisma.loja.findMany({ where: { id: { in: lojaIds }, ...filtroLojaDisponivel() }, include: { servicos: true, avaliacoes: { where: { bloqueado: false }, select: { nota: true } } } })
       : [];
     const lojasPorId = new Map(lojasEncontradas.map((loja) => [loja.id, loja]));
     const lojas = lojaIds.map((id) => lojasPorId.get(id)).filter(Boolean);
@@ -31,7 +32,7 @@ router.post("/:lojaId", autenticarUsuario, async (req, res) => {
   try {
     const lojaId = Number(req.params.lojaId);
     if (!lojaId) return res.status(400).json({ error: "ID de loja inválido." });
-    const loja = await prisma.loja.findFirst({ where: { id: lojaId, bloqueado: false } });
+    const loja = await prisma.loja.findFirst({ where: { id: lojaId, ...filtroLojaDisponivel() } });
     if (!loja) return res.status(404).json({ error: "Loja não encontrada." });
     await prisma.favorito.upsert({
       where: { usuarioId_lojaId: { usuarioId: req.usuario.id, lojaId } },

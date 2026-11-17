@@ -30,6 +30,11 @@
     logout.addEventListener("click", onLogout);
     panel.append(logout);
     button.addEventListener("click", () => {
+      if (panel.hidden && !menu.closest(".main-nav")) {
+        const nav = menu.closest(".topbar")?.querySelector(".main-nav.is-open");
+        const toggle = nav?.parentElement.querySelector(".nav-toggle");
+        if (toggle) toggle.click();
+      }
       panel.hidden = !panel.hidden;
       button.setAttribute("aria-expanded", String(!panel.hidden));
     });
@@ -112,6 +117,12 @@
       });
       if (access) access.insertAdjacentElement("afterend", menu);
       else header.append(menu);
+    }
+    if (partner) {
+      const link = document.createElement("a");
+      link.href = "cadastro-dono.html";
+      link.textContent = "Painel do parceiro";
+      header.querySelector(".nav-links")?.append(link);
     }
   });
 })();

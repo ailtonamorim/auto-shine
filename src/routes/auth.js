@@ -67,6 +67,7 @@ router.get("/auth/google/callback", (req, res, next) => {
             while (await prisma.dono.findUnique({ where: { login } })) login = `${base}${i++}`;
             dono = await prisma.dono.create({ data: { nome: user.name || "Parceiro Google", login, senha: null, googleId: user.id } });
           }
+          if (dono.bloqueado || (dono.suspensoAte && dono.suspensoAte > new Date())) return res.redirect("/cadastro-dono.html?auth=blocked");
           const token = gerarTokenDono(dono);
           setAuthCookie(res, token);
           const next = encodeURIComponent(returnTo);
@@ -89,6 +90,7 @@ router.get("/auth/google/callback", (req, res, next) => {
         } else if (!usuario.googleId) {
           usuario = await prisma.usuario.update({ where: { id: usuario.id }, data: { googleId: user.id } });
         }
+        if (usuario.bloqueado || (usuario.suspensoAte && usuario.suspensoAte > new Date())) return res.redirect("/cadastro.html?mode=login&auth=blocked");
         const token = gerarTokenUsuario(usuario);
         setAuthCookie(res, token);
         const name = encodeURIComponent(usuario.nome);
@@ -147,6 +149,8 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
     if (!email || !senha) return res.status(400).json({ error: "Informe email e senha." });
     const usuario = await prisma.usuario.findUnique({ where: { email: normalizarEmail(email) } });
     if (!usuario) return res.status(401).json({ error: "Email ou senha inválidos." });
+    if (usuario.bloqueado) return res.status(403).json({ error: "Conta bloqueada. Entre em contato com o suporte." });
+    if (usuario.suspensoAte && usuario.suspensoAte > new Date()) return res.status(403).json({ error: `Conta suspensa até ${usuario.suspensoAte.toLocaleDateString("pt-BR")}.` });
     if (!usuario.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
     if (!(await bcrypt.compare(senha, usuario.senha))) return res.status(401).json({ error: "Email ou senha inválidos." });
     const token = gerarTokenUsuario(usuario);

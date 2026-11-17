@@ -15,6 +15,8 @@ model Usuario {
   fotoPerfilUrl     String?
   telefone          String?
   senha             String?
+  bloqueado         Boolean       @default(false)
+  suspensoAte       DateTime?
   googleId          String?       @unique
   resetToken        String?       @unique
   resetTokenExpiry  DateTime?
@@ -53,6 +55,8 @@ model Dono {
   email            String?  @unique
   cnpj             String?
   senha            String?
+  bloqueado        Boolean  @default(false)
+  suspensoAte      DateTime?
   googleId         String?  @unique
   resetToken       String?  @unique
   resetTokenExpiry DateTime?
@@ -77,6 +81,10 @@ model Loja {
   agendaDias   String        @default("1,2,3,4,5,6")
   agendaHorarios String      @default("08:00,09:30,11:00,13:30,15:00,16:30")
   bloqueado    Boolean       @default(false)
+  inativoAte   DateTime?
+  statusAprovacao String     @default("aprovada")
+  healthStatus String       @default("healthy") @map("health_status")
+  healthReasons String      @default("[]") @map("health_reasons")
   donoId       Int
   dono         Dono          @relation(fields: [donoId], references: [id])
   servicos     ServicoLoja[]
@@ -87,6 +95,8 @@ model Loja {
   favoritos    Favorito[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
+  @@index([inativoAte])
 }
 
 model ServicoLoja {
@@ -115,6 +125,7 @@ model Agendamento {
   status       String       @default("pendente")
   nomeCliente  String?
   emailCliente String?
+  valorServico Float?
   usuarioId    Int?
   lojaId       Int
   servicoId    Int
@@ -132,6 +143,8 @@ model Avaliacao {
   comentario    String?
   fotoUrl       String?
   nomeCliente   String?
+  aprovado      Boolean      @default(true)
+  bloqueado     Boolean      @default(false)
   usuarioId     Int?
   lojaId        Int
   agendamentoId Int?         @unique
@@ -145,9 +158,10 @@ model Avaliacao {
 model Denuncia {
   id              Int          @id @default(autoincrement())
   tipo            String
-  motivo          String
+  motivo          String?
   detalhes        String?
   status          String       @default("aberta")
+  anonima         Boolean      @default(false)
   respostaLoja    String?
   anexosResposta  String?
   dataResposta    DateTime?
