@@ -1,5 +1,5 @@
 ALTER TABLE "Usuario"
-ADD COLUMN "suspensoAte" DATETIME;
+ADD COLUMN "suspensoAte" TIMESTAMP(3);
 
 ALTER TABLE "Dono"
-ADD COLUMN "suspensoAte" DATETIME;
+ADD COLUMN "suspensoAte" TIMESTAMP(3);

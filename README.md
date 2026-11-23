@@ -6,7 +6,7 @@ Marketplace responsivo para lava jatos e estética automotiva, com cadastro de c
 
 - HTML5, CSS3 e JavaScript vanilla
 - Node.js + Express
-- Prisma + SQLite
+- Prisma + PostgreSQL
 - JWT para API autenticada
 - Papéis `client`, `partner` e `admin`, com páginas protegidas por cookie HttpOnly assinado
 - Passport Google OAuth 2.0
@@ -39,10 +39,8 @@ O painel também mostra a saúde operacional de cada loja. A classificação con
 
 Copie `.env.example` para `.env` e preencha:
 
-O banco SQLite local fica em `prisma/dev.db`; não é necessário instalar ou iniciar um servidor de banco.
-
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://usuario:senha@localhost:5432/autoshine?schema=public"
 PORT=3000
 SESSION_SECRET=troque-para-uma-chave-segura
 JWT_SECRET=troque-para-uma-chave-jwt-segura
