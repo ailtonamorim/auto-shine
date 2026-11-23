@@ -1,16 +1,16 @@
 ALTER TABLE "Usuario"
-  ADD COLUMN IF NOT EXISTS "telefoneIndex" TEXT;
+  ADD COLUMN "telefoneIndex" TEXT;
 
 ALTER TABLE "Agendamento"
-  ADD COLUMN IF NOT EXISTS "nomeClienteIndex" TEXT,
-  ADD COLUMN IF NOT EXISTS "emailClienteIndex" TEXT;
+  ADD COLUMN "nomeClienteIndex" TEXT;
+ALTER TABLE "Agendamento" ADD COLUMN "emailClienteIndex" TEXT;
 
 ALTER TABLE "Denuncia"
-  ADD COLUMN IF NOT EXISTS "motivoCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "motivoIndex" TEXT;
+  ADD COLUMN "motivoCipher" TEXT;
+ALTER TABLE "Denuncia" ADD COLUMN "motivoIndex" TEXT;
 
 CREATE TABLE IF NOT EXISTS "AuditLog" (
-  "id" SERIAL NOT NULL,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "acao" TEXT NOT NULL,
   "tabela" TEXT NOT NULL,
   "recordId" INTEGER,
@@ -19,8 +19,7 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
   "detalhes" TEXT,
   "sucesso" BOOLEAN NOT NULL DEFAULT true,
   "erro" TEXT,
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS "Usuario_telefoneIndex_idx" ON "Usuario"("telefoneIndex");

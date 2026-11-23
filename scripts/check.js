@@ -10,6 +10,7 @@ const htmlPages = [
   "mapa.html",
   "perfil.html",
   "perfil-usuario.html",
+  "perfil-dono.html",
   "servicos.html",
   "reset-senha.html",
   "agendamento.html",
@@ -89,7 +90,24 @@ function runCommand(label, command, args, options = {}) {
 }
 
 function checkJavaScriptSyntax() {
-  ["server.js", "database-admin.js", "assets/js/app.js", "assets/js/tema.js", "assets/js/menu-perfil.js", "assets/js/perfil-usuario.js", "src/routes/profile.js", "prisma/seed.js"].forEach((relativePath) => {
+  [
+    "server.js",
+    "database-admin.js",
+    "assets/js/app.js",
+    "assets/js/tema.js",
+    "assets/js/menu-perfil.js",
+    "assets/js/perfil-usuario.js",
+    "assets/js/perfil-dono.js",
+    "src/middlewares/auth.js",
+    "src/utils/tokens.js",
+    "src/routes/auth.js",
+    "src/routes/profile.js",
+    "src/routes/dono.js",
+    "src/routes/admin.js",
+    "src/routes/lojas.js",
+    "src/routes/defesaDenuncia.js",
+    "prisma/seed.js",
+  ].forEach((relativePath) => {
     if (!fileExists(relativePath)) return;
     runCommand(`Sintaxe JS valida: ${relativePath}`, process.execPath, ["--check", fullPath(relativePath)]);
   });
@@ -105,7 +123,7 @@ function checkPrismaSchema() {
   runCommand("Schema Prisma valido", process.execPath, [prismaCli, "validate"], {
     env: {
       ...process.env,
-      DATABASE_URL: process.env.DATABASE_URL || "postgresql://validacao:validacao@localhost:5432/validacao",
+      DATABASE_URL: process.env.DATABASE_URL || "file:./data/check.db",
     },
     timeout: 90000,
   });

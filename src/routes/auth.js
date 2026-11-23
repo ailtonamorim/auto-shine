@@ -4,6 +4,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const prisma = require("../config/database");
 const { gerarTokenUsuario, gerarTokenDono } = require("../utils/tokens");
+const { setAuthCookie, clearAuthCookie } = require("../middlewares/auth");
 const { normalizarEmail, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
 const { limitarAuth } = require("../middlewares/security");
 
@@ -68,6 +69,7 @@ router.get("/auth/google/callback", (req, res, next) => {
           }
           if (dono.bloqueado || (dono.suspensoAte && dono.suspensoAte > new Date())) return res.redirect("/cadastro-dono.html?auth=blocked");
           const token = gerarTokenDono(dono);
+          setAuthCookie(res, token);
           const next = encodeURIComponent(returnTo);
           res.redirect(`/cadastro-dono.html?auth=dono_google_success&token=${token}&next=${next}`);
         } catch (err) {
@@ -90,6 +92,7 @@ router.get("/auth/google/callback", (req, res, next) => {
         }
         if (usuario.bloqueado || (usuario.suspensoAte && usuario.suspensoAte > new Date())) return res.redirect("/cadastro.html?mode=login&auth=blocked");
         const token = gerarTokenUsuario(usuario);
+        setAuthCookie(res, token);
         const name = encodeURIComponent(usuario.nome);
         const emailParam = encodeURIComponent(usuario.email);
         const next = encodeURIComponent(returnTo);
@@ -103,10 +106,16 @@ router.get("/auth/google/callback", (req, res, next) => {
 });
 
 router.get("/auth/logout", (req, res, next) => {
+  clearAuthCookie(res);
   req.logout((err) => {
     if (err) return next(err);
     req.session.destroy(() => res.redirect("/index.html"));
   });
+});
+
+router.post("/api/auth/logout", (_req, res) => {
+  clearAuthCookie(res);
+  res.status(204).end();
 });
 
 router.get("/api/auth/me", (req, res) => res.json({ authenticated: Boolean(req.user), user: req.user || null }));
@@ -126,6 +135,7 @@ router.post("/api/auth/signup", limitarAuth, async (req, res) => {
     const senhaHash = await bcrypt.hash(senha, 10);
     const usuario = await prisma.usuario.create({ data: { nome: String(nome).trim(), email: emailNorm, cpf: cpfNorm, telefone: telefoneNorm, senha: senhaHash } });
     const token = gerarTokenUsuario(usuario);
+    setAuthCookie(res, token);
     res.status(201).json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
   } catch (err) {
     console.error("Erro no cadastro:", err);
@@ -144,6 +154,7 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
     if (!usuario.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
     if (!(await bcrypt.compare(senha, usuario.senha))) return res.status(401).json({ error: "Email ou senha inválidos." });
     const token = gerarTokenUsuario(usuario);
+    setAuthCookie(res, token);
     res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
   } catch (err) {
     console.error("Erro no login:", err);

@@ -1,6 +1,5 @@
-ALTER TABLE "ServicoLoja"
-ADD COLUMN "inclusos" TEXT,
-ADD COLUMN "etapas" TEXT,
-ADD COLUMN "produtos" TEXT,
-ADD COLUMN "orientacoes" TEXT,
-ADD COLUMN "garantia" TEXT;
+ALTER TABLE "ServicoLoja" ADD COLUMN "inclusos" TEXT;
+ALTER TABLE "ServicoLoja" ADD COLUMN "etapas" TEXT;
+ALTER TABLE "ServicoLoja" ADD COLUMN "produtos" TEXT;
+ALTER TABLE "ServicoLoja" ADD COLUMN "orientacoes" TEXT;
+ALTER TABLE "ServicoLoja" ADD COLUMN "garantia" TEXT;

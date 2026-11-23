@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -84,13 +84,14 @@ model Loja {
   inativoAte   DateTime?
   statusAprovacao String     @default("aprovada")
   healthStatus String       @default("healthy") @map("health_status")
-  healthReasons String[]    @default([]) @map("health_reasons")
+  healthReasons String      @default("[]") @map("health_reasons")
   donoId       Int
   dono         Dono          @relation(fields: [donoId], references: [id])
   servicos     ServicoLoja[]
   agendamentos Agendamento[]
   avaliacoes   Avaliacao[]
   denuncias    Denuncia[]
+  notificacoes Notificacao[]
   favoritos    Favorito[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -125,6 +126,7 @@ model Agendamento {
   nomeCliente  String?
   emailCliente String?
   valorServico Float?
+  codigoRetirada String?    @unique
   usuarioId    Int?
   lojaId       Int
   servicoId    Int
@@ -142,6 +144,7 @@ model Avaliacao {
   comentario    String?
   fotoUrl       String?
   nomeCliente   String?
+  aprovado      Boolean      @default(true)
   bloqueado     Boolean      @default(false)
   usuarioId     Int?
   lojaId        Int
@@ -154,21 +157,40 @@ model Avaliacao {
 }
 
 model Denuncia {
-  id            Int          @id @default(autoincrement())
-  tipo          String
-  motivo        String
-  detalhes      String?
-  status        String       @default("aberta")
-  usuarioId     Int?
-  lojaId        Int?
-  avaliacaoId   Int?
-  agendamentoId Int?
-  usuario       Usuario?     @relation(fields: [usuarioId], references: [id])
-  loja          Loja?        @relation(fields: [lojaId], references: [id])
-  avaliacao     Avaliacao?   @relation(fields: [avaliacaoId], references: [id])
-  agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id              Int          @id @default(autoincrement())
+  tipo            String
+  motivo          String?
+  detalhes        String?
+  status          String       @default("aberta")
+  anonima         Boolean      @default(false)
+  respostaLoja    String?
+  anexosResposta  String?
+  dataResposta    DateTime?
+  parecerAdmin    String?
+  usuarioId       Int?
+  lojaId          Int?
+  avaliacaoId     Int?
+  agendamentoId   Int?
+  usuario         Usuario?     @relation(fields: [usuarioId], references: [id])
+  loja            Loja?        @relation(fields: [lojaId], references: [id])
+  avaliacao       Avaliacao?   @relation(fields: [avaliacaoId], references: [id])
+  agendamento     Agendamento? @relation(fields: [agendamentoId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model Notificacao {
+  id        Int      @id @default(autoincrement())
+  lojaId    Int      @map("loja_id")
+  titulo    String
+  mensagem  String
+  tipo      String
+  lida      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  loja      Loja     @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+
+  @@index([lojaId, lida, createdAt])
+  @@map("Notificacao")
 }
 
 model Favorito {

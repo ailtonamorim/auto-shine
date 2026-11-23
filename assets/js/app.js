@@ -38,11 +38,19 @@ function getCurrentUser() {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+async function logoutFromServer() {
+  const response = await fetch("/api/auth/logout", { method: "POST" });
+  if (!response.ok) throw new Error("Não foi possível encerrar a sessão no servidor.");
+}
+
 function setCurrentUser(user, token) {
-  localStorage.setItem(currentUserStorageKey, JSON.stringify(user));
+  localStorage.removeItem(donoTokenKey);
+  localStorage.removeItem(adminTokenKey);
+  localStorage.setItem(currentUserStorageKey, JSON.stringify({ ...user, role: "client" }));
   if (token) localStorage.setItem(authTokenStorageKey, token);
   else localStorage.removeItem(authTokenStorageKey);
   updateNavAuthState();
+  updatePartnerNavState();
 }
 
 function clearCurrentUser() {
@@ -55,12 +63,28 @@ function getAuthToken() {
   return localStorage.getItem(authTokenStorageKey);
 }
 
+function getClientFromToken() {
+  const token = getAuthToken();
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return (payload.role === "client" && payload.id) || (!payload.role && payload.id && !payload.donoId && !payload.adminRole)
+      ? payload
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Dono (parceiro) ─────────────────────────────────────────────────────────
 function getDonoToken() {
   return localStorage.getItem(donoTokenKey);
 }
 
 function setDonoToken(token) {
+  localStorage.removeItem(currentUserStorageKey);
+  localStorage.removeItem(authTokenStorageKey);
+  localStorage.removeItem(adminTokenKey);
   localStorage.setItem(donoTokenKey, token);
   updateNavAuthState();
   updatePartnerNavState();
@@ -75,7 +99,10 @@ function clearDonoToken() {
 function getDonoFromToken() {
   const token = getDonoToken();
   if (!token) return null;
-  try { return JSON.parse(atob(token.split(".")[1])); } catch { return null; }
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return (payload.role === "partner" && payload.donoId) || (!payload.role && payload.donoId) ? payload : null;
+  } catch { return null; }
 }
 
 // ── Helpers de fetch autenticado ────────────────────────────────────────────
@@ -427,6 +454,7 @@ function setActiveNavLink() {
     "meus-agendamentos": "meus-agendamentos.html",
     favoritos: "favoritos.html",
     "perfil-usuario": "perfil-usuario.html",
+    "perfil-dono": "perfil-dono.html",
   };
   const target = map[page];
   if (!target) return;
@@ -438,20 +466,43 @@ function setActiveNavLink() {
 
 // Função responsável por atualizar o menu com base no login do usuário
 function updateNavAuthState() {
-  const clientLogged = Boolean(getCurrentUser() && getAuthToken());
   const partnerLogged = Boolean(getDonoFromToken());
-  const anyUserLogged = clientLogged || partnerLogged;
+  const adminLogged = Boolean(getAdminToken());
+  const clientLogged = !partnerLogged && !adminLogged && Boolean(getCurrentUser() && getClientFromToken());
+  const anyUserLogged = clientLogged || partnerLogged || adminLogged;
   
-  // Pegamos os dois links restritos
   const linkAgendamentos = document.getElementById("link-agendamentos");
   const linkFavoritos = document.getElementById("link-favoritos");
 
-  // Esconde "Acessar" quando um cliente OU parceiro estiver autenticado.
   document.querySelectorAll('header a[href*="cadastro.html"]').forEach((link) => {
     link.classList.toggle("hidden", anyUserLogged);
   });
 
-  // Favoritos e Agendamentos pertencem somente à sessão do cliente.
+  document.querySelectorAll('header a[href*="cadastro-dono.html"], header a[href*="perfil-dono.html"]').forEach((link) => {
+    link.classList.toggle("hidden", !partnerLogged);
+  });
+  document.querySelectorAll('header a[href*="admin.html"]').forEach((link) => {
+    link.classList.toggle("hidden", !adminLogged);
+  });
+  document.querySelectorAll('header a[href*="servicos.html"], header a[href*="mapa.html"], header a[href*="perfil.html"], header a[href*="avaliacoes.html"], header a[href*="agendamento.html"]').forEach((link) => {
+    link.classList.toggle("hidden", partnerLogged || adminLogged);
+  });
+  document.querySelectorAll('header a[href*="perfil-usuario.html"], header a[href*="meus-agendamentos.html"], header a[href*="favoritos.html"]').forEach((link) => {
+    link.classList.toggle("hidden", !clientLogged);
+  });
+  document.querySelectorAll(".site-footer a").forEach((link) => {
+    const href = link.getAttribute("href") || "";
+    if (href.includes("mapa.html") || href.includes("meus-agendamentos.html") || href.includes("index.html")) {
+      link.classList.toggle("hidden", partnerLogged || adminLogged);
+    }
+    if (href.includes("cadastro.html?perfil=empresa")) {
+      link.classList.toggle("hidden", anyUserLogged);
+    }
+    if (href.includes("admin.html")) {
+      link.classList.toggle("hidden", !adminLogged);
+    }
+  });
+
   if (linkAgendamentos) {
     linkAgendamentos.classList.toggle("hidden", !clientLogged);
   }
@@ -469,14 +520,14 @@ function updateNavAuthState() {
   document.querySelectorAll(".topbar nav").forEach((nav) => {
     const profileMenu = window.createUserProfileMenu(getCurrentUser(), () => {
       clearCurrentUser();
-      window.location.href = "index.html";
+      window.location.href = "/auth/logout";
     });
     profileMenu.dataset.clientSessionLink = "profile";
     // A conta fica à direita, sem ocupar o centro reservado aos links.
     const header = nav.closest(".topbar");
     const access = header?.querySelector(".header-access");
     if (access) access.insertAdjacentElement("afterend", profileMenu);
-    else nav.insertAdjacentElement("afterend", profileMenu);
+    else nav.appendChild(profileMenu);
   });
 }
 
@@ -484,57 +535,71 @@ function updateNavAuthState() {
 // estiver autenticada, sem precisar alterar o menu de cada arquivo HTML.
 function updatePartnerNavState() {
   const partnerLogged = Boolean(getDonoFromToken());
-  const partnerPage = page === "cadastro-dono" || page === "parceiro";
+  const partnerPage = page === "cadastro-dono" || page === "parceiro" || page === "perfil-dono";
 
   document.querySelectorAll("[data-partner-session-link]").forEach((item) => item.remove());
-  if (!partnerLogged) return;
+  if (partnerLogged) {
+    document.querySelectorAll('header a[href*="cadastro-dono.html"]').forEach((link) => {
+      if (!link.closest(".main-nav")) link.remove();
+    });
+  }
 
-  // Remove atalhos antigos posicionados fora da navegação principal. Assim o
-  // cabeçalho mantém apenas um botão "Painel do parceiro".
-  document.querySelectorAll('header a[href*="cadastro-dono.html"]').forEach((link) => {
-    if (!link.closest(".main-nav")) link.remove();
-  });
+  const navItems = page === "perfil-dono"
+    ? [
+        ["Painel", "cadastro-dono.html#dashboard"],
+        ["Dados do parceiro", "#conta", "conta"],
+        ["Minhas lojas", "#lojas", "lojas"],
+        ["Perfil da loja", "#perfil-loja", "perfil-loja"],
+        ["Serviços", "#servicos", "servicos"],
+      ]
+    : [
+        ["Dashboard", "#dashboard", "dashboard"],
+        ["Cadastro", "#cadastro", "cadastro"],
+        ["Meu Lava Jato", "#estabelecimento", "estabelecimento"],
+        ["Agendamentos", "#agendamentos", "agendamentos"],
+        ["Perfil da loja", "perfil-dono.html#perfil-loja"],
+      ];
 
   document.querySelectorAll(".topbar .main-nav").forEach((nav) => {
-    // Na página do parceiro, remove qualquer seleção deixada fixa no HTML,
-    // como class="active" no link de Serviços.
     if (partnerPage) {
-      nav.querySelectorAll("a.active").forEach((link) => {
-        link.classList.remove("active");
-        link.removeAttribute("aria-current");
-      });
+      nav.replaceChildren();
+      nav.hidden = !partnerLogged;
+      if (!partnerLogged) return;
+
+      for (const [label, href, tab] of navItems) {
+        const link = document.createElement("a");
+        link.href = href;
+        link.textContent = label;
+        if (tab && page === "perfil-dono") link.dataset.ownerTab = tab;
+        if (tab && page !== "perfil-dono") link.dataset.goTab = tab;
+        nav.append(link);
+      }
+      return;
     }
 
-    // Reutiliza o link caso ele já exista; cria somente quando necessário.
+    nav.hidden = false;
+    if (!partnerLogged) return;
+
     let partnerLink = nav.querySelector('a[href*="cadastro-dono.html"]');
     if (!partnerLink) {
       partnerLink = document.createElement("a");
       partnerLink.href = "cadastro-dono.html";
       partnerLink.textContent = "Painel do parceiro";
-
-      const servicesLink = Array.from(nav.querySelectorAll("a")).find((link) => {
-        const href = link.getAttribute("href") || "";
-        return href.includes("servicos.html");
-      });
-
+      const servicesLink = Array.from(nav.querySelectorAll("a")).find((link) =>
+        (link.getAttribute("href") || "").includes("servicos.html"),
+      );
       if (servicesLink) servicesLink.insertAdjacentElement("afterend", partnerLink);
       else nav.prepend(partnerLink);
     }
 
     partnerLink.dataset.partnerSessionLink = "panel";
-
-    if (partnerPage) {
-      partnerLink.classList.add("active");
-      partnerLink.setAttribute("aria-current", "page");
-    } else {
-      partnerLink.classList.remove("active");
-      partnerLink.removeAttribute("aria-current");
-    }
+    partnerLink.classList.remove("active");
+    partnerLink.removeAttribute("aria-current");
   });
 }
 
 function requireAuth(reason = "login_required") {
-  if (getCurrentUser() && getAuthToken()) return true;
+  if (!getDonoFromToken() && !getAdminToken() && getCurrentUser() && getClientFromToken()) return true;
   clearCurrentUser();
   redirectToLogin(reason);
   return false;
@@ -1093,6 +1158,10 @@ async function initPartnerPage() {
   // loja em memória para edição rápida (evita fetch extra)
   let cachedShops = [];
   let cachedBookings = [];
+  let partnerNotifications = [];
+  let partnerReports = [];
+  let partnerAttachmentObjectUrls = [];
+  let unreadPartnerNotifications = 0;
   let selectedDashboardShopId = "";
   let ownerSidebarCollapsed = localStorage.getItem("autoshine:owner-sidebar-collapsed") === "1";
 
@@ -1156,6 +1225,120 @@ async function initPartnerPage() {
     return Number(booking?.servico?.preco || 0);
   }
 
+  function renderPartnerNotifications() {
+    const badge = dashboardRoot?.querySelector("[data-notification-count]");
+    const list = dashboardRoot?.querySelector("[data-notifications-list]");
+    const unreadLabel = dashboardRoot?.querySelector("[data-notification-unread-label]");
+    const trigger = dashboardRoot?.querySelector("[data-toggle-notifications]");
+    if (unreadLabel) unreadLabel.textContent = `${unreadPartnerNotifications} não lidas`;
+    if (trigger) trigger.setAttribute("aria-label", `Notificações não lidas: ${unreadPartnerNotifications}`);
+    if (badge) {
+      badge.textContent = String(unreadPartnerNotifications);
+      badge.classList.toggle("hidden", unreadPartnerNotifications === 0);
+    }
+    if (!list) return;
+    list.innerHTML = partnerNotifications.length
+      ? partnerNotifications.map((notification) => {
+          const date = notification.createdAt
+            ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(notification.createdAt))
+            : "";
+          return `<article class="owner-notification-item ${notification.lida ? "is-read" : "is-unread"}">
+            <div><strong>${escapeHtml(notification.titulo)}</strong><small>${escapeHtml(date)}</small></div>
+            <p>${escapeHtml(notification.mensagem)}</p>
+            ${notification.lida ? "" : `<button class="btn btn-ghost" type="button" data-notification-read="${notification.id}">Marcar como lida</button>`}
+          </article>`;
+        }).join("")
+      : '<p class="owner-notifications-empty">Nenhuma notificação recebida.</p>';
+  }
+
+  async function loadPartnerNotifications() {
+    try {
+      const res = await donoFetch("/api/dono/notificacoes");
+      if (!res.ok) return;
+      const data = await res.json();
+      partnerNotifications = Array.isArray(data.notificacoes) ? data.notificacoes : [];
+      unreadPartnerNotifications = Number(data.naoLidas) || 0;
+      renderPartnerNotifications();
+    } catch {}
+  }
+
+  function reportAttachments(report) {
+    try {
+      const files = JSON.parse(report.anexosResposta || "[]");
+      return Array.isArray(files) ? files.filter((file) => typeof file === "string" && /^[a-f0-9-]+\.(png|jpg|pdf)$/i.test(file)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function renderPartnerReports() {
+    const list = dashboardRoot?.querySelector("[data-partner-reports-list]");
+    if (!list) return;
+    partnerAttachmentObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    partnerAttachmentObjectUrls = [];
+    const statusLabels = {
+      pendente: "Pendente",
+      aberta: "Pendente",
+      em_analise: "Em análise",
+      aguardando_defesa: "Aguardando defesa",
+      contestada: "Contestada",
+      procedente: "Procedente",
+      rejeitada: "Rejeitada",
+    };
+    list.innerHTML = partnerReports.length
+      ? partnerReports.map((report) => {
+          const status = String(report.status || "pendente").toLowerCase();
+          const attachments = reportAttachments(report);
+          const attachmentLinks = attachments.map((file) => `<a class="partner-report-attachment" href="#" data-attachment-url="/api/parceiro/denuncias/${report.id}/anexos/${encodeURIComponent(file)}" target="_blank" rel="noopener">Carregando ${escapeHtml(file)}</a>`).join("");
+          const finalizado = ["procedente", "rejeitada"].includes(status);
+          const podeResponder = !finalizado && status !== "contestada";
+          const data = report.createdAt ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(report.createdAt)) : "";
+          return `<article class="partner-report-item">
+            <header><div><strong>${escapeHtml(report.loja?.nome || "Sua loja")}</strong><small>${escapeHtml(data)}</small></div><span class="partner-report-status">${escapeHtml(statusLabels[status] || status)}</span></header>
+            <p><strong>Motivo:</strong> ${escapeHtml(report.motivo)}</p>
+            <p><strong>Relato do cliente:</strong> ${escapeHtml(report.detalhes || "Sem detalhes adicionais.")}</p>
+            <details><summary>Histórico e decisão</summary>
+              ${report.respostaLoja ? `<p><strong>Sua defesa (${escapeHtml(report.dataResposta ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(report.dataResposta)) : "enviada")}):</strong> ${escapeHtml(report.respostaLoja)}</p>` : ""}
+              ${attachmentLinks ? `<p class="partner-report-attachments"><strong>Anexos:</strong> ${attachmentLinks}</p>` : ""}
+              ${report.parecerAdmin ? `<p><strong>Parecer da equipe:</strong> ${escapeHtml(report.parecerAdmin)}</p>` : "<p>A equipe ainda não registrou um parecer.</p>"}
+            </details>
+            ${podeResponder ? `<button class="btn btn-primary" type="button" data-partner-report-reply="${report.id}">Responder / contestar</button>` : ""}
+          </article>`;
+        }).join("")
+      : '<p class="owner-notifications-empty">Nenhuma denúncia recebida pelas suas lojas.</p>';
+    hydratePartnerAttachments(list);
+  }
+
+  async function hydratePartnerAttachments(container) {
+    container?.querySelectorAll("[data-attachment-url]").forEach(async (link) => {
+      try {
+        const response = await donoFetch(link.dataset.attachmentUrl);
+        if (!response.ok) throw new Error("Anexo indisponível");
+        const objectUrl = URL.createObjectURL(await response.blob());
+        partnerAttachmentObjectUrls.push(objectUrl);
+        link.href = objectUrl;
+        link.textContent = link.textContent.replace("Carregando ", "Abrir ");
+      } catch {
+        link.textContent = "Anexo indisponível";
+        link.removeAttribute("href");
+      }
+    });
+  }
+
+  async function loadPartnerReports() {
+    const list = dashboardRoot?.querySelector("[data-partner-reports-list]");
+    if (list) list.innerHTML = '<p class="owner-notifications-empty">Carregando denúncias...</p>';
+    try {
+      const res = await donoFetch("/api/dono/denuncias");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao carregar denúncias.");
+      partnerReports = Array.isArray(data.denuncias) ? data.denuncias : [];
+      renderPartnerReports();
+    } catch (err) {
+      if (list) list.innerHTML = `<p class="owner-notifications-empty">${escapeHtml(err.message || "Erro ao carregar denúncias.")}</p>`;
+    }
+  }
+
   function renderPartnerDashboard() {
     if (!dashboardRoot) return;
 
@@ -1199,8 +1382,6 @@ async function initPartnerPage() {
         return String(raw || "");
       }),
     ).size;
-    const profileUrl = `perfil.html?shopId=${encodeURIComponent(loja.id)}`;
-    const reviewsUrl = `avaliacoes.html?lojaId=${encodeURIComponent(loja.id)}&shop=${encodeURIComponent(loja.nome)}`;
     const scheduleTimes = parseScheduleTimes(loja.agendaHorarios || defaultBookingTimes);
     const scheduleDays = parseScheduleDays(loja.agendaDias || defaultScheduleDays);
     const todayDay = String(new Date(`${hoje}T12:00:00`).getDay());
@@ -1333,7 +1514,7 @@ async function initPartnerPage() {
             <button class="owner-dashboard-nav active" type="button" data-go-tab="dashboard"><span class="owner-nav-icon">DS</span><span>Visão geral</span></button>
             <button class="owner-dashboard-nav" type="button" data-go-tab="agendamentos"><span class="owner-nav-icon">AG</span><span>Agendamentos</span></button>
             <button class="owner-dashboard-nav" type="button" data-go-tab="estabelecimento"><span class="owner-nav-icon">SV</span><span>Serviços</span></button>
-            <a class="owner-dashboard-nav" href="${reviewsUrl}"><span class="owner-nav-icon">AV</span><span>Avaliações</span></a>
+            <button class="owner-dashboard-nav" type="button" data-open-partner-reports><span class="owner-nav-icon">DE</span><span>Denúncias</span></button>
             <button class="owner-dashboard-nav" type="button" data-dashboard-edit-shop="${escapeHtml(lojaId)}"><span class="owner-nav-icon">ED</span><span>Editar</span></button>
           </nav>
         </aside>
@@ -1346,9 +1527,18 @@ async function initPartnerPage() {
               <span>${escapeHtml(loja.endereco || "Endereço não informado")}</span>
             </div>
             <div class="owner-topbar-actions">
+              <div class="owner-notifications">
+                <button class="owner-notifications-trigger" type="button" data-toggle-notifications aria-label="Notificações não lidas: ${unreadPartnerNotifications}" aria-expanded="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+                  <span class="owner-notifications-count ${unreadPartnerNotifications ? "" : "hidden"}" data-notification-count>${unreadPartnerNotifications}</span>
+                </button>
+                <section class="owner-notifications-popover hidden" data-notifications-panel aria-label="Notificações recentes">
+                  <header><strong>Notificações</strong><span data-notification-unread-label>${unreadPartnerNotifications} não lidas</span></header>
+                  <div data-notifications-list></div>
+                </section>
+              </div>
               <span class="owner-plan-badge">Plano Premium</span>
               ${selectorHtml}
-              <a class="btn btn-ghost" href="${profileUrl}">Ir para marketplace</a>
               <button class="btn btn-ghost" type="button" data-go-tab="agendamentos">Ações rápidas</button>
               <span class="owner-profile-chip">${escapeHtml(dono.nome || "Parceiro")}</span>
             </div>
@@ -1417,7 +1607,20 @@ async function initPartnerPage() {
             </article>
           </div>
         </section>
-      </div>`;
+      </div>
+      <dialog class="partner-reports-dialog" data-partner-reports-dialog>
+        <header class="partner-reports-dialog-head"><div><p class="owner-topbar-label">Central de atendimento</p><h2>Denúncias recebidas</h2></div><button class="owner-sidebar-toggle" type="button" data-close-partner-reports aria-label="Fechar denúncias">Fechar</button></header>
+        <div data-partner-reports-list></div>
+        <form class="partner-defense-form hidden" data-partner-defense-form enctype="multipart/form-data">
+          <input type="hidden" name="denunciaId" />
+          <div class="partner-defense-context" data-partner-defense-context></div>
+          <div class="field"><label for="partner-defense-text">Sua justificativa</label><textarea id="partner-defense-text" name="respostaLoja" rows="6" minlength="20" maxlength="5000" required placeholder="Explique sua versão e os esclarecimentos relevantes. Mínimo de 20 caracteres."></textarea></div>
+          <div class="field"><label for="partner-defense-files">Comprovantes (PNG, JPG ou PDF, até 4 arquivos de 5 MB)</label><input id="partner-defense-files" type="file" name="anexos" accept="image/png,image/jpeg,application/pdf" multiple /></div>
+          <p class="partner-defense-feedback" data-partner-defense-feedback role="status"></p>
+          <div class="partner-defense-actions"><button class="btn btn-ghost" type="button" data-defense-back>Voltar</button><button class="btn btn-primary" type="submit">Enviar defesa</button></div>
+        </form>
+      </dialog>`;
+    renderPartnerNotifications();
   }
 
   function createServiceRow(initialData = null) {
@@ -1624,6 +1827,7 @@ async function initPartnerPage() {
       if (!selectedDashboardShopId || !cachedShops.some((loja) => String(loja.id) === String(selectedDashboardShopId))) {
         selectedDashboardShopId = cachedShops[0] ? String(cachedShops[0].id) : "";
       }
+      await loadPartnerNotifications();
       renderPartnerDashboard();
 
       if (!cachedShops.length) {
@@ -1888,6 +2092,68 @@ async function initPartnerPage() {
     });
 
     dashboardRoot.addEventListener("click", (event) => {
+      const reportsButton = event.target.closest("[data-open-partner-reports]");
+      if (reportsButton) {
+        const dialog = dashboardRoot.querySelector("[data-partner-reports-dialog]");
+        const form = dashboardRoot.querySelector("[data-partner-defense-form]");
+        const list = dashboardRoot.querySelector("[data-partner-reports-list]");
+        form?.classList.add("hidden");
+        list?.classList.remove("hidden");
+        dialog?.showModal();
+        loadPartnerReports();
+        return;
+      }
+
+      const closeReportsButton = event.target.closest("[data-close-partner-reports]");
+      if (closeReportsButton) {
+        dashboardRoot.querySelector("[data-partner-reports-dialog]")?.close();
+        return;
+      }
+
+      const replyButton = event.target.closest("[data-partner-report-reply]");
+      if (replyButton) {
+        const report = partnerReports.find((item) => String(item.id) === replyButton.dataset.partnerReportReply);
+        if (!report) return;
+        const form = dashboardRoot.querySelector("[data-partner-defense-form]");
+        const list = dashboardRoot.querySelector("[data-partner-reports-list]");
+        const context = dashboardRoot.querySelector("[data-partner-defense-context]");
+        form.elements.denunciaId.value = String(report.id);
+        const previousAttachments = reportAttachments(report).map((filename) => `<a href="#" data-attachment-url="/api/parceiro/denuncias/${report.id}/anexos/${encodeURIComponent(filename)}" target="_blank" rel="noopener">Carregando ${escapeHtml(filename)}</a>`).join("");
+        context.innerHTML = `<h3>${escapeHtml(report.loja?.nome || "Sua loja")} · ${escapeHtml(report.motivo)}</h3><p><strong>Relato do cliente:</strong> ${escapeHtml(report.detalhes || "Sem detalhes adicionais.")}</p>${report.respostaLoja ? `<p><strong>Resposta anterior:</strong> ${escapeHtml(report.respostaLoja)}</p>` : ""}${previousAttachments ? `<p><strong>Anexos anteriores:</strong> ${previousAttachments}</p>` : ""}${report.parecerAdmin ? `<p><strong>Parecer anterior:</strong> ${escapeHtml(report.parecerAdmin)}</p>` : ""}`;
+        hydratePartnerAttachments(context);
+        list?.classList.add("hidden");
+        form?.classList.remove("hidden");
+        return;
+      }
+
+      if (event.target.closest("[data-defense-back]")) {
+        dashboardRoot.querySelector("[data-partner-defense-form]")?.classList.add("hidden");
+        dashboardRoot.querySelector("[data-partner-reports-list]")?.classList.remove("hidden");
+        return;
+      }
+
+      const notificationButton = event.target.closest("[data-toggle-notifications]");
+      if (notificationButton) {
+        const panel = dashboardRoot.querySelector("[data-notifications-panel]");
+        const isOpening = panel?.classList.contains("hidden");
+        panel?.classList.toggle("hidden", !isOpening);
+        notificationButton.setAttribute("aria-expanded", String(Boolean(isOpening)));
+        if (isOpening) loadPartnerNotifications();
+        return;
+      }
+
+      const markReadButton = event.target.closest("[data-notification-read]");
+      if (markReadButton) {
+        const notificationId = markReadButton.dataset.notificationRead;
+        donoFetch(`/api/dono/notificacoes/${notificationId}/lida`, { method: "PATCH" })
+          .then((res) => {
+            if (!res.ok) throw new Error("Não foi possível atualizar a notificação.");
+            return loadPartnerNotifications();
+          })
+          .catch(() => notify("Não foi possível marcar a notificação como lida."));
+        return;
+      }
+
       const toggleSidebarBtn = event.target.closest("[data-dashboard-toggle-sidebar]");
       if (toggleSidebarBtn) {
         ownerSidebarCollapsed = !ownerSidebarCollapsed;
@@ -1900,6 +2166,53 @@ async function initPartnerPage() {
       if (!editBtn) return;
       const loja = cachedShops.find((shop) => String(shop.id) === String(editBtn.dataset.dashboardEditShop));
       if (loja) loadShopToForm(loja);
+    });
+
+    dashboardRoot.addEventListener("submit", async (event) => {
+      const defenseForm = event.target.closest("[data-partner-defense-form]");
+      if (!defenseForm) return;
+      event.preventDefault();
+      const feedback = defenseForm.querySelector("[data-partner-defense-feedback]");
+      const submit = defenseForm.querySelector('button[type="submit"]');
+      const responseText = defenseForm.elements.respostaLoja.value.trim();
+      const files = Array.from(defenseForm.elements.anexos.files || []);
+      if (responseText.length < 20) {
+        feedback.textContent = "Escreva uma justificativa com pelo menos 20 caracteres.";
+        feedback.className = "partner-defense-feedback is-error";
+        defenseForm.elements.respostaLoja.focus();
+        return;
+      }
+      if (files.length > 4 || files.some((file) => file.size > 5 * 1024 * 1024)) {
+        feedback.textContent = "Anexe no máximo 4 arquivos de até 5 MB cada.";
+        feedback.className = "partner-defense-feedback is-error";
+        return;
+      }
+
+      feedback.textContent = "Enviando defesa...";
+      feedback.className = "partner-defense-feedback";
+      if (submit) submit.disabled = true;
+      try {
+        const token = getDonoToken();
+        const formData = new FormData(defenseForm);
+        const denunciaId = defenseForm.elements.denunciaId.value;
+        const response = await fetch(`/api/parceiro/denuncias/${encodeURIComponent(denunciaId)}/responder`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Não foi possível enviar a defesa.");
+        notify(data.message || "Defesa enviada para análise.");
+        defenseForm.reset();
+        defenseForm.classList.add("hidden");
+        dashboardRoot.querySelector("[data-partner-reports-list]")?.classList.remove("hidden");
+        await Promise.all([loadPartnerReports(), loadPartnerNotifications()]);
+      } catch (err) {
+        feedback.textContent = err.message || "Erro ao enviar a defesa.";
+        feedback.className = "partner-defense-feedback is-error";
+      } finally {
+        if (submit) submit.disabled = false;
+      }
     });
   }
 
@@ -2329,7 +2642,13 @@ async function initPartnerPage() {
   }
 
   // Logout do dono
-  ownerLogoutButton.addEventListener("click", () => {
+  ownerLogoutButton.addEventListener("click", async () => {
+    try {
+      await logoutFromServer();
+    } catch (error) {
+      notify(error.message || "Não foi possível encerrar a sessão.");
+      return;
+    }
     clearDonoToken();
     cachedShops = [];
     cachedBookings = [];
@@ -2671,7 +2990,11 @@ async function initPartnerPage() {
     showManagementArea(dono);
     await renderOwnedShops();
     await renderReceivedBookings();
-    switchTab(cachedShops.length ? "dashboard" : "cadastro");
+    const requestedTab = window.location.hash.slice(1);
+    const initialTab = ["dashboard", "cadastro", "estabelecimento", "agendamentos"].includes(requestedTab)
+      ? requestedTab
+      : cachedShops.length ? "dashboard" : "cadastro";
+    switchTab(initialTab);
   } else {
     showAuthArea();
     resetPartnerForm();
@@ -4471,11 +4794,16 @@ function initAuthPage() {
   ) return;
 
   const params = new URLSearchParams(window.location.search);
-  const next = params.get("next") || "index.html";
+  const next = params.get("next") || "servicos.html";
 
   function normalizedNextUrl() {
-    if (!next || next.startsWith("http")) return "index.html";
-    return next;
+    try {
+      const target = new URL(next, window.location.origin);
+      if (target.origin !== window.location.origin) return "servicos.html";
+      return `${target.pathname}${target.search}${target.hash}`;
+    } catch {
+      return "servicos.html";
+    }
   }
 
   function onlyDigits(value) {
@@ -4870,6 +5198,7 @@ if (page === "perfil") {
   initProfilePage();
 }
 if (page === "perfil-usuario") initUserProfilePage();
+if (page === "perfil-dono") initOwnerProfilePage();
 
 if (page === "parceiro") {
   initPartnerPage();
@@ -4898,6 +5227,7 @@ setActiveNavLink();
 updateNavAuthState();
 updatePartnerNavState();
 initializeSiteFooter();
+updateNavAuthState();
 initializeReportActions();
 initFavoriteButtonHandling();
 initHamburgerMenu();
@@ -4946,9 +5276,29 @@ function initHamburgerMenu() {
 }
 
 // ── Painel Admin ─────────────────────────────────────────────────────────────
-function getAdminToken() { return localStorage.getItem(adminTokenKey); }
-function setAdminToken(t) { localStorage.setItem(adminTokenKey, t); }
-function clearAdminToken() { localStorage.removeItem(adminTokenKey); }
+function getAdminToken() {
+  const token = localStorage.getItem(adminTokenKey);
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return (payload.role === "admin" && payload.adminRole) || (!payload.role && payload.adminRole) ? token : null;
+  } catch {
+    return null;
+  }
+}
+function setAdminToken(t) {
+  localStorage.removeItem(currentUserStorageKey);
+  localStorage.removeItem(authTokenStorageKey);
+  localStorage.removeItem(donoTokenKey);
+  localStorage.setItem(adminTokenKey, t);
+  updateNavAuthState();
+  updatePartnerNavState();
+}
+function clearAdminToken() {
+  localStorage.removeItem(adminTokenKey);
+  updateNavAuthState();
+  updatePartnerNavState();
+}
 
 function adminFetch(path, options = {}) {
   const token = getAdminToken();
@@ -5044,6 +5394,14 @@ async function initAdminPage() {
   const bookingsEmpty = document.getElementById("admin-bookings-empty");
   const reviewsEmpty = document.getElementById("admin-reviews-empty");
   const reportsEmpty = document.getElementById("admin-reports-empty");
+  const reportDialog = document.getElementById("admin-report-dialog");
+  const reportDialogTitle = document.getElementById("admin-report-dialog-title");
+  const reportAccusation = document.getElementById("admin-report-accusation");
+  const reportDefense = document.getElementById("admin-report-defense");
+  const reportOpinion = document.getElementById("admin-report-opinion");
+  let selectedAdminReport = null;
+  let adminReports = [];
+  let adminAttachmentObjectUrls = [];
   const userEditPanel = document.getElementById("admin-user-edit-panel");
   const userForm = document.getElementById("admin-user-form");
   const userFormTitle = document.getElementById("admin-user-form-title");
@@ -5186,11 +5544,24 @@ async function initAdminPage() {
 
   function statusBadge(status) {
     const value = String(status || "-");
-    const safe = escapeHtml(value);
     const normalized = value.toLowerCase();
-    const className = normalized === "finalizado" || normalized === "resolvida" || normalized === "ativo"
+    const labels = {
+      ativo: "Ativo",
+      aberta: "Pendente",
+      pendente: "Pendente",
+      bloqueado: "Bloqueado",
+      em_analise: "Em análise",
+      aguardando_defesa: "Aguardando defesa",
+      contestada: "Contestada",
+      resolvida: "Resolvida",
+      procedente: "Procedente",
+      rejeitada: "Rejeitada",
+      arquivada: "Arquivada",
+    };
+    const safe = escapeHtml(labels[normalized] || value);
+    const className = normalized === "finalizado" || normalized === "resolvida" || normalized === "procedente" || normalized === "ativo"
       ? "admin-status-active"
-      : normalized === "cancelado" || normalized === "arquivada" || normalized === "bloqueado"
+      : normalized === "cancelado" || normalized === "arquivada" || normalized === "rejeitada" || normalized === "bloqueado"
         ? "admin-status-blocked"
         : "admin-status-pending";
     return `<span class="admin-status ${className}">${safe}</span>`;
@@ -5792,27 +6163,28 @@ async function initAdminPage() {
 
   async function loadReportsAdmin() {
     if (!reportsTbody) return;
-    reportsTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Carregando...</td></tr>`;
+    reportsTbody.innerHTML = `<tr><td colspan="8" class="admin-loading">Carregando...</td></tr>`;
     try {
       const res = await adminFetch("/api/admin/denuncias");
       const { denuncias } = await res.json();
       if (!res.ok) throw new Error();
+      adminReports = Array.isArray(denuncias) ? denuncias : [];
       if (reportsCount) reportsCount.textContent = `${denuncias.length} denúncia${denuncias.length !== 1 ? "s" : ""} registradas`;
       reportsEmpty?.classList.toggle("hidden", Boolean(denuncias.length));
       reportsTbody.innerHTML = denuncias.length ? denuncias.map((report) => {
-        const target = report.avaliacao
-          ? `Avaliação #${report.avaliacao.id}`
-          : report.agendamento
-            ? `Agendamento #${report.agendamento.id}`
-            : report.loja?.nome || "-";
+        const target = report.avaliacao ? `Avaliação #${report.avaliacao.id}` : report.agendamento ? `Agendamento #${report.agendamento.id}` : "Loja";
+        const closed = ["procedente", "rejeitada", "resolvida", "arquivada"].includes(String(report.status || "").toLowerCase());
         return `
         <tr>
           <td><strong>${escapeHtml(report.tipo)}</strong><p class="empty-copy">${escapeHtml(report.usuario?.email || "sem usuário")}</p></td>
-          <td>${escapeHtml(target)}<p class="empty-copy">${escapeHtml(report.loja?.nome || "")}</p></td>
+          <td>${escapeHtml(report.loja?.nome || target)}</td>
           <td>${escapeHtml(report.motivo)}</td>
-          <td>${escapeHtml(report.detalhes || "-")}</td>
+          <td>${formatAdminDate(report.createdAt)}</td>
           <td>${statusBadge(report.status)}</td>
+          <td>${String(report.status).toLowerCase() === "contestada" ? `<button class="btn btn-secondary admin-action-btn" data-admin-resource-action="view-report-defense" data-id="${report.id}">Ver defesa</button>` : "-"}</td>
+          <td><details><summary>Ver detalhes</summary><p>${escapeHtml(report.detalhes || "Nenhum detalhe adicional.")}</p></details></td>
           <td class="admin-actions">
+            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="view-report-defense" data-id="${report.id}">${String(report.status).toLowerCase() === "contestada" ? "Ver defesa e decidir" : "Ver detalhes e decidir"}</button>
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="report-status" data-status="em_analise" data-id="${report.id}">Analisar</button>
             <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="report-status" data-status="resolvida" data-id="${report.id}">Resolver</button>
             <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-report" data-id="${report.id}">Excluir</button>
@@ -5820,7 +6192,7 @@ async function initAdminPage() {
         </tr>`;
       }).join("") : "";
     } catch {
-      reportsTbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Erro ao carregar denúncias.</td></tr>`;
+      reportsTbody.innerHTML = `<tr><td colspan="8" class="admin-loading">Erro ao carregar denúncias.</td></tr>`;
     }
   }
 
@@ -6242,18 +6614,26 @@ async function initAdminPage() {
   });
 
   managementShell.addEventListener("click", async (event) => {
+    const closeReportButton = event.target.closest("[data-close-admin-report]");
+    if (closeReportButton) {
+      reportDialog?.close();
+      adminAttachmentObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+      adminAttachmentObjectUrls = [];
+      return;
+    }
+
     const actionBtn = event.target.closest("[data-admin-resource-action]");
     if (!actionBtn) return;
     const action = actionBtn.dataset.adminResourceAction;
-    const id = actionBtn.dataset.id;
-    const suspensionResource = {
-      "suspend-user": { endpoint: "usuarios", label: "usuário", verb: "suspender" },
-      "unsuspend-user": { endpoint: "usuarios", label: "usuário", verb: "reativar" },
-      "suspend-owner": { endpoint: "donos", label: "parceiro", verb: "suspender" },
-      "unsuspend-owner": { endpoint: "donos", label: "parceiro", verb: "reativar" },
-    }[action];
+    const id = actionBtn.dataset.id || String(selectedAdminReport?.id || "");
 
     try {
+      const suspensionResource = {
+        "suspend-user": { endpoint: "usuarios", label: "usuário", verb: "suspender" },
+        "unsuspend-user": { endpoint: "usuarios", label: "usuário", verb: "reativar" },
+        "suspend-owner": { endpoint: "donos", label: "parceiro", verb: "suspender" },
+        "unsuspend-owner": { endpoint: "donos", label: "parceiro", verb: "reativar" },
+      }[action];
       if (suspensionResource) {
         const name = actionBtn.dataset.name || `esta ${suspensionResource.label}`;
         const confirmMessage = suspensionResource.verb === "suspender"
@@ -6286,6 +6666,57 @@ async function initAdminPage() {
         if (!res.ok) throw new Error(data.error || `Não foi possível ${verb} ${blockResource.label}.`);
         notify(`${blockResource.label.charAt(0).toUpperCase()}${blockResource.label.slice(1)} ${blocked ? "desbloqueado" : "bloqueado"} com sucesso.`);
         await refreshAdminData();
+        return;
+      }
+
+      if (action === "view-report-defense") {
+        selectedAdminReport = adminReports.find((report) => String(report.id) === String(id));
+        if (!selectedAdminReport) throw new Error("Não foi possível carregar os detalhes desta denúncia.");
+        const report = selectedAdminReport;
+        const date = formatAdminDate(report.createdAt);
+        if (reportDialogTitle) reportDialogTitle.textContent = `${report.loja?.nome || "Denúncia"} · ${report.motivo}`;
+        if (reportAccusation) {
+          reportAccusation.innerHTML = `<p><strong>Cliente:</strong> ${escapeHtml(report.usuario?.nome || "Não identificado")}</p><p><strong>Data:</strong> ${escapeHtml(date)}</p><p><strong>Motivo:</strong> ${escapeHtml(report.motivo)}</p><p>${escapeHtml(report.detalhes || "Sem detalhes adicionais informados.")}</p>`;
+        }
+        if (reportDefense) {
+          let attachments = [];
+          try {
+            attachments = JSON.parse(report.anexosResposta || "[]");
+          } catch {}
+          const safeAttachments = Array.isArray(attachments) ? attachments.filter((filename) => typeof filename === "string" && /^[a-f0-9-]+\.(png|jpg|pdf)$/i.test(filename)) : [];
+          const attachmentHtml = safeAttachments.map((filename) => {
+            const safeUrl = `/api/admin/denuncias/${report.id}/anexos/${encodeURIComponent(filename)}`;
+            const name = escapeHtml(filename);
+            return /\.(png|jpg)$/i.test(filename)
+              ? `<a class="admin-defense-attachment" href="#" data-private-admin-url="${safeUrl}" target="_blank" rel="noopener"><img data-private-admin-preview alt="Anexo da defesa ${name}" /><span>${name}</span></a>`
+              : `<a class="admin-defense-file" href="#" data-private-admin-url="${safeUrl}" target="_blank" rel="noopener">Abrir ${name}</a>`;
+          }).join("");
+          reportDefense.innerHTML = report.respostaLoja
+            ? `<p><strong>Enviada:</strong> ${escapeHtml(formatAdminDate(report.dataResposta))}</p><p>${escapeHtml(report.respostaLoja)}</p><div class="admin-defense-attachments">${attachmentHtml || "<span>Sem anexos.</span>"}</div>${report.parecerAdmin ? `<p><strong>Parecer anterior:</strong> ${escapeHtml(report.parecerAdmin)}</p>` : ""}`
+            : '<p>A loja ainda não enviou defesa.</p>';
+          adminAttachmentObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+          adminAttachmentObjectUrls = [];
+          reportDefense?.querySelectorAll("[data-private-admin-url]").forEach(async (link) => {
+            try {
+              const response = await adminFetch(link.dataset.privateAdminUrl);
+              if (!response.ok) throw new Error("Anexo indisponível");
+              const objectUrl = URL.createObjectURL(await response.blob());
+              adminAttachmentObjectUrls.push(objectUrl);
+              link.href = objectUrl;
+              link.querySelector("[data-private-admin-preview]")?.setAttribute("src", objectUrl);
+            } catch {
+              link.textContent = "Anexo indisponível";
+              link.removeAttribute("href");
+            }
+          });
+        }
+        if (reportOpinion) reportOpinion.value = report.parecerAdmin || "";
+        reportDialog?.querySelectorAll("[data-admin-resource-action]").forEach((button) => {
+          button.dataset.id = String(report.id);
+          button.dataset.shopId = String(report.loja?.id || "");
+          button.disabled = !report.loja && ["report-status", "report-block-shop"].includes(button.dataset.adminResourceAction);
+        });
+        reportDialog?.showModal();
         return;
       }
 
@@ -6337,11 +6768,47 @@ async function initAdminPage() {
       }
 
       if (action === "report-status") {
-        const res = await adminFetch(`/api/admin/denuncias/${id}/status`, {
-          method: "PUT",
-          body: JSON.stringify({ status: actionBtn.dataset.status }),
+        const status = actionBtn.dataset.status;
+        const parecerAdmin = reportOpinion?.value.trim() || "";
+        if (["procedente", "rejeitada"].includes(status) && parecerAdmin.length < 10) {
+          reportOpinion?.focus();
+          throw new Error("Informe um parecer com pelo menos 10 caracteres antes de concluir.");
+        }
+        let res = await adminFetch(`/api/admin/denuncias/${id}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status, parecerAdmin }),
         });
-        if (!res.ok) throw new Error("Erro ao atualizar denúncia.");
+        if (res.status === 404 || res.status === 405) {
+          const legacyStatus = { procedente: "resolvida", rejeitada: "arquivada", aguardando_defesa: "em_analise", contestada: "em_analise" }[status] || status;
+          res = await adminFetch(`/api/admin/denuncias/${id}/status`, {
+            method: "PUT",
+            body: JSON.stringify({ status: legacyStatus, parecerAdmin }),
+          });
+          if (res.ok && status === "procedente" && actionBtn.dataset.shopId) {
+            const blockRes = await adminFetch(`/api/admin/lojas/${actionBtn.dataset.shopId}/bloquear`, { method: "PUT" });
+            if (!blockRes.ok) throw new Error("Status atualizado, mas não foi possível bloquear a loja.");
+          }
+        }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Erro ao atualizar denúncia.");
+      }
+
+      if (action === "report-block-shop") {
+        if (!(await confirmAction("Bloquear a loja vinculada a esta denúncia?", { danger: true, confirmLabel: "Bloquear loja" }))) return;
+        const parecerAdmin = reportOpinion?.value.trim() || "";
+        if (parecerAdmin.length < 10) {
+          reportOpinion?.focus();
+          throw new Error("Informe um parecer com pelo menos 10 caracteres antes de bloquear.");
+        }
+        let res = await adminFetch(`/api/admin/denuncias/${id}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "procedente", bloquearLoja: true, parecerAdmin }),
+        });
+        if (res.status === 404 || res.status === 405) {
+          res = await adminFetch(`/api/admin/lojas/${actionBtn.dataset.shopId}/bloquear`, { method: "PUT" });
+        }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Erro ao bloquear loja.");
       }
 
       if (action === "delete-report") {
@@ -6350,6 +6817,7 @@ async function initAdminPage() {
         if (!res.ok) throw new Error("Erro ao excluir denúncia.");
       }
 
+      if (["report-status", "report-block-shop"].includes(action)) reportDialog?.close();
       await refreshAdminData();
     } catch (err) {
       notify(err.message || "Não foi possível concluir a ação.");
@@ -6415,7 +6883,13 @@ async function initAdminPage() {
     }
   });
 
-  logoutBtn?.addEventListener("click", () => {
+  logoutBtn?.addEventListener("click", async () => {
+    try {
+      await logoutFromServer();
+    } catch (error) {
+      notify(error.message || "Não foi possível encerrar a sessão.");
+      return;
+    }
     clearAdminToken();
     loginForm.reset();
     showAuth();

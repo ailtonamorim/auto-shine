@@ -6,3 +6,4 @@ env.txt
 prisma/data/
 assets/uploads/*
 !assets/uploads/.gitkeep
+uploads/

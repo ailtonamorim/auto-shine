@@ -6,9 +6,11 @@ Marketplace responsivo para lava jatos e estética automotiva, com cadastro de c
 
 - HTML5, CSS3 e JavaScript vanilla
 - Node.js + Express
-- Prisma + PostgreSQL
+- Prisma + SQLite
 - JWT para API autenticada
+- Papéis `client`, `partner` e `admin`, com páginas protegidas por cookie HttpOnly assinado
 - Passport Google OAuth 2.0
+- Tema claro/escuro compartilhado por tokens CSS
 
 ## Telas
 
@@ -37,8 +39,10 @@ O painel também mostra a saúde operacional de cada loja. A classificação con
 
 Copie `.env.example` para `.env` e preencha:
 
+O banco SQLite local fica em `prisma/dev.db`; não é necessário instalar ou iniciar um servidor de banco.
+
 ```env
-DATABASE_URL="postgresql://usuario:senha@localhost:5432/autoshine?schema=public"
+DATABASE_URL="file:./dev.db"
 PORT=3000
 SESSION_SECRET=troque-para-uma-chave-segura
 JWT_SECRET=troque-para-uma-chave-jwt-segura
@@ -73,6 +77,8 @@ npm run dev
 ```
 
 Acesse `http://localhost:3000`.
+
+Os logins emitem JWTs com papel explícito e os gravam também em cookie HttpOnly para que o servidor valide o acesso às páginas de cliente, parceiro e administração. As rotas de navegação do marketplace redirecionam sessões de parceiro/admin ao portal correspondente; as telas do parceiro usam navegação própria para gestão, sem links para o marketplace. Após esta mudança, sessões antigas devem entrar novamente para receber o cookie de acesso. O tema selecionado é compartilhado entre as telas e seus componentes flutuantes, incluindo campos autofill e sobreposições.
 
 Para validar o projeto:
 

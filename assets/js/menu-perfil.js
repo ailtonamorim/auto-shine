@@ -69,19 +69,51 @@
     let user = null;
     let token = null;
     let partner = null;
+    let adminToken = null;
     try {
       user = JSON.parse(localStorage.getItem("autoshine:current-user") || "null");
       token = localStorage.getItem("autoshine:token");
       const partnerToken = localStorage.getItem("autoshine:dono-token");
-      if (partnerToken) { try { partner = JSON.parse(atob(partnerToken.split(".")[1])); } catch {} }
+      const savedAdminToken = localStorage.getItem("autoshine:admin-token");
+      if (partnerToken) {
+        try {
+          const payload = JSON.parse(atob(partnerToken.split(".")[1]));
+          if ((payload.role === "partner" && payload.donoId) || (!payload.role && payload.donoId)) partner = payload;
+        } catch {}
+      }
+      if (savedAdminToken) {
+        try {
+          const payload = JSON.parse(atob(savedAdminToken.split(".")[1]));
+          if ((payload.role === "admin" && payload.adminRole) || (!payload.role && payload.adminRole)) adminToken = savedAdminToken;
+        } catch {}
+      }
     } catch {}
+    const clientToken = (() => {
+      if (!token) return false;
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        return (payload.role === "client" && payload.id) || (!payload.role && payload.id && !payload.donoId && !payload.adminRole);
+      } catch {
+        return false;
+      }
+    })();
+    const client = !partner && !adminToken && user && clientToken;
+    header.querySelectorAll('a[href*="perfil-dono.html"], a[href*="cadastro-dono.html"]').forEach((link) => {
+      link.hidden = !partner;
+    });
+    header.querySelectorAll('a[href*="admin.html"]').forEach((link) => {
+      link.hidden = !adminToken;
+    });
+    header.querySelectorAll('a[href*="perfil-usuario.html"], a[href*="meus-agendamentos.html"], a[href*="favoritos.html"]').forEach((link) => {
+      link.hidden = !client;
+    });
     const access = header.querySelector(".btn-acessar");
-    if (access) access.hidden = Boolean((user && token) || partner);
-    if (user && token) {
+    if (access) access.hidden = Boolean(client || partner || adminToken);
+    if (client) {
       const menu = window.createUserProfileMenu(user, () => {
         localStorage.removeItem("autoshine:current-user");
         localStorage.removeItem("autoshine:token");
-        location.href = "index.html";
+        location.href = "/auth/logout";
       });
       if (access) access.insertAdjacentElement("afterend", menu);
       else header.append(menu);

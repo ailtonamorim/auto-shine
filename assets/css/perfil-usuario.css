@@ -179,6 +179,12 @@
   gap: 12px;
 }
 
+.profile-combined-address {
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
 .profile-address-list {
   display: grid;
   gap: 14px;
