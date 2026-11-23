@@ -27,6 +27,7 @@ const favoritosRouter = require("./src/routes/favoritos");
 const agendamentosRouter = require("./src/routes/agendamentos");
 const avaliacoesRouter = require("./src/routes/avaliacoes");
 const denunciasRouter = require("./src/routes/denuncias");
+const defesaDenunciaRouter = require("./src/routes/defesaDenuncia");
 const utilsRouter = require("./src/routes/utils");
 const adminRouter = require("./src/routes/admin");
 
@@ -40,6 +41,7 @@ const publicPages = new Set([
   "mapa.html",
   "perfil.html",
   "perfil-usuario.html",
+  "perfil-dono.html",
   "servicos.html",
   "agendamento.html",
   "meus-agendamentos.html",
@@ -81,6 +83,7 @@ app.use("/api/favoritos", favoritosRouter);
 app.use("/api/agendamentos", agendamentosRouter);
 app.use("/api/avaliacoes", avaliacoesRouter);
 app.use("/api/denuncias", denunciasRouter);
+app.use("/api/denuncias", defesaDenunciaRouter);
 app.use("/api", utilsRouter);
 app.use("/api/admin", adminRouter);
 

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LavaJá | Perfil do Parceiro</title>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@400;500;600;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <link rel="stylesheet" href="assets/css/perfil-usuario.css" />
+  <link rel="stylesheet" href="assets/css/perfil-dono.css" />
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+  <script src="assets/js/menu-perfil.js"></script>
+</head>
+<body data-page="perfil-dono">
+  <div class="bg-decor"></div>
+
+  <header class="topbar container">
+    <a class="logo" href="cadastro-dono.html" aria-label="LavaJá - painel do parceiro">LavaJá</a>
+
+    <button class="nav-toggle" type="button" aria-label="Abrir menu" aria-expanded="false">
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+    </button>
+
+    <nav class="main-nav" id="main-nav" aria-label="Navegação do parceiro" hidden></nav>
+  </header>
+
+  <main class="container profile-user-page owner-profile-page">
+    <section class="profile-user-shell owner-profile-shell">
+      <aside class="profile-user-sidebar owner-profile-sidebar">
+        <div class="profile-user-card">
+          <div class="profile-user-avatar" id="owner-profile-avatar">P</div>
+          <div>
+            <span class="profile-user-kicker">Área do parceiro</span>
+            <h1 id="owner-profile-name">Carregando...</h1>
+            <p id="owner-profile-login" class="owner-profile-muted">Parceiro</p>
+          </div>
+        </div>
+
+        <div class="owner-profile-stats">
+          <article>
+            <span>Lojas</span>
+            <strong id="owner-profile-shop-count">0</strong>
+          </article>
+          <article>
+            <span>Serviços</span>
+            <strong id="owner-profile-service-count">0</strong>
+          </article>
+          <article>
+            <span>Avaliação</span>
+            <strong id="owner-profile-rating">--</strong>
+          </article>
+        </div>
+
+        <nav class="profile-user-menu" aria-label="Navegação do perfil do parceiro">
+          <button class="profile-user-tab is-active" type="button" data-owner-tab="conta">Dados do parceiro</button>
+          <button class="profile-user-tab" type="button" data-owner-tab="lojas">Minhas lojas</button>
+          <button class="profile-user-tab" type="button" data-owner-tab="perfil-loja">Perfil da loja</button>
+          <button class="profile-user-tab" type="button" data-owner-tab="servicos">Serviços</button>
+          <button class="profile-user-tab" type="button" data-owner-tab="preferencias">Preferências</button>
+        </nav>
+      </aside>
+
+      <div class="profile-user-content">
+        <section class="profile-user-panel is-active" data-owner-panel="conta">
+          <div class="section-head profile-user-head">
+            <h2>Dados do parceiro</h2>
+            <a class="btn btn-ghost btn-small" href="cadastro-dono.html">Abrir painel</a>
+          </div>
+
+          <form id="owner-account-form" class="profile-form" novalidate>
+            <div class="field-grid">
+              <div class="field">
+                <label for="owner-account-name">Nome do responsável</label>
+                <input id="owner-account-name" name="nome" type="text" maxlength="80" required />
+              </div>
+              <div class="field">
+                <label for="owner-account-login">Login</label>
+                <input id="owner-account-login" name="login" type="text" readonly aria-readonly="true" />
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="owner-account-email">E-mail</label>
+                <input id="owner-account-email" name="email" type="email" placeholder="contato@sualoja.com.br" />
+              </div>
+              <div class="field">
+                <label for="owner-account-cnpj">CNPJ</label>
+                <input id="owner-account-cnpj" name="cnpj" type="text" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00" />
+              </div>
+            </div>
+
+            <div class="profile-form-actions inline-actions">
+              <button class="btn btn-primary" id="owner-account-save" type="submit">Salvar dados</button>
+              <button class="btn btn-ghost" id="owner-logout-btn" type="button">Sair</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="profile-user-panel" data-owner-panel="lojas">
+          <div class="section-head profile-user-head">
+            <h2>Minhas lojas</h2>
+            <a class="btn btn-secondary" href="cadastro-dono.html">Cadastrar nova loja</a>
+          </div>
+
+          <div id="owner-shops-list" class="owner-shops-list"></div>
+        </section>
+
+        <section class="profile-user-panel" data-owner-panel="perfil-loja">
+          <div class="section-head profile-user-head">
+            <div>
+              <h2>Perfil da loja</h2>
+              <p class="owner-section-subtitle">Organize como sua estética aparece para os clientes.</p>
+            </div>
+            <select id="owner-shop-select" class="owner-shop-select" aria-label="Selecionar loja"></select>
+          </div>
+
+          <form id="owner-shop-form" class="profile-form owner-shop-form" novalidate>
+            <div class="owner-shop-preview" id="owner-shop-preview"></div>
+
+            <section class="owner-form-section">
+              <div class="owner-form-section-head">
+                <span class="owner-step">1</span>
+                <div>
+                  <h3>Informações principais</h3>
+                  <p>Use textos curtos e claros para facilitar a leitura no marketplace.</p>
+                </div>
+              </div>
+
+              <div class="field-grid">
+                <div class="field">
+                  <label for="owner-shop-name">Nome da estética</label>
+                  <input id="owner-shop-name" name="nome" type="text" maxlength="90" required />
+                </div>
+                <div class="field">
+                  <label for="owner-shop-category">Categoria</label>
+                  <input id="owner-shop-category" name="categoria" type="text" maxlength="60" placeholder="Lavagem completa" />
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="owner-shop-description">Descrição</label>
+                <textarea id="owner-shop-description" name="descricao" rows="3" required></textarea>
+              </div>
+            </section>
+
+            <section class="owner-form-section">
+              <div class="owner-form-section-head">
+                <span class="owner-step">2</span>
+                <div>
+                  <h3>Endereço</h3>
+                  <p>Digite o endereço e confirme a localização para exibir a loja no mapa.</p>
+                </div>
+              </div>
+
+              <div class="owner-location-card">
+                <div class="field owner-location-field">
+                  <label for="owner-shop-address">Endereço completo</label>
+                  <input id="owner-shop-address" name="endereco" type="text" required placeholder="Rua, número, bairro e cidade" />
+                </div>
+                <div class="owner-location-actions">
+                  <button class="btn btn-secondary" id="owner-geocode-address" type="button">Localizar endereço</button>
+                  <button class="btn btn-ghost" id="owner-use-location" type="button">Usar minha localização</button>
+                </div>
+                <p class="owner-feedback" id="owner-location-feedback"></p>
+              </div>
+
+              <input id="owner-shop-latitude" name="latitude" type="hidden" />
+              <input id="owner-shop-longitude" name="longitude" type="hidden" />
+            </section>
+
+            <section class="owner-form-section">
+              <div class="owner-form-section-head">
+                <span class="owner-step">3</span>
+                <div>
+                  <h3>Imagens</h3>
+                  <p>Adicione fotos reais da fachada, área de atendimento ou resultados.</p>
+                </div>
+              </div>
+
+              <div class="owner-photo-grid">
+                <label class="owner-photo-uploader is-large" for="owner-shop-photo-file">
+                  <span class="owner-photo-preview" id="owner-main-photo-preview"></span>
+                  <strong>Foto principal</strong>
+                  <small>Clique para escolher uma imagem</small>
+                </label>
+                <label class="owner-photo-uploader is-large" for="owner-shop-cover-file">
+                  <span class="owner-photo-preview" id="owner-cover-photo-preview"></span>
+                  <strong>Foto de capa</strong>
+                  <small>Imagem horizontal recomendada</small>
+                </label>
+              </div>
+
+              <div class="owner-gallery-row" aria-label="Fotos adicionais">
+                <label class="owner-photo-uploader is-small" for="owner-gallery-file-0">
+                  <span class="owner-photo-preview" data-gallery-preview="0"></span>
+                  <strong>Foto 2</strong>
+                </label>
+                <label class="owner-photo-uploader is-small" for="owner-gallery-file-1">
+                  <span class="owner-photo-preview" data-gallery-preview="1"></span>
+                  <strong>Foto 3</strong>
+                </label>
+                <label class="owner-photo-uploader is-small" for="owner-gallery-file-2">
+                  <span class="owner-photo-preview" data-gallery-preview="2"></span>
+                  <strong>Foto 4</strong>
+                </label>
+              </div>
+
+              <input id="owner-shop-photo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <input id="owner-shop-cover-file" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <input id="owner-gallery-file-0" data-gallery-file="0" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <input id="owner-gallery-file-1" data-gallery-file="1" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <input id="owner-gallery-file-2" data-gallery-file="2" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <input id="owner-shop-photo" name="fotoUrl" type="hidden" />
+              <input id="owner-shop-cover" name="capaUrl" type="hidden" />
+              <textarea id="owner-shop-gallery" name="fotosAdicionais" hidden></textarea>
+              <p class="owner-feedback" id="owner-photo-feedback"></p>
+            </section>
+
+            <section class="owner-form-section">
+              <div class="owner-form-section-head">
+                <span class="owner-step">4</span>
+                <div>
+                  <h3>Atendimento</h3>
+                  <p>Configure os dias, horários e condições de atendimento.</p>
+                </div>
+              </div>
+
+              <div class="field-grid">
+                <div class="field">
+                  <label for="owner-shop-payments">Formas de pagamento</label>
+                  <input id="owner-shop-payments" name="formasPagamento" type="text" placeholder="Pix, cartão e dinheiro" />
+                </div>
+                <div class="field">
+                  <label for="owner-shop-times">Horários</label>
+                  <input id="owner-shop-times" name="agendaHorarios" type="text" placeholder="08:00, 09:30, 11:00" />
+                </div>
+              </div>
+
+              <div class="field">
+                <label>Dias de funcionamento</label>
+                <div class="owner-weekdays" id="owner-shop-days">
+                  <label><input type="checkbox" name="agendaDias" value="1" /> Seg</label>
+                  <label><input type="checkbox" name="agendaDias" value="2" /> Ter</label>
+                  <label><input type="checkbox" name="agendaDias" value="3" /> Qua</label>
+                  <label><input type="checkbox" name="agendaDias" value="4" /> Qui</label>
+                  <label><input type="checkbox" name="agendaDias" value="5" /> Sex</label>
+                  <label><input type="checkbox" name="agendaDias" value="6" /> Sáb</label>
+                  <label><input type="checkbox" name="agendaDias" value="0" /> Dom</label>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="owner-shop-policy">Política de cancelamento</label>
+                <textarea id="owner-shop-policy" name="politicaCancelamento" rows="3"></textarea>
+              </div>
+            </section>
+
+            <div class="owner-sticky-actions">
+              <button class="btn btn-primary" id="owner-shop-save" type="submit">Salvar perfil da loja</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="profile-user-panel" data-owner-panel="servicos">
+          <div class="section-head profile-user-head">
+            <h2>Serviços da loja</h2>
+            <button class="btn btn-secondary" id="owner-service-new" type="button">Novo serviço</button>
+          </div>
+
+          <div id="owner-services-list" class="owner-services-list"></div>
+
+          <form id="owner-service-form" class="profile-form owner-service-form hidden" novalidate>
+            <input id="owner-service-id" type="hidden" />
+            <div class="field-grid">
+              <div class="field">
+                <label for="owner-service-name">Nome do serviço</label>
+                <input id="owner-service-name" name="nome" type="text" required />
+              </div>
+              <div class="field">
+                <label for="owner-service-price">Preço (R$)</label>
+                <input id="owner-service-price" name="preco" type="number" min="0" step="0.01" required />
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="owner-service-duration">Duração</label>
+                <input id="owner-service-duration" name="duracao" type="text" required />
+              </div>
+              <div class="field">
+                <label for="owner-service-description">Descrição curta</label>
+                <input id="owner-service-description" name="descricao" type="text" required />
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="owner-service-included">O que está incluído</label>
+                <textarea id="owner-service-included" name="inclusos" rows="4"></textarea>
+              </div>
+              <div class="field">
+                <label for="owner-service-steps">Etapas</label>
+                <textarea id="owner-service-steps" name="etapas" rows="4"></textarea>
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="owner-service-products">Produtos</label>
+                <textarea id="owner-service-products" name="produtos" rows="3"></textarea>
+              </div>
+              <div class="field">
+                <label for="owner-service-warranty">Garantia</label>
+                <textarea id="owner-service-warranty" name="garantia" rows="3"></textarea>
+              </div>
+            </div>
+            <div class="field">
+              <label for="owner-service-guidance">Orientações ao cliente</label>
+              <textarea id="owner-service-guidance" name="orientacoes" rows="3"></textarea>
+            </div>
+            <div class="profile-form-actions inline-actions">
+              <button class="btn btn-primary" id="owner-service-save" type="submit">Salvar serviço</button>
+              <button class="btn btn-ghost" id="owner-service-cancel" type="button">Cancelar</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="profile-user-panel" data-owner-panel="preferencias">
+          <div class="section-head profile-user-head">
+            <h2>Preferências</h2>
+          </div>
+
+          <div class="preference-card">
+            <div>
+              <strong>Tema</strong>
+              <p>Escolha entre tema claro e escuro.</p>
+            </div>
+            <button class="btn btn-secondary toggle-theme-inline" id="owner-theme-toggle" type="button" aria-pressed="false">Alternar tema</button>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="assets/js/perfil-dono.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
