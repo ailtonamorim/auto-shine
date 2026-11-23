@@ -123,7 +123,7 @@ function checkPrismaSchema() {
   runCommand("Schema Prisma valido", process.execPath, [prismaCli, "validate"], {
     env: {
       ...process.env,
-      DATABASE_URL: process.env.DATABASE_URL || "file:./data/check.db",
+      DATABASE_URL: process.env.DATABASE_URL || "postgresql://validacao:validacao@localhost:5432/validacao",
     },
     timeout: 90000,
   });

@@ -45,7 +45,7 @@ async function recalcularStatusSaudeLojas(now = new Date()) {
     });
     return prisma.loja.update({
       where: { id: loja.id },
-      data: { healthStatus: saude.healthStatus, healthReasons: JSON.stringify(saude.healthReasons) },
+      data: { healthStatus: saude.healthStatus, healthReasons: saude.healthReasons },
     });
   });
   const resultados = await prisma.$transaction(updates);

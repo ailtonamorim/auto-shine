@@ -241,12 +241,7 @@ async function listarLojasAdmin(req, res) {
         healthCounts[item.healthStatus] = item._count._all;
       }
     });
-    const lojasSerializadas = lojas.map((loja) => {
-      const healthReasons = JSON.parse(loja.healthReasons);
-      if (!Array.isArray(healthReasons)) throw new Error("Motivos de saúde de loja inválidos.");
-      return { ...loja, healthReasons };
-    });
-    res.json({ lojas: lojasSerializadas, healthCounts });
+    res.json({ lojas, healthCounts });
   } catch {
     res.status(500).json({ error: "Erro interno." });
   }
