@@ -39,10 +39,13 @@ function getCurrentUser() {
 }
 
 function setCurrentUser(user, token) {
+  // Uma autenticação explícita escolhe qual conta está em uso neste navegador.
+  localStorage.removeItem(donoTokenKey);
   localStorage.setItem(currentUserStorageKey, JSON.stringify(user));
   if (token) localStorage.setItem(authTokenStorageKey, token);
   else localStorage.removeItem(authTokenStorageKey);
   updateNavAuthState();
+  updatePartnerNavState();
 }
 
 function clearCurrentUser() {
@@ -61,12 +64,17 @@ function getDonoToken() {
 }
 
 function setDonoToken(token) {
+  localStorage.removeItem(currentUserStorageKey);
+  localStorage.removeItem(authTokenStorageKey);
   localStorage.setItem(donoTokenKey, token);
   updateNavAuthState();
   updatePartnerNavState();
 }
 
 function clearDonoToken() {
+  // Também descarta sessões de cliente remanescentes de versões anteriores.
+  localStorage.removeItem(currentUserStorageKey);
+  localStorage.removeItem(authTokenStorageKey);
   localStorage.removeItem(donoTokenKey);
   updateNavAuthState();
   updatePartnerNavState();
@@ -79,18 +87,34 @@ function getDonoFromToken() {
 }
 
 // ── Helpers de fetch autenticado ────────────────────────────────────────────
-function donoFetch(path, options = {}) {
+async function donoFetch(path, options = {}) {
   const token = getDonoToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  return fetch(path, { ...options, headers });
+  const response = await fetch(path, { ...options, headers });
+  await tratarSessaoEncerrada(response, "dono", token);
+  return response;
 }
 
-function userFetch(path, options = {}) {
+async function userFetch(path, options = {}) {
   const token = getAuthToken();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  return fetch(path, { ...options, headers });
+  const response = await fetch(path, { ...options, headers });
+  await tratarSessaoEncerrada(response, "usuario", token);
+  return response;
+}
+
+async function tratarSessaoEncerrada(response, tipo, tokenUsado) {
+  if (response.status !== 401) return;
+  const data = await response.clone().json().catch(() => ({}));
+  if (data.code !== "SESSAO_INVALIDA") return;
+  // Uma resposta atrasada não pode encerrar um login mais recente.
+  if ((tipo === "dono" ? getDonoToken() : getAuthToken()) !== tokenUsado) return;
+  if (tipo === "dono") clearDonoToken();
+  else clearCurrentUser();
+  const perfil = tipo === "dono" ? "empresa" : "cliente";
+  window.location.href = `cadastro.html?perfil=${perfil}&mode=login&auth=session_expired`;
 }
 
 function readFileAsDataUrl(file) {
@@ -120,56 +144,203 @@ async function uploadImageFile(file, scope, fetcher) {
   return data.url || "";
 }
 
-// Feedback visual
-const toastTimers = new WeakMap();
+// Feedback visual: tipos explícitos, leitura sem pressa e confirmações únicas.
+const toastRecords = new Map();
+const toastLabels = { success: "Sucesso", error: "Erro", warning: "Atenção", info: "Informação" };
+const toastIcons = { success: "✓", error: "!", warning: "!", info: "i" };
 
 function ensureToastRoot() {
   let root = document.querySelector("[data-toast-root]");
-  if (root) return root;
-  root = document.createElement("div");
-  root.className = "toast-stack";
-  root.dataset.toastRoot = "true";
-  root.setAttribute("aria-live", "polite");
-  root.setAttribute("aria-atomic", "false");
-  document.body.appendChild(root);
+  if (!root) {
+    root = document.createElement("div");
+    root.className = "toast-stack";
+    root.dataset.toastRoot = "true";
+    root.setAttribute("aria-label", "Notificações");
+    document.body.appendChild(root);
+  }
   return root;
 }
 
 function showToast(message, type = "info", options = {}) {
+  type = Object.hasOwn(toastLabels, type) ? type : "info";
+  const text = String(message ?? "").trim();
+  if (!text) return null;
+  const key = `${type}:${text}`;
+  if (toastRecords.has(key)) return toastRecords.get(key).element;
   const root = ensureToastRoot();
+  if (toastRecords.size >= 3) {
+    const records = [...toastRecords.values()];
+    (records.find(record => record.type === "success" || record.type === "info") || records[0]).close();
+  }
   const toast = document.createElement("div");
   toast.className = `app-toast app-toast-${type}`;
-  toast.setAttribute("role", type === "error" ? "alert" : "status");
-  toast.innerHTML = `
-    <span>${escapeHtml(message)}</span>
-    <button type="button" aria-label="Fechar aviso">&times;</button>
-  `;
-  root.appendChild(toast);
-
-  const close = () => {
-    const timer = toastTimers.get(toast);
-    if (timer) window.clearTimeout(timer);
-    toast.classList.add("is-leaving");
-    window.setTimeout(() => toast.remove(), 180);
+  toast.innerHTML = `<span class="app-toast-icon" aria-hidden="true">${toastIcons[type]}</span>
+    <div class="app-toast-content" role="${type === "error" ? "alert" : "status"}" aria-atomic="true">
+      <strong>${toastLabels[type]}</strong><span>${escapeHtml(text)}</span>
+    </div><button type="button" aria-label="Fechar aviso: ${toastLabels[type]}">&times;</button>`;
+  // Erros ficam disponíveis até o fechamento; duration: 0 também é persistente.
+  let remaining = options.duration ?? (type === "error" ? 0 : type === "warning" ? 8000 : 5000);
+  if (!Number.isFinite(remaining) || remaining < 0) remaining = 0;
+  let timer = null;
+  let started = 0;
+  let hovered = false;
+  let focused = false;
+  const pause = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+      remaining = Math.max(1, remaining - (Date.now() - started));
+    }
   };
-
-  toast.querySelector("button")?.addEventListener("click", close);
-  const timer = window.setTimeout(close, options.duration || 4200);
-  toastTimers.set(toast, timer);
+  const close = () => {
+    pause();
+    const hadFocus = toast.contains(document.activeElement);
+    toastRecords.delete(key);
+    toast.remove();
+    if (hadFocus) root.querySelector("button")?.focus({ preventScroll: true });
+  };
+  const resume = () => {
+    if (!remaining || hovered || focused || timer !== null) return;
+    started = Date.now();
+    timer = window.setTimeout(close, remaining);
+  };
+  toast.addEventListener("pointerenter", () => { hovered = true; pause(); });
+  toast.addEventListener("pointerleave", () => { hovered = false; resume(); });
+  toast.addEventListener("focusin", () => { focused = true; pause(); });
+  toast.addEventListener("focusout", event => {
+    if (toast.contains(event.relatedTarget)) return;
+    focused = false;
+    resume();
+  });
+  toast.querySelector("button").addEventListener("click", close);
+  toastRecords.set(key, { element: toast, type, close });
+  root.appendChild(toast);
+  resume();
   return toast;
 }
 
-function toastFromMessage(message, fallbackType = "info") {
-  const text = String(message || "");
-  if (/sucesso|realizado|publicado|atualizado|removido|conclu[ií]do|salvo/i.test(text)) return "success";
-  if (/erro|inv[aá]lido|n[aã]o foi|n[aã]o conseguiu|ocupado|falha|precisa|preencha|informe|verifique/i.test(text)) return "error";
-  if (/aviso|aten[cç][aã]o|confira|configure|sess[aã]o|login/i.test(text)) return "warning";
-  return fallbackType;
+function notify(message, type = "info", options = {}) {
+  return showToast(message, type, options);
 }
 
-function notify(message, type) {
-  showToast(message, type || toastFromMessage(message));
+// Mensagem única na página de destino, sem colocar textos ou dados de conta na URL.
+function redirectWithNotice(url, message, type = "success") {
+  const destination = new URL(url, window.location.href);
+  if (destination.origin !== window.location.origin) return;
+  try {
+    sessionStorage.setItem("autoshine:flash", JSON.stringify({
+      message, type, path: destination.pathname, expires: Date.now() + 60000,
+    }));
+  } catch { /* O redirecionamento continua se o navegador bloquear armazenamento. */ }
+  window.location.assign(destination.href);
 }
+
+function consumeNotice() {
+  try {
+    const raw = sessionStorage.getItem("autoshine:flash");
+    if (!raw) return;
+    const notice = JSON.parse(raw);
+    if (notice.expires > Date.now() && notice.path !== window.location.pathname) return;
+    sessionStorage.removeItem("autoshine:flash");
+    if (notice.expires > Date.now() && typeof notice.message === "string") notify(notice.message, notice.type);
+  } catch { try { sessionStorage.removeItem("autoshine:flash"); } catch {} }
+}
+
+// Bloqueio por formulário/lista antes do primeiro await, com restauração em qualquer saída.
+const pendingActionTargets = new WeakSet();
+function guardAction(handler, selector = null) {
+  return async function(event) {
+    const target = event.currentTarget;
+    const button = selector ? event.target.closest(selector) : event.submitter;
+    if (selector && !button) return;
+    if (pendingActionTargets.has(target)) { event.preventDefault(); return; }
+    pendingActionTargets.add(target);
+    const hadFocus = button === document.activeElement;
+    const wasDisabled = button?.disabled;
+    const oldBusy = target.getAttribute("aria-busy");
+    if (button) button.disabled = true;
+    target.setAttribute("aria-busy", "true");
+    try { await handler.call(this, event); }
+    catch { notify("Não foi possível concluir a ação. Tente novamente.", "error"); }
+    finally {
+      pendingActionTargets.delete(target);
+      if (button) button.disabled = wasDisabled;
+      if (hadFocus && button?.isConnected && !modalStack.length && document.activeElement === document.body) button.focus({ preventScroll: true });
+      if (oldBusy === null) target.removeAttribute("aria-busy");
+      else target.setAttribute("aria-busy", oldBusy);
+    }
+  };
+}
+
+// Ciclo de foco compartilhado por modais, incluindo modais sobrepostos.
+const modalStack = [];
+let modalInertSnapshot = [];
+function modalFocusable(root) {
+  return [...root.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')]
+    .filter(element => !element.disabled && element.tabIndex >= 0 && !element.closest('[inert]') && element.getClientRects().length);
+}
+function restoreModalBackground() {
+  modalInertSnapshot.forEach(([element, inert]) => { element.inert = inert; });
+  modalInertSnapshot = [];
+}
+function updateModalBackground() {
+  restoreModalBackground();
+  const top = modalStack.at(-1);
+  document.body.classList.toggle("app-modal-open", Boolean(top));
+  if (!top) return;
+  let child = top.root;
+  while (child && child !== document.body) {
+    const parent = child.parentElement;
+    if (!parent) break;
+    for (const sibling of parent.children) {
+      if (sibling === child || sibling.matches('[data-toast-root], script, style, link') || top.allowed.includes(sibling)) continue;
+      modalInertSnapshot.push([sibling, sibling.inert]);
+      sibling.inert = true;
+    }
+    child = parent;
+  }
+}
+function activateModal(root, options = {}) {
+  if (modalStack.some(item => item.root === root)) return;
+  modalStack.push({ root, onEscape: options.onEscape, allowed: options.allowed || [], previousFocus: document.activeElement });
+  root.setAttribute("tabindex", "-1");
+  updateModalBackground();
+  (options.initialFocus || modalFocusable(root)[0] || root).focus({ preventScroll: true });
+}
+function deactivateModal(root) {
+  const index = modalStack.findIndex(item => item.root === root);
+  if (index < 0) return;
+  const wasTop = index === modalStack.length - 1;
+  const [closed] = modalStack.splice(index, 1);
+  updateModalBackground();
+  if (!wasTop) return;
+  const top = modalStack.at(-1);
+  const previous = closed.previousFocus;
+  if (previous?.isConnected && !previous.closest('[inert]') && previous.getClientRects().length && (!top || top.root.contains(previous))) previous.focus({ preventScroll: true });
+  else if (top) (modalFocusable(top.root)[0] || top.root).focus({ preventScroll: true });
+}
+document.addEventListener("keydown", event => {
+  const top = modalStack.at(-1);
+  if (!top) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    top.onEscape?.();
+  } else if (event.key === "Tab") {
+    const elements = modalFocusable(top.root);
+    const first = elements[0] || top.root, last = elements.at(-1) || top.root;
+    if (!elements.length || !top.root.contains(document.activeElement) || (event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+  }
+}, true);
+document.addEventListener("focusin", event => {
+  const top = modalStack.at(-1);
+  if (top && !top.root.contains(event.target)) (modalFocusable(top.root)[0] || top.root).focus({ preventScroll: true });
+});
+// Fim da base de feedback.
+
 
 function initializePasswordVisibilityToggles(root = document) {
   const passwordInputs = root.querySelectorAll('input[type="password"]:not([data-password-toggle-ready="true"])');
@@ -224,9 +395,15 @@ function ensureConfirmDialog() {
   dialog.dataset.confirmDialog = "true";
   dialog.innerHTML = `
     <div class="confirm-dialog-backdrop" data-confirm-cancel></div>
-    <article class="confirm-dialog-card" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+    <article class="confirm-dialog-card" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
       <h2 id="confirm-dialog-title">Confirmar ação</h2>
-      <p data-confirm-message></p>
+      <p id="confirm-dialog-message" data-confirm-message></p>
+      <div class="hidden" data-confirm-fields>
+        <label for="confirm-reason">Motivo da alteração</label>
+        <textarea id="confirm-reason" rows="3" minlength="5" maxlength="500"></textarea>
+        <label class="hidden" data-confirm-exception-label><input type="checkbox" data-confirm-exception /> Registrar exceção ao prazo normal. A justificativa será compartilhada no histórico.</label>
+        <p data-confirm-feedback role="alert"></p>
+      </div>
       <div class="confirm-dialog-actions">
         <button class="btn btn-ghost" type="button" data-confirm-cancel>Cancelar</button>
         <button class="btn btn-primary" type="button" data-confirm-ok>Confirmar</button>
@@ -237,40 +414,51 @@ function ensureConfirmDialog() {
   return dialog;
 }
 
+let confirmationOpen = false;
 function confirmAction(message, options = {}) {
+  // Uma segunda solicitação não herda a resposta da primeira.
+  if (confirmationOpen) return Promise.resolve(false);
+  confirmationOpen = true;
   const dialog = ensureConfirmDialog();
-  const title = dialog.querySelector("#confirm-dialog-title");
-  const text = dialog.querySelector("[data-confirm-message]");
   const okButton = dialog.querySelector("[data-confirm-ok]");
-  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-
-  if (title) title.textContent = options.title || "Confirmar ação";
-  if (text) text.textContent = message;
-  if (okButton) {
-    okButton.textContent = options.confirmLabel || "Confirmar";
-    okButton.classList.toggle("btn-danger", Boolean(options.danger));
-  }
-
+  const cancelButton = dialog.querySelector("button[data-confirm-cancel]");
+  dialog.querySelector("#confirm-dialog-title").textContent = options.title || (options.danger ? "Confirmar exclusão" : "Confirmar ação");
+  dialog.querySelector("[data-confirm-message]").textContent = message;
+  okButton.textContent = options.confirmLabel || "Confirmar";
+  okButton.classList.toggle("btn-danger", Boolean(options.danger));
+  const reasonInput = dialog.querySelector("#confirm-reason");
+  const exceptionInput = dialog.querySelector("[data-confirm-exception]");
+  const feedback = dialog.querySelector("[data-confirm-feedback]");
+  dialog.querySelector("[data-confirm-fields]").classList.toggle("hidden", !options.requireReason);
+  dialog.querySelector("[data-confirm-exception-label]").classList.toggle("hidden", !options.allowDeadlineException);
+  reasonInput.value = "";
+  exceptionInput.checked = false;
+  feedback.textContent = "";
   dialog.classList.remove("hidden");
-  okButton?.focus();
-
-  return new Promise((resolve) => {
-    const close = (result) => {
+  return new Promise(resolve => {
+    let closed = false;
+    const close = result => {
+      if (closed) return;
+      closed = true;
       dialog.classList.add("hidden");
       dialog.removeEventListener("click", onClick);
-      document.removeEventListener("keydown", onKeydown);
-      previousFocus?.focus();
+      deactivateModal(dialog);
+      confirmationOpen = false;
       resolve(result);
     };
-    const onClick = (event) => {
-      if (event.target.closest("[data-confirm-ok]")) close(true);
-      if (event.target.closest("[data-confirm-cancel]")) close(false);
-    };
-    const onKeydown = (event) => {
-      if (event.key === "Escape") close(false);
+    const onClick = event => {
+      if (event.target.closest("[data-confirm-ok]")) {
+        if (options.requireReason) {
+          const motivo = reasonInput.value.trim();
+          if (motivo.length < 5 || motivo.length > 500) { feedback.textContent = "Informe o motivo com 5 a 500 caracteres."; reasonInput.focus(); return; }
+          if (options.allowDeadlineException && !exceptionInput.checked) { feedback.textContent = "Confirme a exceção de prazo para continuar."; exceptionInput.focus(); return; }
+          close({ motivo, excecaoPrazo: exceptionInput.checked });
+        } else close(true);
+      }
+      else if (event.target.closest("[data-confirm-cancel]")) close(false);
     };
     dialog.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKeydown);
+    activateModal(dialog, { initialFocus: options.danger ? cancelButton : okButton, onEscape: () => close(false) });
   });
 }
 
@@ -438,8 +626,8 @@ function setActiveNavLink() {
 
 // Função responsável por atualizar o menu com base no login do usuário
 function updateNavAuthState() {
-  const clientLogged = Boolean(getCurrentUser() && getAuthToken());
   const partnerLogged = Boolean(getDonoFromToken());
+  const clientLogged = !partnerLogged && Boolean(getCurrentUser() && getAuthToken());
   const anyUserLogged = clientLogged || partnerLogged;
   
   // Pegamos os dois links restritos
@@ -458,6 +646,10 @@ function updateNavAuthState() {
   if (linkFavoritos) {
     linkFavoritos.classList.toggle("hidden", !clientLogged);
   }
+
+  document.querySelectorAll('header a[href*="favoritos.html"], header a[href*="meus-agendamentos.html"]').forEach((link) => {
+    link.classList.toggle("hidden", !clientLogged);
+  });
 
   // Remove os botões de "Sair" antigos antes de recriar para evitar duplicações
   document.querySelectorAll("[data-client-session-link]").forEach((item) => item.remove());
@@ -483,6 +675,11 @@ function updateNavAuthState() {
 // Mantém o acesso ao painel visível em todas as páginas enquanto uma empresa
 // estiver autenticada, sem precisar alterar o menu de cada arquivo HTML.
 function updatePartnerNavState() {
+  const footer = document.querySelector(".site-footer");
+  if (footer) {
+    footer.remove();
+    initializeSiteFooter();
+  }
   const partnerLogged = Boolean(getDonoFromToken());
   const partnerPage = page === "cadastro-dono" || page === "parceiro";
 
@@ -534,6 +731,10 @@ function updatePartnerNavState() {
 }
 
 function requireAuth(reason = "login_required") {
+  if (getDonoFromToken()) {
+    notify("Você está usando uma conta de parceiro. Agendamentos e avaliações são ações de uma conta de cliente.", "warning");
+    return false;
+  }
   if (getCurrentUser() && getAuthToken()) return true;
   clearCurrentUser();
   redirectToLogin(reason);
@@ -542,13 +743,25 @@ function requireAuth(reason = "login_required") {
 
 function initializeAuthRequiredLinks() {
   document.querySelectorAll("a.requires-auth").forEach((link) => {
+    if (link.dataset.authBound === "1") return;
+    link.dataset.authBound = "1";
     link.addEventListener("click", (event) => {
-      if (getCurrentUser() && getAuthToken()) return;
-      event.preventDefault();
-      clearCurrentUser();
-      redirectToLogin(link.dataset.authAction || "login_required");
+      if (!requireAuth(link.dataset.authAction || "login_required")) event.preventDefault();
     });
   });
+}
+
+function showPartnerClientRestriction() {
+  if (!getDonoFromToken()) return false;
+  const main = document.querySelector("main");
+  if (main) main.innerHTML = `
+    <section class="panel">
+      <p class="eyebrow">Conta de parceiro</p>
+      <h1>Esta área é destinada a clientes</h1>
+      <p class="hero-text">Sua conta de parceiro gerencia o estabelecimento e os agendamentos recebidos. Para contratar serviços, use uma conta de cliente.</p>
+      <a class="btn btn-primary" href="cadastro-dono.html">Voltar ao painel do parceiro</a>
+    </section>`;
+  return true;
 }
 
 // ── Rodape do site ───────────────────────────────────────────────────────────
@@ -556,6 +769,7 @@ function initializeSiteFooter() {
   if (page === "admin" || document.querySelector(".site-footer")) return;
 
   const year = new Date().getFullYear();
+  const partnerLogged = Boolean(getDonoFromToken());
   const footer = document.createElement("footer");
   footer.className = "site-footer";
   footer.innerHTML = `
@@ -565,18 +779,22 @@ function initializeSiteFooter() {
         <p>Marketplace para encontrar lava jatos, comparar avalia&ccedil;&otilde;es e agendar servi&ccedil;os automotivos com praticidade.</p>
       </section>
       <section>
-        <h3>Para Você</h3>
+        <h3>${partnerLogged ? "Sua empresa" : "Para Você"}</h3>
         <nav class="footer-links" aria-label="Links do AutoShine">
+          ${partnerLogged ? `
+          <a href="cadastro-dono.html">Dashboard</a>
+          <a href="cadastro-dono.html?tab=estabelecimento">Meu lava-jato</a>
+          <a href="cadastro-dono.html?tab=agendamentos">Agendamentos recebidos</a>` : `
           <a href="index.html">In&iacute;cio</a>
           <a href="mapa.html">Mapa</a>
-          <a href="meus-agendamentos.html">Agendamentos</a>
+          <a href="meus-agendamentos.html">Agendamentos</a>`}
         </nav>
       </section>
       <section>
         <h3>Para Empresas</h3>
         <nav class="footer-links" aria-label="Links para parceiros">
           
-          <a href="cadastro.html?perfil=empresa&mode=login">Painel do parceiro</a>
+          <a href="${partnerLogged ? "cadastro-dono.html" : "cadastro.html?perfil=empresa&mode=login"}">Painel do parceiro</a>
           
         </nav>
       </section>
@@ -608,7 +826,7 @@ function initializeReportActions() {
     <section class="report-dialog-card">
       <button class="report-dialog-close" type="button" aria-label="Fechar denúncia" data-report-close>&times;</button>
       <div class="report-dialog-head">
-        <span class="report-dialog-kicker">Central de confianca</span>
+        <span class="report-dialog-kicker">Central de confiança</span>
         <h2 id="report-dialog-title">Denunciar</h2>
         <p id="report-dialog-copy"></p>
       </div>
@@ -624,12 +842,12 @@ function initializeReportActions() {
         <p id="report-dialog-feedback" class="report-dialog-feedback" role="status"></p>
         <div class="report-dialog-actions">
           <button class="btn btn-ghost" type="button" data-report-close>Cancelar</button>
-          <button id="report-dialog-submit" class="btn btn-primary" type="submit">Enviar denuncia</button>
+          <button id="report-dialog-submit" class="btn btn-primary" type="submit">Enviar denúncia</button>
         </div>
       </form>
       <div id="report-dialog-success" class="report-dialog-success hidden" role="status">
-        <strong>Denuncia enviada</strong>
-        <p>Nossa equipe vai analisar o caso no painel administrativo.</p>
+        <strong>Denúncia enviada</strong>
+        <p>Nossa equipe vai analisar sua denúncia.</p>
         <button class="btn btn-primary" type="button" data-report-close>Fechar</button>
       </div>
     </section>
@@ -646,6 +864,7 @@ function initializeReportActions() {
   const successBox = modal.querySelector("#report-dialog-success");
   let reportPayload = null;
   let lastFocusedButton = null;
+  let reportSending = false;
 
   const shopReasons = [
     ["Informações divergentes", "Informações divergentes"],
@@ -669,7 +888,9 @@ function initializeReportActions() {
   }
 
   function closeReportDialog() {
+    if (reportSending) return;
     modal.classList.add("hidden");
+    deactivateModal(modal);
     reportPayload = null;
     form?.reset();
     setReportFeedback("");
@@ -680,6 +901,7 @@ function initializeReportActions() {
   }
 
   function openReportDialog({ isReview, label, payload, trigger }) {
+    if (reportSending) return;
     reportPayload = payload;
     lastFocusedButton = trigger || null;
     const reasons = isReview ? reviewReasons : shopReasons;
@@ -699,7 +921,7 @@ function initializeReportActions() {
     form?.classList.remove("hidden");
     successBox?.classList.add("hidden");
     modal.classList.remove("hidden");
-    window.setTimeout(() => reasonSelect?.focus(), 0);
+    activateModal(modal, { initialFocus: reasonSelect, onEscape: closeReportDialog });
   }
 
   modal.addEventListener("click", (event) => {
@@ -712,7 +934,7 @@ function initializeReportActions() {
 
   form?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!reportPayload) return;
+    if (!reportPayload || reportSending) return;
     const motivo = reasonSelect?.value.trim() || "";
     const detalhes = detailsInput?.value.trim() || "";
     if (motivo.length < 4) {
@@ -721,7 +943,10 @@ function initializeReportActions() {
       return;
     }
 
-    setReportFeedback("Enviando denúncia...");
+    reportSending = true;
+    modal.setAttribute("aria-busy", "true");
+    modal.querySelectorAll("button[data-report-close]").forEach(button => { button.disabled = true; });
+    setReportFeedback("Enviando denúncia. Aguarde a conclusão para fechar.");
     if (submitButton) submitButton.disabled = true;
     try {
       const res = await userFetch("/api/denuncias", {
@@ -739,7 +964,11 @@ function initializeReportActions() {
     } catch {
       setReportFeedback("Erro ao enviar denúncia. Tente novamente.", "error");
     } finally {
+      reportSending = false;
+      modal.removeAttribute("aria-busy");
+      modal.querySelectorAll("button[data-report-close]").forEach(button => { button.disabled = false; });
       if (submitButton) submitButton.disabled = false;
+      if (!successBox.classList.contains("hidden")) successBox.querySelector("button")?.focus();
     }
   });
 
@@ -928,6 +1157,190 @@ function initUseLocation() {
   });
 }
 
+// Uma prévia compartilhada, fora do grid, evita recortes e mudanças de altura.
+let shopPreviewController = null;
+
+function getShopPreviewController() {
+  if (shopPreviewController) return shopPreviewController;
+  const hoverQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
+  const panel = document.createElement("section");
+  panel.id = "shop-service-preview";
+  panel.className = "shop-preview";
+  panel.hidden = true;
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-labelledby", "shop-preview-title");
+  const backdrop = document.createElement("div");
+  backdrop.className = "shop-preview-backdrop";
+  backdrop.hidden = true;
+  backdrop.setAttribute("aria-hidden", "true");
+  document.body.append(backdrop, panel);
+
+  let activeCard = null;
+  let trigger = null;
+  let openTimer;
+  let closeTimer;
+  let modal = false;
+  let anchorPosition = null;
+  let viewportSize = null;
+  let dismissedCard = null;
+
+  function clearTimers() {
+    clearTimeout(openTimer);
+    clearTimeout(closeTimer);
+  }
+
+  function close(restoreFocus = false) {
+    clearTimers();
+    const previousTrigger = trigger;
+    const hadFocus = panel.contains(document.activeElement);
+    if (restoreFocus && activeCard) dismissedCard = activeCard;
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+    if (activeCard) activeCard.classList.remove("shop-preview-active");
+    panel.hidden = true;
+    backdrop.hidden = true;
+    panel.removeAttribute("aria-modal");
+    deactivateModal(panel);
+    document.body.classList.remove("shop-preview-lock");
+    activeCard = null;
+    trigger = null;
+    modal = false;
+    if ((restoreFocus || hadFocus) && previousTrigger?.isConnected) {
+      previousTrigger.focus({ preventScroll: true });
+    }
+  }
+
+  function scheduleClose() {
+    clearTimeout(openTimer);
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
+      if (modal || panel.contains(document.activeElement)) return;
+      if (hoverQuery.matches && (panel.matches(":hover") || activeCard?.matches(":hover"))) return;
+      close();
+    }, 180);
+  }
+
+  function open(card, loja, explicit) {
+    clearTimers();
+    if (!card.isConnected || !card.getClientRects().length) return;
+    if (activeCard === card) {
+      if (explicit) panel.querySelector("[data-preview-close]").focus();
+      return;
+    }
+    close();
+    activeCard = card;
+    dismissedCard = null;
+    trigger = card.querySelector("[data-shop-preview]");
+    modal = !hoverQuery.matches || window.innerWidth <= 600;
+    panel.classList.toggle("is-sheet", modal);
+    const services = Array.isArray(loja.servicos) ? loja.servicos : [];
+    const rows = services.slice(0, 3).map((service) => {
+      const price = service.preco;
+      const hasPrice = price !== null && price !== undefined && String(price).trim() !== "" && Number.isFinite(Number(price)) && Number(price) >= 0;
+      return `<li><strong>${escapeHtml(service.nome || "Serviço")}</strong>
+        <span><b>${hasPrice ? escapeHtml(Number(price).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })) : "Preço a consultar"}</b>
+        <span>${escapeHtml(String(service.duracao || "").trim() || "Duração a consultar")}</span></span></li>`;
+    }).join("");
+    panel.innerHTML = `
+      <div class="shop-preview-photo"></div>
+      <button class="shop-preview-close" type="button" data-preview-close aria-label="Fechar prévia">&times;</button>
+      ${createFavoriteButtonHtml(card.querySelector("[data-favorite-toggle]")?.classList.contains("is-favorited"), loja.id)}
+      <div class="shop-preview-content">
+        <p class="shop-preview-label">Prévia dos serviços</p>
+        <h2 id="shop-preview-title">${escapeHtml(loja.nome || "Estabelecimento")}</h2>
+        <div class="shop-preview-rating"></div>
+        ${loja.descricao ? `<p class="shop-preview-description">${escapeHtml(loja.descricao)}</p>` : ""}
+        ${services.length ? `<ul class="shop-preview-services">${rows}</ul>` : '<p class="shop-preview-empty">Serviços ainda não cadastrados.</p>'}
+        ${services.length > 3 ? `<p class="shop-preview-more">+ ${services.length - 3} serviço(s) disponível(is)</p>` : ""}
+        <a class="btn btn-primary" href="perfil.html?shopId=${encodeURIComponent(loja.id)}">Ver todos os serviços</a>
+      </div>`;
+    const sourceImage = card.querySelector(".shop-card-img-wrap img");
+    if (sourceImage) {
+      const photo = sourceImage.cloneNode(true);
+      photo.loading = "eager";
+      panel.querySelector(".shop-preview-photo").appendChild(photo);
+    }
+    const rating = card.querySelector(".shop-rating, .shop-no-rating");
+    if (rating) panel.querySelector(".shop-preview-rating").appendChild(rating.cloneNode(true));
+    trigger.setAttribute("aria-expanded", "true");
+    card.classList.add("shop-preview-active");
+    panel.hidden = false;
+    anchorPosition = card.getBoundingClientRect();
+    viewportSize = [window.innerWidth, window.innerHeight];
+    if (modal) {
+      panel.style.removeProperty("width");
+      panel.style.removeProperty("left");
+      panel.style.removeProperty("top");
+      backdrop.hidden = false;
+      panel.setAttribute("aria-modal", "true");
+      activateModal(panel, { allowed: [backdrop], onEscape: () => close(true) });
+      document.body.classList.add("shop-preview-lock");
+    } else {
+      const bounds = card.getBoundingClientRect();
+      const width = Math.min(420, Math.max(320, bounds.width * 1.08), window.innerWidth - 24);
+      panel.style.width = `${width}px`;
+      panel.style.left = `${Math.max(12, Math.min(bounds.left - (width - bounds.width) / 2, window.innerWidth - width - 12))}px`;
+      panel.style.top = `${Math.max(12, Math.min(bounds.top - 8, window.innerHeight - panel.offsetHeight - 12))}px`;
+    }
+    if (explicit) panel.querySelector("[data-preview-close]").focus({ preventScroll: true });
+  }
+
+  panel.addEventListener("pointerenter", () => clearTimeout(closeTimer));
+  panel.addEventListener("pointerleave", scheduleClose);
+  panel.addEventListener("focusout", scheduleClose);
+  panel.addEventListener("click", (event) => {
+    if (event.target.closest("[data-preview-close], [data-favorite-toggle]")) close(true);
+  });
+  backdrop.addEventListener("click", () => close(true));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      clearTimers();
+      if (activeCard) { event.preventDefault(); close(true); }
+    }
+    if (event.key !== "Tab" || !modal) return;
+    const focusable = Array.from(panel.querySelectorAll("button, a[href]"));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (activeCard && !modal && !panel.contains(event.target) && !activeCard.contains(event.target)) close();
+  });
+  // Ordenação/filtros também podem ser acionados pelo teclado.
+  document.addEventListener("click", (event) => {
+    if (!panel.contains(event.target) && !event.target.closest("[data-shop-preview]")) close();
+  });
+  window.addEventListener("scroll", (event) => {
+    if (panel.contains(event.target) || modal) return;
+    // Um clique pode chegar antes do evento de uma rolagem já concluída.
+    // Só fechar se a posição do card realmente mudou após abrir a prévia.
+    const bounds = activeCard?.getBoundingClientRect();
+    if (bounds && (Math.abs(bounds.top - anchorPosition.top) > 1 || Math.abs(bounds.left - anchorPosition.left) > 1)) close();
+  }, true);
+  window.addEventListener("resize", () => {
+    if (!viewportSize || viewportSize[0] !== window.innerWidth || viewportSize[1] !== window.innerHeight) close();
+  });
+  window.addEventListener("blur", () => close());
+  hoverQuery.addEventListener("change", () => close());
+
+  shopPreviewController = {
+    register(card, loja) {
+      const button = card.querySelector("[data-shop-preview]");
+      button.addEventListener("click", () => open(card, loja, true));
+      card.addEventListener("pointerenter", (event) => {
+        if (!hoverQuery.matches || event.pointerType === "touch" || modal || dismissedCard === card || panel.contains(document.activeElement)) return;
+        clearTimers();
+        openTimer = setTimeout(() => open(card, loja, false), 250);
+      });
+      card.addEventListener("pointerleave", () => {
+        if (dismissedCard === card) dismissedCard = null;
+        scheduleClose();
+      });
+    },
+  };
+  return shopPreviewController;
+}
+
 // ── Home: cards de lojas da API ──────────────────────────────────────────────
 function buildHomeCard(loja) {
   const article = document.createElement("article");
@@ -974,9 +1387,13 @@ function buildHomeCard(loja) {
       ${metaHtml}
       <p class="shop-address">&#128205; ${safeAddress}</p>
       <p class="shop-distance" data-shop-distance hidden></p>
-      <a class="btn btn-secondary" href="${profileUrl}">Ver serviços</a>
+      <div class="shop-card-actions">
+        <button type="button" class="btn btn-secondary" data-shop-preview aria-haspopup="dialog" aria-expanded="false" aria-controls="shop-service-preview" aria-label="Prévia dos serviços de ${safeName}">Prévia</button>
+        <a class="btn btn-secondary" href="${profileUrl}">Ver serviços</a>
+      </div>
     </div>
   `;
+  getShopPreviewController().register(article, loja);
   return article;
 }
 
@@ -1011,6 +1428,7 @@ async function renderOwnerShopsOnHome() {
 }
 
 async function initFavoritesPage() {
+  if (showPartnerClientRestriction()) return;
   const favoritesGrid = document.getElementById("favorites-grid");
   const emptyMessage = document.getElementById("favorites-empty");
   if (!favoritesGrid) return;
@@ -1042,6 +1460,275 @@ async function initFavoritesPage() {
 }
 
 // ── Página do parceiro ───────────────────────────────────────────────────────
+// Agendamento: resumo, edição explícita e histórico compartilhados por cliente/parceiro.
+function bookingPaymentOptions(loja) {
+  const list = [...new Set(parseTextList(loja?.formasPagamento))];
+  return list.length ? list : ['A combinar no local'];
+}
+function bookingDateLabel(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value || '—');
+}
+function bookingToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year:'numeric',month:'2-digit',day:'2-digit' }).format(new Date());
+}
+function bookingUnread(ag, role) {
+  const field = role === 'parceiro' ? 'vistoParceiroEm' : 'vistoClienteEm';
+  return (ag.alteracoes || []).filter(a => a.autorTipo !== role && !a[field]);
+}
+function bookingHistoryHtml(ag, role) {
+  const entries = ag.alteracoes || [];
+  if (!entries.length) return '<p class="empty-copy">Nenhuma alteração após a criação.</p>';
+  const labels = { data:'Data', hora:'Horário', veiculo:'Veículo', notas:'Observações', formaPagamento:'Forma de pagamento', status:'Status', duracaoAgendaMinutos:'Duração definida para a agenda (min)'  };
+  return `<details class="booking-history"><summary>Histórico de alterações (${entries.length})</summary>
+    <ol>${entries.map(a => {
+      const time = new Date(a.createdAt);
+      const when = Number.isNaN(time.getTime()) ? '' : time.toLocaleString('pt-BR');
+      const rows = Object.keys(a.atual || {}).filter(k => labels[k]).map(k => {
+        const format = v => escapeHtml(k === 'data' ? bookingDateLabel(v) : String(v || 'Não informado'));
+        return `<li><strong>${labels[k]}:</strong> ${format(a.anterior?.[k])} → ${format(a.atual[k])}</li>`;
+      }).join('');
+      return `<li><p><strong>${a.autorTipo === 'sistema' ? 'Sistema' : a.autorTipo === 'admin' ? 'Administrador' : a.autorTipo === 'parceiro' ? 'Estabelecimento' : 'Cliente'}</strong> · ${escapeHtml(a.autorNome || '')} · ${escapeHtml(when)}</p><p><strong>Motivo:</strong> ${escapeHtml(a.motivo || '')}</p><ul>${rows}</ul></li>`;
+    }).join('')}</ol>
+    ${role !== 'admin' && bookingUnread(ag,role).length ? `<button type="button" class="btn btn-secondary" data-booking-action="read" data-id="${ag.id}">Marcar alterações como lidas</button>` : ''}
+  </details>`;
+}
+function bookingEditorHtml(ag, role, cancel = false) {
+  const id = `booking-${role}-${ag.id}`;
+  const scheduleLocked = role === 'cliente' && !ag.regras?.podeReagendar;
+  const exceptionRequired = role === 'parceiro' && ag.regras?.exigeExcecaoPrazo;
+  const payments = bookingPaymentOptions(ag.loja);
+  const paymentHtml = payments.map(p => `<option value="${escapeHtml(p)}" ${p === ag.formaPagamento ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('');
+  return `<form class="booking-editor" data-booking-editor="${ag.id}" data-cancel="${cancel}" data-schedule-locked="${scheduleLocked}">
+    <h4 tabindex="-1">${cancel ? 'Cancelar agendamento' : 'Editar agendamento'}</h4>
+    ${cancel ? '<p>O cancelamento será informado à outra parte e ficará no histórico.</p>' : `
+    <div class="field-grid">
+      <div class="field"><label for="${id}-date">Data</label><input id="${id}-date" name="data" type="date" ${scheduleLocked ? 'disabled' : ''} required min="${bookingToday()}" value="${escapeHtml(ag.data)}" /></div>
+      <div class="field"><label for="${id}-time">Horário</label><select id="${id}-time" name="hora" ${scheduleLocked ? 'disabled' : ''} required><option value="${escapeHtml(ag.hora)}">${escapeHtml(ag.hora)}</option></select></div>
+    </div>
+    <p class="empty-copy" data-booking-availability role="status"></p>
+    <div class="field-grid">
+      <div class="field"><label for="${id}-vehicle">Veículo</label><select id="${id}-vehicle" name="veiculo" required>${['carro','moto','caminhonete'].map(v=>`<option value="${v}" ${String(ag.veiculo).toLowerCase()===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></div>
+      <div class="field"><label for="${id}-payment">Forma de pagamento no local</label><select id="${id}-payment" name="formaPagamento" required><option value="">Selecione</option>${paymentHtml}</select></div>
+    </div>
+    <div class="field"><label for="${id}-notes">Observações</label><textarea id="${id}-notes" name="notas" rows="2" maxlength="2000">${escapeHtml(ag.notas || '')}</textarea></div>`}
+    ${scheduleLocked && !cancel ? '<p class="booking-update-notice">O prazo de reagendamento terminou. Você ainda pode ajustar os demais dados antes do início do atendimento.</p>' : ''}
+    ${exceptionRequired ? `<label><input type="checkbox" name="excecaoPrazo" /> Registrar exceção de prazo para ${cancel ? 'cancelar' : 'reagendar'}. O motivo ficará no histórico.</label>` : ''}
+    <div class="field"><label for="${id}-reason">Motivo ${cancel ? 'do cancelamento' : 'da alteração'}</label><textarea id="${id}-reason" name="motivo" required minlength="5" maxlength="500" rows="2" placeholder="Explique o motivo para a outra parte."></textarea></div>
+    <p class="empty-copy" data-booking-feedback role="status"></p>
+    <div class="booking-item-actions"><button class="btn btn-primary" type="submit">${cancel ? 'Confirmar cancelamento' : 'Salvar alterações'}</button><button class="btn btn-ghost" type="button" data-booking-action="discard" data-id="${ag.id}">${cancel ? 'Voltar' : 'Descartar edição'}</button></div>
+  </form>`;
+}
+function bookingServiceName(booking) {
+  return booking?.servicoNome || `${booking?.servico?.nome || 'Serviço'} (nome atual; histórico não registrado)`;
+}
+function bookingPriceCents(booking) {
+  const value = booking?.precoCentavos;
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+function bookingMoney(cents) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
+}
+function bookingPriceLabel(booking) {
+  const cents = bookingPriceCents(booking);
+  return cents === null ? 'Valor histórico não registrado' : bookingMoney(cents);
+}
+function bookingDurationLabel(booking) {
+  return Number.isSafeInteger(booking?.duracaoMinutos) && booking.duracaoMinutos > 0
+    ? `${booking.duracaoMinutos} min` : booking?.duracaoAgendaMinutos ? `${booking.duracaoAgendaMinutos} min (definidos para a agenda)` : 'Duração histórica não registrada';
+}
+function bookingRevenue(bookings) {
+  return bookings.reduce((total, booking) => {
+    if (booking.status !== 'finalizado') return total;
+    const cents = bookingPriceCents(booking);
+    if (cents === null) total.semValor++;
+    else { total.centavos += cents; total.comValor++; }
+    return total;
+  }, { centavos: 0, semValor: 0, comValor: 0 });
+}
+function bookingRevenueLabel(total) {
+  if (total.semValor && !total.comValor) return 'Valor não registrado';
+  return bookingMoney(total.centavos) + (total.semValor ? ' (parcial)' : '');
+}
+function bookingDurationEditorHtml(ag, role) {
+  return `<form class="booking-editor" data-booking-editor="${ag.id}" data-duration="true">
+    <h4 tabindex="-1">Definir duração da reserva antiga</h4>
+    <p>Informe a duração combinada com o cliente. Ela organizará a agenda, sem preencher o preço nem a duração histórica da compra. Após salvar, este campo não poderá ser alterado por esta ação.</p>
+    <div class="field"><label for="duration-${role}-${ag.id}">Duração em minutos</label><input id="duration-${role}-${ag.id}" name="duracaoAgendaMinutos" type="number" min="1" max="1440" step="1" required /></div>
+    <div class="field"><label for="reason-${role}-${ag.id}">Motivo / confirmação com o cliente</label><textarea id="reason-${role}-${ag.id}" name="motivo" minlength="5" maxlength="500" required></textarea></div>
+    <p class="empty-copy" data-booking-feedback role="status"></p>
+    <div class="booking-item-actions"><button class="btn btn-primary" type="submit">Salvar duração</button><button class="btn btn-ghost" type="button" data-booking-action="discard" data-id="${ag.id}">Voltar</button></div>
+  </form>`;
+}
+function bookingCardHtml(ag, role) {
+  const active = ['pendente','confirmado'].includes(ag.status) && !ag.regras?.expiracaoPendente;
+  const statusClass = ag.status === 'expirado' ? 'booking-status-expired' : ag.status === 'finalizado' ? 'booking-status-done' : ag.status === 'cancelado' ? 'booking-status-canceled' : 'booking-status-pending';
+  const unread = bookingUnread(ag,role);
+  const regras = ag.regras || {};
+  return `<article class="${role === 'parceiro' ? 'booking-received-item' : 'user-booking-card'} booking-summary-card" data-booking-card="${ag.id}">
+    <div class="booking-item-head"><div><h3>${escapeHtml(ag.loja?.nome || 'Lava-jato')}</h3><p>${escapeHtml(bookingServiceName(ag))}</p></div><span class="booking-status-badge ${statusClass}">${escapeHtml(ag.status === 'expirado' ? 'Expirado' : ag.status || 'pendente')}</span></div>
+    ${ag.status === 'expirado' ? '<p class="booking-update-notice">Expirado automaticamente: o estabelecimento não confirmou antes do horário marcado. Para reservar outro horário, faça um novo agendamento.</p>' : ''}
+    ${ag.status === 'pendente' && active ? '<p class="empty-copy">Aguardando confirmação do estabelecimento. Sem confirmação até o horário marcado, este agendamento expira automaticamente.</p>' : ''}
+    ${ag.regras?.expiracaoPendente ? '<p class="booking-update-notice">O prazo de confirmação terminou. Atualize a lista para consultar o encerramento automático.</p>' : ''}
+    ${unread.length ? `<p class="booking-update-notice" role="status">Seu agendamento foi atualizado. Confira o histórico (${unread.length} ${unread.length===1?'nova alteração':'novas alterações'}).</p>` : ''}
+    <dl class="booking-summary-data"><div><dt>Data e horário</dt><dd>${escapeHtml(bookingDateLabel(ag.data))} às ${escapeHtml(ag.hora)}</dd></div><div><dt>Veículo</dt><dd>${escapeHtml(ag.veiculo || 'Não informado')}</dd></div><div><dt>Forma de pagamento escolhida</dt><dd>${escapeHtml(ag.formaPagamento || 'Não informado')}</dd></div>
+    <div><dt>Valor reservado</dt><dd>${escapeHtml(bookingPriceLabel(ag))}</dd></div><div><dt>Duração reservada</dt><dd>${escapeHtml(bookingDurationLabel(ag))}</dd></div>
+    ${role === 'parceiro' ? `<div><dt>Cliente</dt><dd>${escapeHtml(ag.usuario?.nome || ag.nomeCliente || 'Cliente')} · ${escapeHtml(ag.usuario?.email || ag.emailCliente || '')}</dd></div>` : ''}</dl>
+    <p class="empty-copy">Pagamento no estabelecimento. A forma escolhida não confirma que o pagamento foi recebido.</p>
+    ${active && regras.limiteCancelamento ? `<p class="empty-copy">Prazo normal para cancelar/reagendar: ${escapeHtml(regras.limiteCancelamento)} (Brasília).${regras.exigeExcecaoPrazo ? ' Exceções exigem justificativa.' : ''}</p>` : ''}
+    ${active && regras.motivoFinalizar && role === 'parceiro' ? `<p class="empty-copy">${escapeHtml(regras.motivoFinalizar)}${regras.fimPrevisto ? ` Término previsto: ${escapeHtml(regras.fimPrevisto)} (Brasília).` : ''}</p>` : ''}
+    ${active && role === 'cliente' && !regras.podeCancelar ? '<p class="booking-update-notice">O prazo para cancelar terminou. Entre em contato com o estabelecimento.</p>' : ''}
+    ${ag.notas ? `<p class="booking-notes"><strong>Observações:</strong> ${escapeHtml(ag.notas)}</p>` : ''}
+    ${active && !ag.duracaoMinutos && !ag.duracaoAgendaMinutos ? '<p class="booking-update-notice">Reserva antiga sem duração: novas reservas nesta data ficam suspensas até o parceiro definir a duração ou encerrar esta reserva.</p>' : ''}
+    ${active ? `<div class="booking-item-actions" data-booking-summary-actions>
+      ${regras.podeEditar ? `<button class="btn btn-secondary" type="button" data-booking-action="edit" data-id="${ag.id}">Editar agendamento</button>` : ''}
+      ${role==='parceiro' && !ag.duracaoMinutos && !ag.duracaoAgendaMinutos ? `<button class="btn btn-secondary" type="button" data-booking-action="duration" data-id="${ag.id}">Definir duração da agenda</button>` : ''}
+      ${role==='parceiro' && regras.podeConfirmar ? `<button class="btn btn-secondary" type="button" data-booking-action="confirm" data-id="${ag.id}">Confirmar agendamento</button>` : ''}
+      ${role==='parceiro' && regras.podeFinalizar ? `<button class="btn btn-secondary" type="button" data-booking-action="finish" data-id="${ag.id}">Marcar como finalizado</button>` : ''}
+      ${regras.podeCancelar ? `<button class="btn btn-ghost" type="button" data-booking-action="cancel" data-id="${ag.id}">Cancelar agendamento</button>` : ''}
+    </div>` : ''}
+    <div data-booking-editor-slot></div>
+    ${bookingHistoryHtml(ag,role)}
+  </article>`;
+}
+function createBookingListController(list, role, onLoad = () => {}) {
+  const fetcher = role === 'parceiro' ? donoFetch : userFetch;
+  const suffix = role === 'parceiro' ? '/dono' : '';
+  const toolbar = document.createElement('div');
+  toolbar.className = 'booking-list-toolbar';
+  toolbar.innerHTML = '<p class="empty-copy" role="status">Carregando agendamentos...</p><button type="button" class="btn btn-ghost">Atualizar lista</button>';
+  list.before(toolbar);
+  const message = toolbar.querySelector('p');
+  let bookings = [], signature = '', loading = false, saving = false, reloadRequested = false;
+  async function load({ silent = false } = {}) {
+    if (saving || (silent && list.querySelector('[data-booking-editor]'))) return;
+    if (loading) { if (!silent) reloadRequested = true; return; }
+    loading = true;
+    try {
+      const res = await fetcher(`/api/agendamentos/${role === 'parceiro' ? 'dono' : 'me'}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Não foi possível carregar os agendamentos.');
+      if (silent && (saving || list.querySelector('[data-booking-editor]'))) return;
+      bookings = data.agendamentos || [];
+      const nextSignature = JSON.stringify(bookings);
+      if (signature !== nextSignature || !silent) {
+        const expanded = new Set([...list.querySelectorAll('.booking-history[open]')].map(d=>d.closest('[data-booking-card]').dataset.bookingCard));
+        list.innerHTML = bookings.length ? bookings.map(ag=>bookingCardHtml(ag,role)).join('') : '<p class="empty-copy">Nenhum agendamento encontrado.</p>';
+        for (const card of list.querySelectorAll('[data-booking-card]')) if (expanded.has(card.dataset.bookingCard)) card.querySelector('.booking-history')?.setAttribute('open','');
+        signature = nextSignature;
+        onLoad(bookings);
+      }
+      const unread = bookings.reduce((n,ag)=>n+bookingUnread(ag,role).length,0);
+      message.textContent = unread ? `${unread} ${unread===1?'alteração não lida':'alterações não lidas'}. Confira os avisos abaixo.` : 'Lista atualizada. Novas alterações aparecem aqui automaticamente.';
+    } catch (err) { message.textContent = err.message || 'Erro de conexão. Clique em Atualizar lista para tentar novamente.'; }
+    finally { loading = false; if (reloadRequested) { reloadRequested = false; await load(); } }
+  }
+  toolbar.querySelector('button').addEventListener('click',()=>{
+    if (list.querySelector('[data-booking-editor]')) { message.textContent = 'Salve ou descarte a edição antes de atualizar a lista.'; return; }
+    load();
+  });
+  async function send(url, payload) {
+    const res = await fetcher(url,{method:'PUT',body:JSON.stringify(payload)});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Não foi possível salvar.');
+    return data;
+  }
+  function closeEditor(card) {
+    card.querySelector('[data-booking-editor-slot]').innerHTML = '';
+    card.querySelector('[data-booking-summary-actions]')?.classList.remove('hidden');
+  }
+  async function availability(form,ag) {
+    const date = form.elements.data.value, select = form.elements.hora, msg = form.querySelector('[data-booking-availability]');
+    const requestId = String(Number(form.dataset.availabilityRequest || 0)+1);
+    form.dataset.availabilityRequest = requestId;
+    const selected = select.value;
+    form.dataset.availabilityReady = '0';select.disabled = true;
+    msg.textContent = 'Consultando horários...';
+    try {
+      const res = await fetcher(`/api/agendamentos/${ag.id}${suffix}/disponibilidade?data=${encodeURIComponent(date)}`);
+      const result = await res.json();
+      if (!form.isConnected || form.dataset.availabilityRequest !== requestId) return;
+      if (!res.ok) throw new Error(result.error || 'Falha ao consultar horários.');
+      const times = result.horarios || [];
+      // A reserva existente permanece válida caso a grade de horários tenha sido alterada depois.
+      if (date===ag.data) { const current=times.find(t=>t.hora===ag.hora); if(current) {current.disponivel=true;current.motivo='';} else times.push({hora:ag.hora,disponivel:true}); }
+      select.innerHTML = '<option value="">Selecione</option>'+times.map(t=>`<option value="${escapeHtml(t.hora)}" ${t.disponivel?'':'disabled'}>${escapeHtml(t.hora)}${t.disponivel?'':` (${escapeHtml(t.motivo || 'indisponível')})`}</option>`).join('');
+      select.value = times.some(t=>t.hora===selected && t.disponivel) ? selected : '';
+      select.disabled = !times.some(t=>t.disponivel);
+      form.dataset.availabilityReady = '1';
+      msg.textContent = result.mensagem || (select.disabled ? 'Nenhum horário disponível nesta data.' : 'Horários de Brasília. A disponibilidade considera toda a duração.');
+    } catch(err) { if(form.isConnected && form.dataset.availabilityRequest===requestId)msg.textContent = err.message || 'Erro ao consultar horários. Altere a data para tentar novamente.'; }
+  }
+  list.addEventListener('click', guardAction(async event=>{
+    const button = event.target.closest('[data-booking-action]');
+    if(!button || saving)return;
+    const ag = bookings.find(a=>String(a.id)===button.dataset.id), action = button.dataset.bookingAction;
+    if(!ag)return;
+    if (action !== 'discard' && list.querySelector('[data-booking-editor]')) { notify('Salve ou descarte a edição aberta antes de continuar.', "warning"); return; }
+    const card = button.closest('[data-booking-card]');
+    if(action==='discard') {closeEditor(card);card.querySelector('[data-booking-action="edit"]')?.focus();return;}
+    if(action==='edit'||action==='cancel'||action==='duration') {
+      card.querySelector('[data-booking-summary-actions]').classList.add('hidden');
+      card.querySelector('[data-booking-editor-slot]').innerHTML = action==='duration' ? bookingDurationEditorHtml(ag,role) : bookingEditorHtml(ag,role,action==='cancel');
+      const form = card.querySelector('form');form.querySelector('h4').focus();
+      if(action==='edit') { if(form.dataset.scheduleLocked==='true') form.dataset.availabilityReady='1'; else availability(form,ag); }
+      return;
+    }
+    if(action==='read' && !card.querySelector('.booking-history')?.open) return;
+    if(action==='confirm'||action==='finish') {
+      if(!await confirmAction(`${action === 'finish' ? 'Finalizar' : 'Confirmar'} o agendamento #${ag.id}, de ${ag.data.split('-').reverse().join('/')} às ${ag.hora}? O cliente verá esta atualização.`,{title: action === 'finish' ? 'Finalizar atendimento' : 'Confirmar agendamento', confirmLabel: action === 'finish' ? 'Finalizar' : 'Confirmar'}))return;
+    }
+    saving = true;button.disabled = true;
+    try {
+      if(action==='read') await send(`/api/agendamentos/${ag.id}${suffix}/alteracoes/lidas`,{ids:bookingUnread(ag,role).slice(0,500).map(a=>a.id)});
+      else if(action==='confirm'||action==='finish') await send(`/api/agendamentos/${ag.id}/status`,{status:action==='finish'?'finalizado':'confirmado',revisao:ag.revisao});
+      else return;
+      saving=false;await load();
+      if (action === "confirm" || action === "finish") notify(action === "finish" ? "Atendimento marcado como finalizado." : "Agendamento confirmado.", "success");
+    } catch(err) {notify(err.message || 'Erro de conexão.', "error");}
+    finally {saving=false;button.disabled=false;}
+  }, '[data-booking-action]'));
+  list.addEventListener('change',event=>{
+    const form = event.target.closest('[data-booking-editor]');
+    if(form && event.target.name==='data') {
+      const ag = bookings.find(a=>String(a.id)===form.dataset.bookingEditor);
+      if(ag)availability(form,ag);
+    }
+  });
+  list.addEventListener('submit',async event=>{
+    const form = event.target.closest('[data-booking-editor]');if(!form)return;
+    event.preventDefault();if(saving)return;
+    const ag = bookings.find(a=>String(a.id)===form.dataset.bookingEditor);if(!ag)return;
+    const cancel = form.dataset.cancel==='true', duration = form.dataset.duration==='true';
+    const feedback = form.querySelector('[data-booking-feedback]');
+    if(!form.reportValidity())return;
+    const payload = Object.fromEntries(new FormData(form));
+    payload.revisao = ag.revisao;
+    payload.excecaoPrazo = payload.excecaoPrazo === 'on';
+    if (form.dataset.scheduleLocked === 'true' && !cancel && !duration) { payload.data = ag.data; payload.hora = ag.hora; }
+    payload.motivo = String(payload.motivo||'').trim();
+    if(payload.motivo.length<5){feedback.textContent='Explique o motivo com pelo menos 5 caracteres.';return;}
+    if(duration) payload.duracaoAgendaMinutos=Number(payload.duracaoAgendaMinutos);
+    if(!cancel && !duration && (form.dataset.availabilityReady!=='1'||!payload.hora)){feedback.textContent='Selecione um horário disponível antes de salvar.';return;}
+    if(!cancel && !duration && ['data','hora','veiculo','notas','formaPagamento'].every(k=>String(payload[k]||'').trim()===String(ag[k]||'').trim())){feedback.textContent='Nenhuma informação foi alterada.';return;}
+    saving=true;
+    const controls = [...form.querySelectorAll('button,input,select,textarea')].map(control => ({ control, disabled: control.disabled }));
+    controls.forEach(({control}) => { control.disabled = true; });
+    feedback.textContent='Salvando...';
+    try {
+      await send(`/api/agendamentos/${ag.id}${suffix}${duration?'/duracao':cancel?'/cancelar':''}`,payload);
+      closeEditor(form.closest('[data-booking-card]'));
+      saving=false;await load();notify(cancel?'Agendamento cancelado. O motivo está disponível para a outra parte.':'Alterações salvas. A outra parte verá um aviso e o histórico.', "success");
+    } catch(err) {feedback.textContent=err.message || 'Erro de conexão. Tente novamente.';}
+    finally {saving=false;controls.forEach(({control,disabled}) => { control.disabled = disabled; });}
+  });
+  const timer = window.setInterval(()=>{if(!document.hidden)load({silent:true});},30000);
+  const refresh = ()=>{if(!document.hidden)load({silent:true});};
+  window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
+  window.addEventListener('pagehide',()=>window.clearInterval(timer),{once:true});
+  return {load};
+}
+
 async function initPartnerPage() {
   const authShell = document.getElementById("partner-auth-shell") || document.getElementById("dono-auth-shell");
   const managementShell = document.getElementById("partner-management-shell");
@@ -1082,6 +1769,12 @@ async function initPartnerPage() {
   const tabButtons = managementShell.querySelectorAll("[data-partner-tab]");
   const tabPanels = managementShell.querySelectorAll("[data-partner-panel]");
   const cancelEditButton = document.getElementById("partner-cancel-edit");
+  const shopEditor = document.getElementById("partner-shop-editor");
+  const shopOverview = document.getElementById("partner-shop-overview");
+  const formTitle = document.getElementById("partner-form-title");
+  const formHint = document.getElementById("partner-form-hint");
+  const editSubmitSlot = document.getElementById("partner-edit-submit-slot");
+  const createSubmitSlot = submitButton.parentElement;
   let wizardGoToStep = null;
   let syncTimeTags = null;
   let extraPhotoSlots = [
@@ -1092,20 +1785,51 @@ async function initPartnerPage() {
 
   // loja em memória para edição rápida (evita fetch extra)
   let cachedShops = [];
+  let shopsLoaded = false;
+  let shopEditorOpen = false;
   let cachedBookings = [];
   let selectedDashboardShopId = "";
   let ownerSidebarCollapsed = localStorage.getItem("autoshine:owner-sidebar-collapsed") === "1";
 
-  function switchTab(name) {
-    tabButtons.forEach((t) => t.classList.toggle("active", t.dataset.partnerTab === name));
-    tabPanels.forEach((p) => p.classList.toggle("hidden", p.dataset.partnerPanel !== name));
-    if (cancelEditButton) {
-      cancelEditButton.classList.toggle(
-        "hidden",
-        name !== "cadastro" || !form.dataset.editingShopId,
-      );
-    }
+  function syncShopView() {
+    const showEditor = shopEditorOpen || (shopsLoaded && !cachedShops.length);
+    shopEditor?.classList.toggle("hidden", !showEditor);
+    shopOverview?.classList.toggle("hidden", showEditor);
+    cancelEditButton?.classList.toggle("hidden", !form.dataset.editingShopId);
   }
+
+  function setPartnerFormMode(editing) {
+    if (formTitle) formTitle.textContent = editing ? "Editar dados do lava-jato" : "Cadastrar seu lava-jato";
+    if (formHint) formHint.textContent = editing
+      ? "Atualize os dados, as fotos e a agenda do estabelecimento. Os serviços são gerenciados na lista de Meu lava-jato."
+      : "Preencha as etapas para publicar seu estabelecimento.";
+    const serviceStep = document.querySelector('#partner-wizard-progress [data-step="4"]');
+    serviceStep?.classList.toggle("hidden", editing);
+    serviceStep?.previousElementSibling?.classList.toggle("hidden", editing);
+    form.querySelector('[data-wizard-next="3"]')?.classList.toggle("hidden", editing);
+    // A rota PUT atualiza a loja; serviços têm seu próprio editor e suas rotas.
+    form.querySelectorAll('[data-wizard-panel="4"] input, [data-wizard-panel="4"] textarea, [data-wizard-panel="4"] select').forEach((field) => { field.disabled = editing; });
+    editSubmitSlot?.classList.toggle("hidden", !editing);
+    (editing && editSubmitSlot ? editSubmitSlot : createSubmitSlot).appendChild(submitButton);
+    submitButton.textContent = editing ? "Salvar alterações" : "Publicar lava jato";
+  }
+
+  function switchTab(name) {
+    tabButtons.forEach((t) => {
+      const active = t.dataset.partnerTab === name;
+      t.classList.toggle("active", active);
+      if (active) t.setAttribute("aria-current", "page");
+      else t.removeAttribute("aria-current");
+    });
+    tabPanels.forEach((p) => p.classList.toggle("hidden", p.dataset.partnerPanel !== name));
+    syncShopView();
+  }
+
+  cancelEditButton?.addEventListener("click", () => {
+    resetPartnerForm();
+    switchTab("estabelecimento");
+    document.getElementById("partner-overview-title")?.focus({ preventScroll: true });
+  });
 
   tabButtons.forEach((tab) => {
     tab.addEventListener("click", () => switchTab(tab.dataset.partnerTab));
@@ -1134,14 +1858,13 @@ async function initPartnerPage() {
   }
 
   function localDateKey(date = new Date()) {
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 10);
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year:'numeric',month:'2-digit',day:'2-digit' }).format(date);
   }
 
   function shiftDateKey(dateKey, days) {
-    const date = new Date(`${dateKey}T12:00:00`);
-    date.setDate(date.getDate() + days);
-    return localDateKey(date);
+    const date = new Date(`${dateKey}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0,10);
   }
 
   function formatMoney(value) {
@@ -1150,10 +1873,6 @@ async function initPartnerPage() {
 
   function bookingBelongsToShop(booking, shopId) {
     return String(booking?.lojaId || booking?.loja?.id || "") === String(shopId);
-  }
-
-  function bookingPrice(booking) {
-    return Number(booking?.servico?.preco || 0);
   }
 
   function renderPartnerDashboard() {
@@ -1165,7 +1884,7 @@ async function initPartnerPage() {
         <div class="owner-dashboard-empty">
           <h2>Dashboard do lava jato</h2>
           <p class="empty-copy">Cadastre seu lava jato para acompanhar agendamentos, faturamento, serviços e avaliações por aqui.</p>
-          <button class="btn btn-primary" type="button" data-go-tab="cadastro">Cadastrar lava jato</button>
+          <button class="btn btn-primary" type="button" data-go-tab="estabelecimento">Cadastrar lava jato</button>
         </div>`;
       return;
     }
@@ -1181,13 +1900,15 @@ async function initPartnerPage() {
     const ontem = shiftDateKey(hoje, -1);
     const lojaBookings = cachedBookings.filter((booking) => bookingBelongsToShop(booking, lojaId));
     const activeStatuses = new Set(["pendente", "confirmado"]);
-    const todayBookings = lojaBookings.filter((booking) => booking.data === hoje && booking.status !== "cancelado");
-    const yesterdayBookings = lojaBookings.filter((booking) => booking.data === ontem && booking.status !== "cancelado");
+    const todayBookings = lojaBookings.filter((booking) => booking.data === hoje && ! ["cancelado", "expirado"].includes(booking.status));
+    const yesterdayBookings = lojaBookings.filter((booking) => booking.data === ontem && ! ["cancelado", "expirado"].includes(booking.status));
     const activeTodayBookings = todayBookings.filter((booking) => activeStatuses.has(booking.status || "pendente"));
     const finishedTodayBookings = todayBookings.filter((booking) => booking.status === "finalizado");
     const finishedYesterdayBookings = yesterdayBookings.filter((booking) => booking.status === "finalizado");
-    const dailyRevenue = finishedTodayBookings.reduce((sum, booking) => sum + bookingPrice(booking), 0);
-    const yesterdayRevenue = finishedYesterdayBookings.reduce((sum, booking) => sum + bookingPrice(booking), 0);
+    const dailyTotal = bookingRevenue(finishedTodayBookings);
+    const yesterdayTotal = bookingRevenue(finishedYesterdayBookings);
+    const dailyRevenue = dailyTotal.centavos / 100;
+    const yesterdayRevenue = yesterdayTotal.centavos / 100;
     const servicos = Array.isArray(loja.servicos) ? loja.servicos : [];
     const avaliacoes = Array.isArray(loja.avaliacoes) ? loja.avaliacoes : [];
     const ratingAverage = avaliacoes.length
@@ -1199,17 +1920,16 @@ async function initPartnerPage() {
         return String(raw || "");
       }),
     ).size;
-    const profileUrl = `perfil.html?shopId=${encodeURIComponent(loja.id)}`;
     const reviewsUrl = `avaliacoes.html?lojaId=${encodeURIComponent(loja.id)}&shop=${encodeURIComponent(loja.nome)}`;
     const scheduleTimes = parseScheduleTimes(loja.agendaHorarios || defaultBookingTimes);
     const scheduleDays = parseScheduleDays(loja.agendaDias || defaultScheduleDays);
     const todayDay = String(new Date(`${hoje}T12:00:00`).getDay());
     const isOpenToday = scheduleDays.includes(todayDay);
     const weekKeys = Array.from({ length: 6 }, (_, index) => shiftDateKey(hoje, index - 5));
-    const weeklyCounts = weekKeys.map((dateKey) => lojaBookings.filter((booking) => booking.data === dateKey && booking.status !== "cancelado").length);
-    const weeklyRevenue = weekKeys.map((dateKey) => lojaBookings
-      .filter((booking) => booking.data === dateKey && booking.status === "finalizado")
-      .reduce((sum, booking) => sum + bookingPrice(booking), 0));
+    const weeklyCounts = weekKeys.map((dateKey) => lojaBookings.filter((booking) => booking.data === dateKey && ! ["cancelado", "expirado"].includes(booking.status)).length);
+    const weeklyTotals = weekKeys.map((dateKey) => bookingRevenue(lojaBookings.filter((booking) => booking.data === dateKey)));
+    const weeklyRevenue = weeklyTotals.map(total => total.centavos / 100);
+    const weeklyMissing = weeklyTotals.reduce((sum, total) => sum + total.semValor, 0);
     const maxWeeklyCount = Math.max(1, ...weeklyCounts);
     const maxWeeklyRevenue = Math.max(1, ...weeklyRevenue);
     const weekLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
@@ -1234,7 +1954,9 @@ async function initPartnerPage() {
     }
 
     const bookingsTrend = toTrend(todayBookings.length, yesterdayBookings.length, "agendamento", "agendamentos");
-    const revenueTrend = toTrend(dailyRevenue, yesterdayRevenue, "real", "reais");
+    const revenueTrend = dailyTotal.semValor || yesterdayTotal.semValor
+      ? { text: 'Comparação indisponível: há valores históricos não registrados.', className: 'is-neutral' }
+      : toTrend(dailyRevenue, yesterdayRevenue, "real", "reais");
 
     const selectorHtml = cachedShops.length > 1
       ? `<select class="owner-dashboard-shop-select" data-dashboard-shop>${cachedShops
@@ -1261,14 +1983,20 @@ async function initPartnerPage() {
     const slotHtml = isOpenToday && scheduleTimes.length
       ? scheduleTimes
           .map((hora) => {
-            const active = activeTodayBookings.find((booking) => booking.hora === hora);
-            const done = finishedTodayBookings.find((booking) => booking.hora === hora);
-            const label = active ? "Ocupado" : done ? "Finalizado" : "Livre";
-            const className = active ? "is-busy" : done ? "is-done" : "is-free";
-            const booking = active || done;
-            const detail = booking
-              ? `${escapeHtml(booking.nomeCliente || booking.usuario?.nome || "Cliente")} - ${escapeHtml(booking.servico?.nome || "Serviço")}`
-              : "Sem agendamento";
+            const point = Date.parse(`${hoje}T${hora}:00Z`);
+            const active = lojaBookings.filter(booking => {
+              if (!activeStatuses.has(booking.status)) return false;
+              const minutes = booking.duracaoMinutos ?? booking.duracaoAgendaMinutos;
+              if (!minutes) return booking.data === hoje;
+              const start = Date.parse(`${booking.data}T${booking.hora}:00Z`);
+              return start <= point && point < start + minutes * 60000;
+            });
+            const blocked = (loja.agendaBloqueios || []).some(b => b.data === hoje && (!b.inicio || (b.inicio <= hora && hora < b.fim)));
+            const capacity = loja.capacidadeSimultanea ?? 1;
+            const pendingDuration = active.some(booking => !booking.duracaoMinutos && !booking.duracaoAgendaMinutos);
+            const label = pendingDuration ? 'Duração pendente: novas reservas suspensas' : blocked ? 'Bloqueado para novas reservas' : `${active.length}/${capacity} vagas ocupadas`;
+            const className = pendingDuration || blocked || active.length >= capacity ? 'is-busy' : 'is-free';
+            const detail = active.length ? active.map(booking => `${escapeHtml(booking.nomeCliente || booking.usuario?.nome || 'Cliente')} - ${escapeHtml(bookingServiceName(booking))}`).join('; ') : 'Sem atendimento neste instante';
             return `
               <li class="owner-timeline-item ${className}">
                 <span class="owner-timeline-hour">${escapeHtml(hora)}</span>
@@ -1312,11 +2040,12 @@ async function initPartnerPage() {
 
     const revenueBarsHtml = weekKeys.map((dateKey, index) => {
       const value = weeklyRevenue[index];
+      const total = weeklyTotals[index];
       const height = value ? Math.max(18, Math.round((value / maxWeeklyRevenue) * 118)) : 12;
       const dayIndex = new Date(`${dateKey}T12:00:00`).getDay();
       return `
-        <div class="owner-performance-bar is-revenue" style="--bar-h:${height}px" aria-label="${weekLabels[dayIndex]}: ${formatMoney(value)} de faturamento">
-          <span>${value ? formatMoney(value).replace("R$", "").trim() : "0,00"}</span>
+        <div class="owner-performance-bar is-revenue" style="--bar-h:${height}px" aria-label="${weekLabels[dayIndex]}: ${escapeHtml(bookingRevenueLabel(total))}; ${total.semValor} sem valor histórico">
+          <span>${total.semValor && !total.comValor ? "--" : formatMoney(value).replace("R$", "").trim()}${total.semValor ? "*" : ""}</span>
           <em>${weekLabels[dayIndex]}</em>
         </div>`;
     }).join("");
@@ -1334,7 +2063,7 @@ async function initPartnerPage() {
             <button class="owner-dashboard-nav" type="button" data-go-tab="agendamentos"><span class="owner-nav-icon">AG</span><span>Agendamentos</span></button>
             <button class="owner-dashboard-nav" type="button" data-go-tab="estabelecimento"><span class="owner-nav-icon">SV</span><span>Serviços</span></button>
             <a class="owner-dashboard-nav" href="${reviewsUrl}"><span class="owner-nav-icon">AV</span><span>Avaliações</span></a>
-            <button class="owner-dashboard-nav" type="button" data-dashboard-edit-shop="${escapeHtml(lojaId)}"><span class="owner-nav-icon">ED</span><span>Editar</span></button>
+            <button class="owner-dashboard-nav" type="button" data-dashboard-edit-shop="${escapeHtml(lojaId)}"><span class="owner-nav-icon">ED</span><span>Editar lava-jato</span></button>
           </nav>
         </aside>
 
@@ -1348,8 +2077,6 @@ async function initPartnerPage() {
             <div class="owner-topbar-actions">
               <span class="owner-plan-badge">Plano Premium</span>
               ${selectorHtml}
-              <a class="btn btn-ghost" href="${profileUrl}">Ir para marketplace</a>
-              <button class="btn btn-ghost" type="button" data-go-tab="agendamentos">Ações rápidas</button>
               <span class="owner-profile-chip">${escapeHtml(dono.nome || "Parceiro")}</span>
             </div>
           </header>
@@ -1363,8 +2090,9 @@ async function initPartnerPage() {
             </article>
             <article class="owner-metric-card">
               <span class="owner-metric-icon" aria-hidden="true">FT</span>
-              <p>Faturamento do dia</p>
-              <strong>${formatMoney(dailyRevenue)}</strong>
+              <p>Valor finalizado hoje</p>
+              <strong>${escapeHtml(bookingRevenueLabel(dailyTotal))}</strong>
+              ${dailyTotal.semValor ? `<small>${dailyTotal.semValor} atendimento(s) sem valor histórico, excluído(s) da soma.</small>` : ''}
               <small class="${revenueTrend.className}">${revenueTrend.text}</small>
             </article>
             <article class="owner-metric-card">
@@ -1383,10 +2111,10 @@ async function initPartnerPage() {
 
           <article class="owner-dashboard-card owner-dashboard-priority">
             <div class="owner-card-head">
-              <h3>Agenda do dia</h3>
+              <h3>Ocupação da agenda do dia</h3>
               <button class="btn btn-ghost" type="button" data-go-tab="agendamentos">Ver todos os agendamentos</button>
             </div>
-            <ul class="owner-timeline-grid">${slotHtml}</ul>
+            <p class="empty-copy">Ocupação em cada horário, no fuso de Brasília. Para reservar, a vaga precisa estar disponível por toda a duração do serviço.</p><ul class="owner-timeline-grid">${slotHtml}</ul>
           </article>
 
           <div class="owner-dashboard-grid">
@@ -1412,7 +2140,9 @@ async function initPartnerPage() {
             </article>
 
             <article class="owner-dashboard-card">
-              <h3>Faturamento semanal</h3>
+              <h3>Valor finalizado nos últimos 6 dias</h3>
+              <p class="empty-copy">Valores reservados dos serviços finalizados, pela data agendada. Não representam pagamentos confirmados.</p>
+              ${weeklyMissing ? `<p class="empty-copy">* ${weeklyMissing} atendimento(s) sem valor histórico não entram na soma. Os dias marcados têm valores incompletos.</p>` : ''}
               <div class="owner-performance-chart">${revenueBarsHtml}</div>
             </article>
           </div>
@@ -1448,7 +2178,7 @@ async function initPartnerPage() {
 
     removeButton.addEventListener("click", () => {
       if (servicesList.querySelectorAll(".partner-service-item").length <= 1) {
-        notify("Você precisa manter pelo menos um serviço.");
+        notify("Você precisa manter pelo menos um serviço.", "warning");
         return;
       }
       item.remove();
@@ -1498,6 +2228,9 @@ async function initPartnerPage() {
   function resetScheduleFields() {
     setScheduleDays(defaultScheduleDays);
     scheduleTimesInput.value = defaultBookingTimes.join(", ");
+    form.elements.capacidadeSimultanea.value = '1';
+    form.elements.agendaFechamento.value = '18:00';
+    form.elements.agendaBloqueios.value = '';
     setPartnerFeedback(scheduleFeedback, "");
   }
 
@@ -1515,6 +2248,8 @@ async function initPartnerPage() {
     setPartnerFeedback(geocodeFeedback, "");
     submitButton.textContent = "Publicar lava jato";
     form.dataset.editingShopId = "";
+    shopEditorOpen = false;
+    setPartnerFormMode(false);
     if (cancelEditButton) cancelEditButton.classList.add("hidden");
     // Resetar zona de foto e wizard
     const photoPreview = document.getElementById("partner-photo-preview");
@@ -1544,6 +2279,13 @@ async function initPartnerPage() {
   }
 
   function loadShopToForm(loja) {
+    // Voltar ao mesmo editor preserva o rascunho ao alternar as abas.
+    if (shopEditorOpen && form.dataset.editingShopId === String(loja.id)) {
+      switchTab("estabelecimento");
+      formTitle?.focus({ preventScroll: true });
+      return;
+    }
+    resetPartnerForm();
     form.dataset.editingShopId = String(loja.id);
     document.getElementById("partner-shop-name").value = loja.nome || "";
     document.getElementById("partner-summary").value = loja.descricao || "";
@@ -1562,6 +2304,9 @@ async function initPartnerPage() {
     longitudeInput.value = Number.isFinite(Number(loja.longitude)) ? loja.longitude : "";
     setScheduleDays(loja.agendaDias || defaultScheduleDays);
     scheduleTimesInput.value = parseScheduleTimes(loja.agendaHorarios || defaultBookingTimes).join(", ");
+    form.elements.capacidadeSimultanea.value = loja.capacidadeSimultanea ?? 1;
+    form.elements.agendaFechamento.value = loja.agendaFechamento || '18:00';
+    form.elements.agendaBloqueios.value = (loja.agendaBloqueios || []).map(b => b.data + (b.inicio ? ` ${b.inicio}-${b.fim}` : '')).join('\n');
 
     servicesList.innerHTML = "";
     if (Array.isArray(loja.servicos) && loja.servicos.length) {
@@ -1607,8 +2352,11 @@ async function initPartnerPage() {
       }
     });
     syncTimeTags?.();
-    switchTab("cadastro");
+    shopEditorOpen = true;
+    setPartnerFormMode(true);
+    switchTab("estabelecimento");
     wizardGoToStep?.(1);
+    formTitle?.focus({ preventScroll: true });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1621,6 +2369,8 @@ async function initPartnerPage() {
       }
       const { lojas } = await res.json();
       cachedShops = Array.isArray(lojas) ? lojas : [];
+      shopsLoaded = true;
+      syncShopView();
       if (!selectedDashboardShopId || !cachedShops.some((loja) => String(loja.id) === String(selectedDashboardShopId))) {
         selectedDashboardShopId = cachedShops[0] ? String(cachedShops[0].id) : "";
       }
@@ -1630,7 +2380,7 @@ async function initPartnerPage() {
         ownedList.innerHTML = `
           <div class="partner-empty-state">
             <p class="empty-copy">Você ainda não publicou nenhum lava jato.</p>
-            <button type="button" class="btn btn-primary" data-go-tab="cadastro">Ir para Cadastrar</button>
+            <button type="button" class="btn btn-primary" data-go-tab="estabelecimento">Cadastrar lava-jato</button>
           </div>`;
         return;
       }
@@ -1762,121 +2512,19 @@ async function initPartnerPage() {
     }
   }
 
+  let partnerBookingController = null;
   async function renderReceivedBookings() {
     if (!bookingsList) return;
-    try {
-      const res = await donoFetch("/api/agendamentos/dono");
-      if (!res.ok) {
-        bookingsList.innerHTML = '<p class="empty-copy">Erro ao carregar agendamentos.</p>';
-        cachedBookings = [];
+    if (!partnerBookingController) {
+      partnerBookingController = createBookingListController(bookingsList, 'parceiro', (items) => {
+        cachedBookings = items;
         renderPartnerDashboard();
-        return;
-      }
-      const { agendamentos } = await res.json();
-      cachedBookings = Array.isArray(agendamentos) ? agendamentos : [];
-      renderPartnerDashboard();
-
-      if (!cachedBookings.length) {
-        bookingsList.innerHTML =
-          '<p class="empty-copy">Ainda não existem agendamentos para seus lava jatos.</p>';
-        return;
-      }
-
-      bookingsList.innerHTML = cachedBookings
-        .map((ag) => {
-          const safeShopName = escapeHtml(ag.loja?.nome || "Lava jato");
-          const safeService = escapeHtml(ag.servico?.nome || "Serviço");
-          const safeDate = escapeHtml(ag.data || "--/--/----");
-          const safeTime = escapeHtml(ag.hora || "--:--");
-          const safeVehicle = escapeHtml(ag.veiculo || "não informado");
-          const customerName = ag.usuario?.nome || ag.nomeCliente || "Cliente";
-          const customerEmail = ag.usuario?.email || ag.emailCliente || "não informado";
-          const safeNotes = escapeHtml(ag.notas || "");
-          const status = ag.status || "pendente";
-          const statusClass =
-            status === "finalizado"
-              ? "booking-status-done"
-              : status === "cancelado"
-                ? "booking-status-canceled"
-                : "booking-status-pending";
-          const safeId = escapeHtml(String(ag.id));
-
-          return `
-          <article class="booking-received-item">
-            <div class="booking-item-head">
-              <h3>${safeShopName}</h3>
-              <span class="booking-status-badge ${statusClass}">${escapeHtml(status)}</span>
-            </div>
-            <p><strong>Serviço:</strong> ${safeService}</p>
-            <p><strong>Data:</strong> ${safeDate} as ${safeTime}</p>
-            <p><strong>Veículo:</strong> ${safeVehicle}</p>
-            <p><strong>Cliente:</strong> ${escapeHtml(customerName)} (${escapeHtml(customerEmail)})</p>
-            ${safeNotes ? `<p><strong>Obs:</strong> ${safeNotes}</p>` : ""}
-            <div class="booking-item-actions">
-              ${status !== "finalizado" ? `<button class="btn btn-secondary" type="button" data-finish-booking="${safeId}">Marcar como finalizado</button>` : ""}
-              ${status === "finalizado" ? `<button class="btn btn-secondary" type="button" data-reopen-booking="${safeId}">Reabrir agendamento</button>` : ""}
-              <button class="btn btn-ghost" type="button" data-delete-booking="${safeId}">Excluir agendamento</button>
-            </div>
-          </article>`;
-        })
-        .join("");
-    } catch {
-      bookingsList.innerHTML = '<p class="empty-copy">Erro ao carregar agendamentos.</p>';
-      cachedBookings = [];
-      renderPartnerDashboard();
+        const unread = items.reduce((sum,ag)=>sum+bookingUnread(ag,'parceiro').length,0);
+        const tab = managementShell.querySelector('[data-partner-tab="agendamentos"]');
+        if (tab) tab.textContent = unread ? `Agendamentos (${unread} novas alterações)` : 'Agendamentos';
+      });
     }
-  }
-
-  // Ações nos agendamentos recebidos
-  if (bookingsList) {
-    bookingsList.addEventListener("click", async (event) => {
-      if (!getDonoFromToken()) return;
-
-      const deleteBtn = event.target.closest("[data-delete-booking]");
-      if (deleteBtn) {
-        if (!(await confirmAction("Excluir este agendamento permanentemente?", { danger: true, confirmLabel: "Excluir" }))) return;
-        const id = deleteBtn.dataset.deleteBooking;
-        try {
-          const res = await donoFetch(`/api/agendamentos/${id}`, { method: "DELETE" });
-          if (!res.ok) { const d = await res.json(); notify(d.error || "Erro ao excluir."); return; }
-          await renderReceivedBookings();
-        } catch { notify("Erro de conexão."); }
-        return;
-      }
-
-      const finishBtn = event.target.closest("[data-finish-booking]");
-      if (finishBtn) {
-        const id = finishBtn.dataset.finishBooking;
-        try {
-          const res = await donoFetch(`/api/agendamentos/${id}/status`, {
-            method: "PUT",
-            body: JSON.stringify({ status: "finalizado" }),
-          });
-          if (!res.ok) { const d = await res.json(); notify(d.error || "Erro ao atualizar."); return; }
-          await renderReceivedBookings();
-        } catch { notify("Erro de conexão."); }
-        return;
-      }
-
-      const reopenBtn = event.target.closest("[data-reopen-booking]");
-      if (reopenBtn) {
-        const id = reopenBtn.dataset.reopenBooking;
-        try {
-          const res = await donoFetch(`/api/agendamentos/${id}/status`, {
-            method: "PUT",
-            body: JSON.stringify({ status: "pendente" }),
-          });
-          if (!res.ok) {
-            const d = await res.json();
-            notify(d.error || "Erro ao reabrir agendamento.");
-            return;
-          }
-          await renderReceivedBookings();
-        } catch {
-          notify("Erro de conexão.");
-        }
-      }
-    });
+    await partnerBookingController.load();
   }
 
   if (dashboardRoot) {
@@ -1950,7 +2598,7 @@ async function initPartnerPage() {
 
   useCurrentLocationButton.addEventListener("click", () => {
     if (!navigator.geolocation) {
-      notify("Geolocalização não suportada neste navegador.");
+      notify("Geolocalização não suportada neste navegador.", "error");
       return;
     }
     setPartnerFeedback(geocodeFeedback, "Capturando sua localização...", "warning");
@@ -1978,23 +2626,23 @@ async function initPartnerPage() {
   });
 
   // Ações na lista de lojas próprias
-  ownedList.addEventListener("click", async (event) => {
+  ownedList.addEventListener("click", guardAction(async (event) => {
     if (!getDonoFromToken()) { showAuthArea(); return; }
 
     // Excluir loja
     const removeShopBtn = event.target.closest("[data-remove-owner-shop]");
     if (removeShopBtn) {
-      if (!(await confirmAction("Excluir este lava jato permanentemente? Todos os serviços e agendamentos também serão removidos.", { danger: true, confirmLabel: "Excluir" }))) return;
+      if (!(await confirmAction(`Excluir o lava jato "${cachedShops.find(shop => String(shop.id) === removeShopBtn.dataset.removeOwnerShop)?.nome || "selecionado"}" permanentemente? Todos os serviços e agendamentos também serão removidos.`, { title: "Excluir lava jato", danger: true, confirmLabel: "Excluir lava jato" }))) return;
       const shopId = removeShopBtn.dataset.removeOwnerShop;
       try {
         const res = await donoFetch(`/api/lojas/${shopId}`, { method: "DELETE" });
-        if (!res.ok) { const d = await res.json(); notify(d.error || "Erro ao excluir."); return; }
+        if (!res.ok) { const d = await res.json(); notify(d.error || "Erro ao excluir.", "error"); return; }
         if (form.dataset.editingShopId === shopId) resetPartnerForm();
         await renderOwnedShops();
         await renderReceivedBookings();
-        if (!cachedShops.length) switchTab("cadastro");
-        notify("Lava jato removido do marketplace.");
-      } catch { notify("Erro de conexão."); }
+        if (!cachedShops.length) switchTab("estabelecimento");
+        notify("Lava jato removido do marketplace.", "success");
+      } catch { notify("Erro de conexão.", "error"); }
       return;
     }
 
@@ -2101,6 +2749,7 @@ async function initPartnerPage() {
         }
         editor.classList.add("hidden");
         await renderOwnedShops();
+        notify(editingServiceId ? "Serviço atualizado com sucesso." : "Serviço cadastrado com sucesso.", "success");
       } catch {
         if (fb) fb.textContent = "Erro de conexão.";
       }
@@ -2119,7 +2768,7 @@ async function initPartnerPage() {
     // Excluir serviço
     const removeServiceBtn = event.target.closest("[data-remove-owner-service]");
     if (removeServiceBtn) {
-      if (!(await confirmAction("Excluir este serviço?", { danger: true, confirmLabel: "Excluir" }))) return;
+      if (!(await confirmAction(`Excluir o serviço "${cachedShops.find(shop => String(shop.id) === removeServiceBtn.dataset.removeOwnerService)?.servicos?.find(service => String(service.id) === removeServiceBtn.dataset.serviceId)?.nome || "selecionado"}"?`, { title: "Excluir serviço", danger: true, confirmLabel: "Excluir serviço" }))) return;
       const shopId = removeServiceBtn.dataset.removeOwnerService;
       const serviceId = removeServiceBtn.dataset.serviceId;
       try {
@@ -2128,12 +2777,12 @@ async function initPartnerPage() {
         });
         if (!res.ok) {
           const d = await res.json();
-          notify(d.error || "Erro ao excluir serviço.");
+          notify(d.error || "Erro ao excluir serviço.", "error");
           return;
         }
         await renderOwnedShops();
-        notify("Serviço removido com sucesso.");
-      } catch { notify("Erro de conexão."); }
+        notify("Serviço removido com sucesso.", "success");
+      } catch { notify("Erro de conexão.", "error"); }
       return;
     }
 
@@ -2148,17 +2797,18 @@ async function initPartnerPage() {
         try {
           const res = await fetch(`/api/lojas/${shopId}`);
           if (res.ok) { const { loja: l } = await res.json(); loadShopToForm(l); }
-          else notify("Não foi possível carregar o lava jato.");
-        } catch { notify("Erro de conexão."); }
+          else notify("Não foi possível carregar o lava jato.", "error");
+        } catch { notify("Erro de conexão.", "error"); }
       }
     }
-  });
+  }, 'button'));
 
   // Submeter formulário de loja
-  form.addEventListener("submit", async (event) => {
+  form.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
-    if (!getDonoFromToken()) { showAuthArea(); notify("Faça login no painel do dono para continuar."); return; }
+    if (!getDonoFromToken()) { showAuthArea(); notify("Faça login na sua conta de parceiro para continuar.", "warning"); return; }
 
+    const editingId = form.dataset.editingShopId || "";
     const formData = new FormData(form);
     const nome = String(formData.get("shopName") || "").trim();
     const descricao = String(formData.get("summary") || "").trim();
@@ -2180,18 +2830,18 @@ async function initPartnerPage() {
       : 0;
 
     if (!nome || !descricao || !endereco || (!fotoUrl && !photoFile)) {
-      notify("Preencha todos os campos obrigatórios do estabelecimento.");
+      notify("Preencha todos os campos obrigatórios do estabelecimento.", "error");
       return;
     }
     if (
       !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
       latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
     ) {
-      notify("Informe latitude e longitude válidas para mostrar no mapa.");
+      notify("Informe latitude e longitude válidas para mostrar no mapa.", "error");
       return;
     }
-    if (!servicos.length) {
-      notify("Adicione pelo menos um serviço válido para publicar.");
+    if (!editingId && !servicos.length) {
+      notify("Adicione pelo menos um serviço válido para publicar.", "error");
       return;
     }
     if (!agendaDias.length) {
@@ -2206,7 +2856,6 @@ async function initPartnerPage() {
     setPartnerFeedback(scheduleFeedback, `${agendaHorarios.length} horário${agendaHorarios.length === 1 ? "" : "s"} configurado${agendaHorarios.length === 1 ? "" : "s"}.`, "valid");
 
     const categoria = deriveCategoryFromServicos(servicos);
-    const editingId = form.dataset.editingShopId || "";
 
     submitButton.disabled = true;
     submitButton.textContent = "Salvando...";
@@ -2242,12 +2891,16 @@ async function initPartnerPage() {
         setPartnerFeedback(photoFeedback, "Fotos enviadas com sucesso.", "valid");
       }
       if (!isValidShopImagePath(fotoUrl) || (capaUrl && !isValidShopImagePath(capaUrl))) {
-        notify("As fotos precisam ser URLs http/https ou arquivos em assets/img ou assets/uploads.");
+        notify("Use um link de imagem válido (http/https) ou envie uma foto.", "error");
         return;
       }
 
       let res;
-      const lojaPayload = { nome, descricao, endereco, latitude, longitude, precoMedio, categoria, fotoUrl, capaUrl: capaUrl || fotoUrl, fotosAdicionais, formasPagamento, politicaCancelamento, agendaDias, agendaHorarios };
+      const lojaPayload = { nome, descricao, endereco, latitude, longitude, precoMedio, categoria, fotoUrl, capaUrl: capaUrl || fotoUrl, fotosAdicionais, formasPagamento, politicaCancelamento, agendaDias, agendaHorarios,
+        capacidadeSimultanea: Number(formData.get('capacidadeSimultanea')),
+        agendaFechamento: String(formData.get('agendaFechamento') || ''),
+        agendaBloqueios: String(formData.get('agendaBloqueios') || ''),
+      };
       if (editingId) {
         res = await donoFetch(`/api/lojas/${editingId}`, {
           method: "PUT",
@@ -2263,11 +2916,11 @@ async function initPartnerPage() {
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 409 && data.lojaId) {
-          notify("Seu login já possui um lava jato publicado. Carregando para edição.");
+          notify("Seu login já possui um lava jato publicado. Carregando para edição.", "info");
           const lojaRes = await fetch(`/api/lojas/${data.lojaId}`);
           if (lojaRes.ok) { const { loja } = await lojaRes.json(); loadShopToForm(loja); }
         } else {
-          notify(data.error || "Erro ao salvar lava jato.");
+          notify(data.error || "Erro ao salvar lava jato.", "error");
         }
         return;
       }
@@ -2275,18 +2928,22 @@ async function initPartnerPage() {
       resetPartnerForm();
       await renderOwnedShops();
       await renderReceivedBookings();
-      notify(editingId ? "Lava jato atualizado com sucesso." : "Cadastro enviado para aprovação. Sua loja ficará visível no marketplace após a aprovação da equipe.");
-      switchTab("dashboard");
+      if (editingId) notify("Lava jato atualizado com sucesso.", "success");
+      // Lojas novas entram como "pendente" e só aparecem no marketplace depois da aprovação do admin.
+      else if (data.loja?.statusAprovacao === "pendente") notify("Cadastro enviado para aprovação. Sua loja ficará visível no marketplace após a aprovação da equipe.", "info");
+      else notify("Lava jato publicado com sucesso no marketplace.", "success");
+      switchTab("estabelecimento");
+      document.getElementById("partner-overview-title")?.focus({ preventScroll: true });
     } catch (err) {
-      notify(err.message || "Erro de conexão. Tente novamente.");
+      notify(err.message || "Erro de conexão. Tente novamente.", "error");
     } finally {
       submitButton.disabled = false;
-      if (!form.dataset.editingShopId) submitButton.textContent = "Salvar lava jato";
+      submitButton.textContent = form.dataset.editingShopId ? "Salvar alterações" : "Publicar lava jato";
     }
-  });
+  }));
 
   // Login do dono
-  loginForm?.addEventListener("submit", async (event) => {
+  loginForm?.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     const formData = new FormData(loginForm);
     const login = normalizeOwnerLogin(formData.get("login"));
@@ -2299,7 +2956,7 @@ async function initPartnerPage() {
         body: JSON.stringify({ login, senha }),
       });
       const data = await res.json();
-      if (!res.ok) { notify(data.error || "Login ou senha inválidos."); return; }
+      if (!res.ok) { if (tratarPendenciaEmail(data, "dono")) return; notify(data.error || "Login ou senha inválidos.", "error"); return; }
 
       setDonoToken(data.token);
       loginForm.reset();
@@ -2307,11 +2964,12 @@ async function initPartnerPage() {
       showManagementArea(data.dono);
       await renderOwnedShops();
       await renderReceivedBookings();
-      switchTab(cachedShops.length ? "dashboard" : "cadastro");
+      switchTab(cachedShops.length ? "dashboard" : "estabelecimento");
+      notify("Login realizado com sucesso.", "success");
     } catch {
-      notify("Erro de conexão. Tente novamente.");
+      notify("Erro de conexão. Tente novamente.", "error");
     }
-  });
+  }));
 
   // Botão Google na página do parceiro
   const partnerGoogleBtn = document.getElementById("partner-google-login-btn");
@@ -2337,7 +2995,7 @@ async function initPartnerPage() {
     renderPartnerDashboard();
     resetPartnerForm();
     showAuthArea();
-    notify("Sessão do dono encerrada.");
+    notify("Sessão do parceiro encerrada.", "info");
   });
 
   // ── Wizard de cadastro ─────────────────────────────────────────────────────
@@ -2365,19 +3023,19 @@ async function initPartnerPage() {
           const nome = (document.getElementById("partner-shop-name")?.value || "").trim();
           const desc = (document.getElementById("partner-summary")?.value || "").trim();
           const addr = (document.getElementById("partner-address")?.value || "").trim();
-          if (!nome || !desc || !addr) { notify("Preencha nome, descrição e endereço antes de continuar."); return; }
+          if (!nome || !desc || !addr) { notify("Preencha nome, descrição e endereço antes de continuar.", "error"); return; }
           const lat = latitudeInput?.value;
           const lng = longitudeInput?.value;
-          if (!lat || !lng) { notify('Clique em "Localizar no mapa" para confirmar o endereço antes de continuar.'); return; }
+          if (!lat || !lng) { notify('Clique em "Localizar no mapa" para confirmar o endereço antes de continuar.', "error"); return; }
         }
         if (step === 2) {
           const photoFile = photoFileInput?.files?.[0];
           const photoUrl = (document.getElementById("partner-photo")?.value || "").trim();
-          if (!photoFile && !photoUrl) { notify("Adicione uma foto do seu lava jato para continuar."); return; }
+          if (!photoFile && !photoUrl) { notify("Adicione uma foto do seu lava jato para continuar.", "error"); return; }
         }
         if (step === 3) {
           const days = readScheduleDaysFromForm();
-          if (!days.length) { notify("Selecione pelo menos um dia de atendimento."); return; }
+          if (!days.length) { notify("Selecione pelo menos um dia de atendimento.", "error"); return; }
         }
         goToStep(step + 1);
       });
@@ -2467,7 +3125,7 @@ async function initPartnerPage() {
       activeCropSlot = slotDef;
       originalFile = file;
       cropModal.classList.remove("hidden");
-      document.body.style.overflow = "hidden";
+      activateModal(cropModal, { initialFocus: cropModal.querySelector("#crop-cancel-btn"), onEscape: closeCropModal });
       const objectUrl = URL.createObjectURL(file);
       cropImg.onload = () => {
         URL.revokeObjectURL(objectUrl);
@@ -2484,7 +3142,7 @@ async function initPartnerPage() {
 
     function closeCropModal() {
       if (cropModal) cropModal.classList.add("hidden");
-      document.body.style.overflow = "";
+      if (cropModal) deactivateModal(cropModal);
       activeCropSlot = null;
       originalFile = null;
       dragStart = null;
@@ -2671,7 +3329,9 @@ async function initPartnerPage() {
     showManagementArea(dono);
     await renderOwnedShops();
     await renderReceivedBookings();
-    switchTab(cachedShops.length ? "dashboard" : "cadastro");
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    const initialTab = ["dashboard", "estabelecimento", "agendamentos"].includes(requestedTab) ? requestedTab : "dashboard";
+    switchTab(cachedShops.length ? initialTab : "estabelecimento");
   } else {
     showAuthArea();
     resetPartnerForm();
@@ -2679,6 +3339,7 @@ async function initPartnerPage() {
 }
 
 async function fetchUserFavoriteShopIds() {
+  if (getDonoFromToken() || !getAuthToken()) return [];
   try {
     const res = await userFetch("/api/favoritos");
     if (!res.ok) return [];
@@ -2704,6 +3365,7 @@ async function toggleFavoriteShop(shopId, currentlyFavorited) {
 }
 
 function createFavoriteButtonHtml(isFavorited, shopId) {
+  if (getDonoFromToken()) return "";
   return `
     <button type="button" class="shop-card-favorite${isFavorited ? " is-favorited" : ""}" aria-label="${isFavorited ? "Remover favorito" : "Adicionar aos favoritos"}" data-favorite-toggle data-shop-id="${encodeURIComponent(shopId)}">
       <span aria-hidden="true">${isFavorited ? "★" : "☆"}</span>
@@ -2728,10 +3390,13 @@ async function handleFavoriteButtonClick(event) {
   const currentlyFavorited = button.classList.contains("is-favorited");
   const success = await toggleFavoriteShop(shopId, currentlyFavorited);
   if (!success) {
-    notify("Não foi possível atualizar o favorito no momento.");
+    notify("Não foi possível atualizar o favorito no momento.", "error");
     return;
   }
   updateFavoriteButtonState(button, !currentlyFavorited);
+  document.querySelectorAll("[data-favorite-toggle]").forEach((other) => {
+    if (Number(other.dataset.shopId) === shopId) updateFavoriteButtonState(other, !currentlyFavorited);
+  });
   if (!currentlyFavorited) {
     window.location.href = "favoritos.html";
   }
@@ -2739,6 +3404,57 @@ async function handleFavoriteButtonClick(event) {
 
 function initFavoriteButtonHandling() {
   document.addEventListener("click", handleFavoriteButtonClick);
+}
+
+function emailCadastroValido(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return email.length <= 254 && email.split("@")[0].length <= 64
+    && !/[\s,;<>()[\]\\"]/.test(email)
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+function configurarValidacaoEmail(inputId, messageId) {
+  const input = document.getElementById(inputId), message = document.getElementById(messageId);
+  if (!input || !message) return () => false;
+  function validar(obrigatorio = false) {
+    const value = input.value.trim();
+    const valido = emailCadastroValido(value);
+    const state = !value && !obrigatorio ? "" : valido ? "valid" : "invalid";
+    message.textContent = !value && !obrigatorio ? "" : valido
+      ? "Email válido. Confirme no seu e-mail após criar a conta."
+      : !value ? "Informe seu e-mail para criar a conta." : "Informe um e-mail válido, como nome@exemplo.com.";
+    message.className = `empty-copy validation-msg${state ? ` is-${state}` : ""}`;
+    input.setAttribute("aria-invalid", String(state === "invalid"));
+    return valido;
+  }
+  input.addEventListener("input", () => validar());
+  input.addEventListener("blur", () => validar());
+  input.form?.addEventListener("reset", () => {
+    message.textContent = ""; message.className = "empty-copy validation-msg";
+    input.setAttribute("aria-invalid", "false");
+  });
+  return validar;
+}
+
+// Cadastro fica pendente até a prova de posse do e-mail; senha nunca é persistida.
+function abrirVerificacaoEmail(tipo, email = "", mensagem = "", falhou = false) {
+  try { if (email) sessionStorage.setItem(`autoshine:verificar:${tipo}`, email); } catch {}
+  if (tipo === "dono") clearDonoToken(); else clearCurrentUser();
+  redirectWithNotice(`verificar-email.html?tipo=${tipo}`, mensagem || "Confirme seu e-mail antes de entrar.", falhou ? "error" : "info");
+}
+function tratarPendenciaEmail(data, tipo, email = "") {
+  const box = document.getElementById(tipo === "dono" ? "dono-login-pending" : "login-pending");
+  if (box) box.classList.add("hidden");
+  if (!["EMAIL_NAO_VERIFICADO", "EMAIL_NECESSARIO"].includes(data.code)) return false;
+  try { if (email) sessionStorage.setItem(`autoshine:verificar:${tipo}`, email); } catch {}
+  // O login não envia e-mail nem redireciona à confirmação. Apenas informa um cadastro incompleto.
+  const message = data.code === "EMAIL_NECESSARIO"
+    ? "Sua conta antiga precisa de um e-mail. Conclua o cadastro uma única vez para entrar."
+    : "Seu cadastro ainda não foi confirmado. Abra o link recebido no e-mail. Depois, basta entrar com sua senha.";
+  if (box) {
+    box.querySelector("[data-pending-message]").textContent = message;
+    box.classList.remove("hidden");
+  } else notify(message, "warning");
+  return true;
 }
 
 // ── Acesso do dono (login + cadastro) ───────────────────────────────────────
@@ -2755,6 +3471,7 @@ async function initOwnerRegisterPage() {
   const googleRegisterBtn = document.getElementById("dono-google-register-btn");
 
   if (!switchLogin || !switchRegister || !loginPanel || !registerPanel) return;
+  const validarEmail = configurarValidacaoEmail("owner-register-email", "owner-email-validation-msg");
 
   const params = new URLSearchParams(window.location.search);
 
@@ -2803,11 +3520,11 @@ async function initOwnerRegisterPage() {
       return true;
     }
     if (auth === "google_not_configured") {
-      notify("Login Google ainda não configurado. Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env e reinicie o servidor.");
+      notify("O login com Google está indisponível no momento. Entre com e-mail e senha.", "error");
       window.history.replaceState({}, "", "cadastro-dono.html");
     }
     if (auth === "google_failed") {
-      notify("Não foi possível concluir o login com Google. Tente novamente.");
+      notify("Não foi possível concluir o login com Google. Tente novamente.", "error");
       window.history.replaceState({}, "", "cadastro-dono.html");
     }
     return false;
@@ -2888,7 +3605,7 @@ async function initOwnerRegisterPage() {
       });
     }
 
-    registerForm.addEventListener("submit", async (event) => {
+    registerForm.addEventListener("submit", guardAction(async (event) => {
       event.preventDefault();
       const formData = new FormData(registerForm);
       const nome = String(formData.get("name") || "").trim();
@@ -2899,19 +3616,20 @@ async function initOwnerRegisterPage() {
       const senhaConfirm = String(formData.get("passwordConfirm") || "");
       const termsAccepted = Boolean(formData.get("terms"));
 
-      if (!nome || !login || !cnpj || !senha || !senhaConfirm) {
-        notify("Preencha todos os campos para criar a conta de dono.");
+      if (!validarEmail(true)) { document.getElementById("owner-register-email")?.focus(); return; }
+      if (!nome || !login || !email || !cnpj || !senha || !senhaConfirm) {
+        notify("Preencha todos os campos para criar a conta de parceiro.", "error");
         return;
       }
-      if (login.length < 4) { notify("O login deve ter no mínimo 4 caracteres."); return; }
+      if (login.length < 4) { notify("O login deve ter no mínimo 4 caracteres.", "error"); return; }
       if (!/^[a-z0-9._-]+$/i.test(login)) {
-        notify("Use apenas letras, números, ponto, underline ou hífen no login.");
+        notify("Use apenas letras, números, ponto, underline ou hífen no login.", "error");
         return;
       }
-      if (cnpj.length !== 14) { notify("CNPJ deve conter 14 dígitos."); return; }
-      if (senha.length < 6) { notify("A senha deve ter no mínimo 6 caracteres."); return; }
-      if (senha !== senhaConfirm) { notify("As senhas não coincidem."); return; }
-      if (!termsAccepted) { notify("Você precisa aceitar os termos para criar a conta de parceiro."); return; }
+      if (cnpj.length !== 14) { notify("CNPJ deve conter 14 dígitos.", "error"); return; }
+      if (AutoShinePassword.erroSenha(senha)) { notify(AutoShinePassword.erroSenha(senha), "error"); return; }
+      if (senha !== senhaConfirm) { notify("As senhas não coincidem.", "error"); return; }
+      if (!termsAccepted) { notify("Você precisa aceitar os termos para criar a conta de parceiro.", "error"); return; }
 
       // Tentar validar CNPJ antes de enviar (mas permitir mesmo se falhar)
       let cnpjValidationWarning = false;
@@ -2919,7 +3637,7 @@ async function initOwnerRegisterPage() {
         const cnpjRes = await fetch(`/api/validacoes/cnpj/${cnpj}`);
         const cnpjData = await cnpjRes.json();
         if (!cnpjRes.ok || !cnpjData.valido) {
-          notify(cnpjData.mensagem || "CNPJ inválido.");
+          notify(cnpjData.mensagem || "CNPJ inválido.", "error");
           return;
         }
         if (cnpjData.origem !== "brasilapi") {
@@ -2942,14 +3660,16 @@ async function initOwnerRegisterPage() {
           body: JSON.stringify({ nome, login, email: email || undefined, cnpj, senha }),
         });
         const data = await res.json();
-        if (!res.ok) { notify(data.error || "Erro ao criar conta."); return; }
-        setDonoToken(data.token);
-        registerForm.reset();
-        window.location.href = "cadastro-dono.html";
+        if (data.verificacaoPendente) {
+          registerForm.reset();
+          abrirVerificacaoEmail("dono", email, data.error || data.mensagem, !res.ok);
+          return;
+        }
+        notify(data.error || "Não foi possível concluir o cadastro.", "error");
       } catch {
-        notify("Erro de conexão. Tente novamente.");
+        notify("Erro de conexão. Tente novamente.", "error");
       }
-    });
+    }));
   }
 }
 
@@ -2958,14 +3678,14 @@ function initUnifiedOwnerLogin() {
   const loginForm = document.getElementById("dono-login-form");
   if (!loginForm || page !== "cadastro") return;
 
-  loginForm.addEventListener("submit", async (event) => {
+  loginForm.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     const formData = new FormData(loginForm);
     const login = normalizeOwnerLogin(formData.get("login"));
     const senha = String(formData.get("password") || "");
 
     if (!login || !senha) {
-      notify("Informe o login e a senha da empresa.");
+      notify("Informe o login e a senha da empresa.", "error");
       return;
     }
 
@@ -2977,17 +3697,18 @@ function initUnifiedOwnerLogin() {
       });
       const data = await res.json();
       if (!res.ok) {
-        notify(data.error || "Login ou senha inválidos.");
+        if (tratarPendenciaEmail(data, "dono")) return;
+        notify(data.error || "Login ou senha inválidos.", "error");
         return;
       }
 
       setDonoToken(data.token);
       loginForm.reset();
-      window.location.href = "cadastro-dono.html";
+      redirectWithNotice("cadastro-dono.html", "Login realizado com sucesso.");
     } catch {
-      notify("Erro de conexão. Tente novamente.");
+      notify("Erro de conexão. Tente novamente.", "error");
     }
-  });
+  }));
 }
 
 function initAccountTypeSelector() {
@@ -3157,6 +3878,19 @@ async function initProfilePage() {
     const res = await fetch(`/api/lojas/${shopId}`);
     if (!res.ok) return;
     const { loja } = await res.json();
+    const partner = getDonoFromToken();
+    const partnerView = Boolean(partner);
+    const ownShop = partnerView && String(loja.donoId) === String(partner.donoId);
+    if (partnerView) {
+      const main = document.querySelector("main");
+      const notice = document.createElement("section");
+      notice.className = "panel";
+      notice.innerHTML = `
+        <a class="booking-back-link" href="cadastro-dono.html">← Voltar ao painel do parceiro</a>
+        <p class="eyebrow">${ownShop ? "Seu estabelecimento" : "Consulta de estabelecimento"}</p>
+        <p class="hero-text">Você está visualizando as informações com sua conta de parceiro. Agendamentos e avaliações são exclusivos de contas de cliente.</p>`;
+      main?.prepend(notice);
+    }
 
     const heroCarousel = document.querySelector(".profile-carousel");
     const profileInfo = document.querySelector(".profile-info");
@@ -3196,7 +3930,7 @@ async function initProfilePage() {
     const paymentChips = payments.length
       ? payments.map((item) => `<span>${escapeHtml(item)}</span>`).join("")
       : "<span>Consultar estabelecimento</span>";
-    const cancellationPolicy = String(loja.politicaCancelamento || "").trim() ||
+    const cancellationPolicy = String(loja.politicaCancelamentoEfetiva || loja.politicaCancelamento || "").trim() ||
       "Cancelamentos e reagendamentos podem ser feitos até 2 horas antes do horário marcado.";
     const avgPriceText = loja.precoMedio > 0
       ? `R$ ${Number(loja.precoMedio).toFixed(0)}`
@@ -3208,7 +3942,7 @@ async function initProfilePage() {
       <div class="profile-actions">
         <a class="btn btn-primary" href="${routeUrl}" target="_blank" rel="noopener">Traçar rota</a>
         <a class="btn btn-ghost" href="${mapUrl}">Abrir no mapa</a>
-        <button class="btn btn-ghost" type="button" data-report-shop="${loja.id}" data-report-label="${escapeHtml(loja.nome)}">Denunciar loja</button>
+        ${!partnerView ? `<button class="btn btn-ghost" type="button" data-report-shop="${loja.id}" data-report-label="${escapeHtml(loja.nome)}">Denunciar loja</button>` : ""}
       </div>
     `;
 
@@ -3282,6 +4016,13 @@ async function initProfilePage() {
     const detailDuration = serviceDetailModal.querySelector("#service-detail-duration");
     const detailWarrantySummary = serviceDetailModal.querySelector("#service-detail-warranty-summary");
     const detailBooking = serviceDetailModal.querySelector("#service-detail-booking");
+    detailBooking.classList.toggle("hidden", partnerView);
+    if (partnerView) {
+      const note = document.createElement("p");
+      note.className = "empty-copy";
+      note.textContent = "Visualização de parceiro: agendamento disponível apenas para clientes.";
+      detailBooking.parentElement.appendChild(note);
+    }
     const detailTabs = Array.from(serviceDetailModal.querySelectorAll("[data-service-detail-tab]"));
     const detailPanels = Array.from(serviceDetailModal.querySelectorAll("[data-service-detail-panel]"));
 
@@ -3292,6 +4033,7 @@ async function initProfilePage() {
 
     function closeServiceDetail() {
       serviceDetailModal.classList.add("hidden");
+      deactivateModal(serviceDetailModal);
       serviceDetailModal.setAttribute("aria-hidden", "true");
       document.body.classList.remove("service-detail-open");
     }
@@ -3355,7 +4097,7 @@ async function initProfilePage() {
       serviceDetailModal.classList.remove("hidden");
       serviceDetailModal.setAttribute("aria-hidden", "false");
       document.body.classList.add("service-detail-open");
-      serviceDetailModal.querySelector(".service-detail-close")?.focus();
+      activateModal(serviceDetailModal, { initialFocus: serviceDetailModal.querySelector(".service-detail-close"), onEscape: closeServiceDetail });
     }
 
     detailTabs.forEach((tab) => {
@@ -3374,7 +4116,10 @@ async function initProfilePage() {
         const nome = escapeHtml(servico.nome || "Serviço");
         const descricao = escapeHtml(servico.descricao || "");
         const duracao = escapeHtml(servico.duracao || "--");
-        const preco = Number(servico.preco || 0).toFixed(0);
+        const preco = Number(servico.preco || 0).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
         const bookingUrl = `agendamento.html?servicoId=${servico.id}&shopId=${loja.id}&servico=${encodeURIComponent(servico.nome)}&shop=${encodeURIComponent(loja.nome)}`;
         return `
           <article class="service-card">
@@ -3386,7 +4131,7 @@ async function initProfilePage() {
             </div>
             <div class="service-card-actions">
               <button class="btn btn-secondary" type="button" data-service-detail="${servico.id}">Ver detalhes</button>
-              <a class="btn btn-primary requires-auth" data-auth-action="agendar" href="${bookingUrl}">Agendar</a>
+              ${!partnerView ? `<a class="btn btn-primary requires-auth" data-auth-action="agendar" href="${bookingUrl}">Agendar</a>` : ""}
             </div>
           </article>`;
       })
@@ -3832,6 +4577,7 @@ async function initMapInteractions() {
 
 // ── Agendamento ──────────────────────────────────────────────────────────────
 async function initBookingForm() {
+  if (showPartnerClientRestriction()) return;
   const form = document.getElementById("booking-form");
   const serviceInput = document.getElementById("servico");
   const dateInput = document.getElementById("data");
@@ -3849,6 +4595,7 @@ async function initBookingForm() {
   let lojaData = null;
   let servicoData = null;
   let availabilityRefreshTimer = null;
+  let availabilityRequestId = 0;
 
   if (shopId) {
     try {
@@ -3869,11 +4616,25 @@ async function initBookingForm() {
     } catch {}
   }
 
+  const paymentField = document.createElement('div');
+  paymentField.className = 'field';
+  paymentField.innerHTML = `<label for="booking-payment">Como pretende pagar?</label><select id="booking-payment" name="formaPagamento" required><option value="">Selecione</option>${lojaData ? bookingPaymentOptions(lojaData).map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('') : ''}</select><p class="empty-copy">Pagamento no estabelecimento. Esta escolha não realiza nenhuma cobrança.</p>`;
+  form.querySelector('[name="observacoes"]')?.closest('.field')?.before(paymentField);
+  if (!paymentField.isConnected) form.insertBefore(paymentField, submitButton);
+  const paymentSelect = paymentField.querySelector('select');
+  paymentSelect.addEventListener('change',updateBookingSubmitState);
+  let bookingSubmitting = false;
   serviceInput.value = servicoData?.nome || servicoNome;
+  const serviceSummary = document.createElement('p');
+  serviceSummary.className = 'empty-copy';
+  serviceSummary.textContent = servicoData
+    ? `Valor do serviço: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(servicoData.preco)}. Duração: ${servicoData.duracao}. Confira antes de confirmar.`
+    : 'Preço e duração indisponíveis. Selecione novamente o serviço.';
+  serviceInput.after(serviceSummary);
   const selectedShopName = lojaData?.nome || shopNameFromQuery || "Lava jato";
 
   if (dateInput) {
-    dateInput.min = new Date().toISOString().slice(0, 10);
+    dateInput.min = bookingToday();
   }
 
   function setAvailabilityMessage(message = "", state = "") {
@@ -3889,7 +4650,9 @@ async function initBookingForm() {
       servicoData &&
       dateInput?.value &&
       timeSelect?.value &&
-      !timeSelect.disabled
+      !timeSelect.disabled &&
+      paymentSelect.value &&
+      !bookingSubmitting
     );
   }
 
@@ -3908,23 +4671,26 @@ async function initBookingForm() {
       return false;
     }
     const selected = timeSelect.value;
+    const requestedDate = dateInput.value, requestId = ++availabilityRequestId;
     if (!silent) setAvailabilityMessage("Consultando horários...", "warning");
     try {
-      const res = await fetch(`/api/lojas/${shopId}/disponibilidade?data=${encodeURIComponent(dateInput.value)}&_=${Date.now()}`);
+      const res = await fetch(`/api/lojas/${shopId}/disponibilidade?data=${encodeURIComponent(requestedDate)}&servicoId=${encodeURIComponent(servicoId)}&_=${Date.now()}`);
+      const result = await res.json();
+      if (requestId !== availabilityRequestId || dateInput.value !== requestedDate) return false;
       if (!res.ok) {
-        setAvailabilityMessage("Não foi possível carregar os horários.", "invalid");
+        setAvailabilityMessage(result.error || "Não foi possível carregar os horários.", "invalid");
         timeSelect.disabled = true;
         updateBookingSubmitState();
         return false;
       }
-      const { horarios = [], aberto = true, mensagem = "" } = await res.json();
+      const { horarios = [], aberto = true, mensagem = "" } = result;
       timeSelect.innerHTML = '<option value="">Selecione</option>';
       let availableCount = 0;
       let selectedStillAvailable = false;
-      horarios.forEach(({ hora, disponivel }) => {
+      horarios.forEach(({ hora, disponivel, motivo, vagas }) => {
         const option = document.createElement("option");
         option.value = hora;
-        option.textContent = disponivel ? hora : `${hora} (ocupado)`;
+        option.textContent = disponivel ? `${hora}${vagas > 1 ? ` (${vagas} vagas)` : ""}` : `${hora} (${motivo || "indisponível"})`;
         option.disabled = !disponivel;
         if (disponivel && hora === selected) {
           option.selected = true;
@@ -3942,18 +4708,20 @@ async function initBookingForm() {
       if (!aberto) {
         setAvailabilityMessage(mensagem || "A loja não atende nesta data.", "warning");
       } else if (!availableCount) {
-        setAvailabilityMessage("Nenhum horário disponível nesta data. Todos estão ocupados por outros usuários.", "warning");
+        setAvailabilityMessage(mensagem || "Nenhum horário disponível para a duração deste serviço.", "warning");
       } else if (selected && !selectedStillAvailable) {
-        setAvailabilityMessage(`O horário ${selected} acabou de ser ocupado. Escolha outro horário disponível.`, "invalid");
+        setAvailabilityMessage(`O horário ${selected} não está mais disponível para este serviço. Escolha outro horário.`, "invalid");
       } else {
         setAvailabilityMessage(
-          `${availableCount} ${availableCount === 1 ? "horário disponível" : "horários disponíveis"} nesta data.`,
+          `${availableCount} ${availableCount === 1 ? "horário disponível" : "horários disponíveis"} para toda a duração. Horários de Brasília.`,
           "valid",
         );
       }
       updateBookingSubmitState();
       return !selected || selectedStillAvailable;
     } catch {
+      if (requestId !== availabilityRequestId || dateInput.value !== requestedDate) return false;
+      timeSelect.disabled = true;
       setAvailabilityMessage("Erro de conexão ao consultar horários.", "invalid");
       updateBookingSubmitState();
       return false;
@@ -3987,9 +4755,10 @@ async function initBookingForm() {
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (bookingSubmitting || !form.reportValidity()) return;
     if (!requireAuth("agendar")) return;
     if (!lojaData || !servicoData) {
-      notify("Escolha um lava jato e serviço válidos antes de agendar.");
+      notify("Escolha um lava jato e serviço válidos antes de agendar.", "error");
       return;
     }
     if (!dateInput?.value || !timeSelect?.value) {
@@ -3997,8 +4766,12 @@ async function initBookingForm() {
       updateBookingSubmitState();
       return;
     }
+    bookingSubmitting = true;
+    updateBookingSubmitState();
     const horarioAindaDisponivel = await updateAvailableTimes({ silent: true });
     if (!horarioAindaDisponivel || !timeSelect.value) {
+      bookingSubmitting = false;
+      updateBookingSubmitState();
       return;
     }
 
@@ -4009,8 +4782,10 @@ async function initBookingForm() {
       const res = await userFetch("/api/agendamentos", {
         method: "POST",
         body: JSON.stringify({
+          formaPagamento: paymentSelect.value,
           lojaId: lojaData.id,
           servicoId: servicoData.id,
+          servicoEsperado: { nome: servicoData.nome, preco: servicoData.preco, duracao: servicoData.duracao },
           data: String(formData.get("data") || "").trim(),
           hora: String(formData.get("horario") || "").trim(),
           veiculo: String(formData.get("veiculo") || "Carro").trim(),
@@ -4027,218 +4802,30 @@ async function initBookingForm() {
         } else if (res.status === 409) {
           setAvailabilityMessage(data.error || "Este horário foi ocupado por outro usuário no mesmo momento. Escolha outro horário disponível.", "invalid");
         } else {
-          notify(data.error || "Erro ao confirmar agendamento.");
+          notify(data.error || "Erro ao confirmar agendamento.", "error");
         }
         return;
       }
     } catch {
-      notify("Erro de conexão. Tente novamente.");
+      notify("Erro de conexão. Tente novamente.", "error");
       return;
+    } finally {
+      bookingSubmitting = false;
+      updateBookingSubmitState();
     }
 
-    const summary = [
-      `Lava jato: ${selectedShopName}`,
-      `Serviço: ${serviceInput.value}`,
-      `Data: ${formData.get("data")}`,
-      `Horário: ${formData.get("horario")}`,
-      `Veículo: ${formData.get("veiculo")}`,
-    ].join("\n");
-
-    notify(`Agendamento confirmado com sucesso.\n\n${summary}`);
-    form.reset();
-    serviceInput.value = servicoData?.nome || servicoNome;
-    if (dateInput) dateInput.min = new Date().toISOString().slice(0, 10);
-    resetTimeOptions();
+    redirectWithNotice("meus-agendamentos.html", "Solicitação de agendamento enviada. Aguarde a confirmação do estabelecimento.");
   });
 }
 
 // ── Avaliações ───────────────────────────────────────────────────────────────
 async function initUserBookingsPage() {
-  const list = document.getElementById("user-bookings-list");
-  const empty = document.getElementById("user-bookings-empty");
-  if (!list) return;
-  if (!requireAuth("agendar")) return;
-
-  const today = new Date().toISOString().slice(0, 10);
-
-  function optionList(selected, ag = null) {
-    const times = parseScheduleTimes(ag?.loja?.agendaHorarios || defaultBookingTimes);
-    if (selected && !times.includes(selected)) times.push(selected);
-    return times.sort((a, b) => a.localeCompare(b))
-      .map((hora) => `<option value="${hora}" ${hora === selected ? "selected" : ""}>${hora}</option>`)
-      .join("");
-  }
-
-  function statusClass(status) {
-    if (status === "finalizado") return "booking-status-done";
-    if (status === "cancelado") return "booking-status-canceled";
-    return "booking-status-pending";
-  }
-
-  function renderBookings(agendamentos) {
-    if (!agendamentos.length) {
-      list.innerHTML = "";
-      if (empty) empty.classList.remove("hidden");
-      return;
-    }
-
-    if (empty) empty.classList.add("hidden");
-    list.innerHTML = agendamentos
-      .map((ag) => {
-        const locked = ["finalizado", "cancelado"].includes(ag.status);
-        const safeId = escapeHtml(String(ag.id));
-        return `
-          <article class="user-booking-card" data-user-booking="${safeId}">
-            <div class="booking-item-head">
-              <div>
-                <h3>${escapeHtml(ag.loja?.nome || "Lava jato")}</h3>
-                <p class="empty-copy">${escapeHtml(ag.servico?.nome || "Serviço")} &bull; ${escapeHtml(ag.loja?.endereco || "")}</p>
-              </div>
-              <span class="booking-status-badge ${statusClass(ag.status)}">${escapeHtml(ag.status || "pendente")}</span>
-            </div>
-            <div class="field-grid">
-              <div class="field">
-                <label>Data</label>
-                <input type="date" data-booking-date data-booking-id="${safeId}" data-shop-id="${escapeHtml(String(ag.loja?.id || ""))}" min="${today}" value="${escapeHtml(ag.data || "")}" ${locked ? "disabled" : ""} />
-              </div>
-              <div class="field">
-                <label>Horário</label>
-                <select data-booking-time ${locked ? "disabled" : ""}>${optionList(ag.hora, ag)}</select>
-                <p class="empty-copy validation-msg" data-booking-availability-msg></p>
-              </div>
-            </div>
-            <div class="field-grid">
-              <div class="field">
-                <label>Veículo</label>
-                <select data-booking-vehicle ${locked ? "disabled" : ""}>
-                  <option value="carro" ${ag.veiculo === "carro" ? "selected" : ""}>Carro</option>
-                  <option value="moto" ${ag.veiculo === "moto" ? "selected" : ""}>Moto</option>
-                  <option value="caminhonete" ${ag.veiculo === "caminhonete" ? "selected" : ""}>Caminhonete</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Observações</label>
-                <input type="text" data-booking-notes value="${escapeHtml(ag.notas || "")}" ${locked ? "disabled" : ""} />
-              </div>
-            </div>
-            <div class="booking-item-actions">
-              ${locked ? "" : `<button class="btn btn-secondary" type="button" data-save-user-booking="${safeId}">Salvar</button>`}
-              ${locked ? "" : `<button class="btn btn-ghost" type="button" data-cancel-user-booking="${safeId}">Cancelar</button>`}
-            </div>
-          </article>`;
-      })
-      .join("");
-  }
-
-  async function loadBookings() {
-    list.innerHTML = '<p class="empty-copy">Carregando agendamentos...</p>';
-    try {
-      const res = await userFetch("/api/agendamentos/me");
-      if (res.status === 401 || res.status === 403) {
-        clearCurrentUser();
-        redirectToLogin("agendar");
-        return;
-      }
-      const data = await res.json();
-      if (!res.ok) {
-        list.innerHTML = `<p class="empty-copy">${escapeHtml(data.error || "Erro ao carregar agendamentos.")}</p>`;
-        return;
-      }
-      renderBookings(data.agendamentos || []);
-    } catch {
-      list.innerHTML = '<p class="empty-copy">Erro de conexão ao carregar agendamentos.</p>';
-    }
-  }
-
-  async function refreshBookingCardAvailability(card) {
-    const dateInput = card.querySelector("[data-booking-date]");
-    const timeSelect = card.querySelector("[data-booking-time]");
-    const msg = card.querySelector("[data-booking-availability-msg]");
-    const shopId = dateInput?.dataset.shopId || "";
-    const bookingId = dateInput?.dataset.bookingId || "";
-    if (!dateInput?.value || !timeSelect || !shopId) return;
-
-    const selected = timeSelect.value;
-    if (msg) msg.textContent = "Consultando horários...";
-    try {
-      const url = `/api/lojas/${shopId}/disponibilidade?data=${encodeURIComponent(dateInput.value)}&ignorarAgendamentoId=${encodeURIComponent(bookingId)}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) {
-        if (msg) msg.textContent = data.error || "Não foi possível carregar horários.";
-        return;
-      }
-      timeSelect.innerHTML = '<option value="">Selecione</option>';
-      let availableCount = 0;
-      (data.horarios || []).forEach(({ hora, disponivel }) => {
-        const option = document.createElement("option");
-        option.value = hora;
-        option.textContent = disponivel ? hora : `${hora} (ocupado)`;
-        option.disabled = !disponivel;
-        if (disponivel && hora === selected) option.selected = true;
-        if (disponivel) availableCount += 1;
-        timeSelect.appendChild(option);
-      });
-      if (msg) {
-        msg.textContent = data.aberto === false
-          ? (data.mensagem || "A loja não atende nesta data.")
-          : availableCount
-            ? `${availableCount} ${availableCount === 1 ? "horário disponível" : "horários disponíveis"}. Horários com (ocupado) estão reservados por outros usuários.`
-            : "Nenhum horário disponível nesta data.";
-      }
-    } catch {
-      if (msg) msg.textContent = "Erro ao consultar horários.";
-    }
-  }
-
-  list.addEventListener("click", async (event) => {
-    const saveBtn = event.target.closest("[data-save-user-booking]");
-    const cancelBtn = event.target.closest("[data-cancel-user-booking]");
-    if (!saveBtn && !cancelBtn) return;
-
-    const id = saveBtn?.dataset.saveUserBooking || cancelBtn?.dataset.cancelUserBooking;
-    const card = event.target.closest("[data-user-booking]");
-    if (!id || !card) return;
-
-    try {
-      let res;
-      if (cancelBtn) {
-        if (!(await confirmAction("Cancelar este agendamento?", { confirmLabel: "Cancelar agendamento" }))) return;
-        res = await userFetch(`/api/agendamentos/${id}/cancelar`, { method: "PUT" });
-      } else {
-        res = await userFetch(`/api/agendamentos/${id}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            data: card.querySelector("[data-booking-date]").value,
-            hora: card.querySelector("[data-booking-time]").value,
-            veiculo: card.querySelector("[data-booking-vehicle]").value,
-            notas: card.querySelector("[data-booking-notes]").value.trim() || null,
-          }),
-        });
-      }
-
-      const data = await res.json();
-      if (!res.ok) {
-        if (res.status === 409) {
-          notify("Este horário foi ocupado por outro usuário. Por favor, escolha outro horário disponível.");
-        } else {
-          notify(data.error || "Não foi possível atualizar o agendamento.");
-        }
-        return;
-      }
-      await loadBookings();
-    } catch {
-      notify("Erro de conexão. Tente novamente.");
-    }
-  });
-
-  list.addEventListener("change", async (event) => {
-    if (!event.target.matches("[data-booking-date]")) return;
-    const card = event.target.closest("[data-user-booking]");
-    if (card) await refreshBookingCardAvailability(card);
-  });
-
-  await loadBookings();
+  if (showPartnerClientRestriction()) return;
+  const list = document.getElementById('user-bookings-list');
+  if (!list || !requireAuth('agendar')) return;
+  document.getElementById('user-bookings-empty')?.classList.add('hidden');
+  const controller = createBookingListController(list, 'cliente');
+  await controller.load();
 }
 
 async function initReviewsPage() {
@@ -4256,8 +4843,24 @@ async function initReviewsPage() {
   const lojaId = params.get("lojaId") || "";
   const shopName = params.get("shop") || "AutoShine";
 
+  const partnerView = Boolean(getDonoFromToken());
+  if (partnerView) {
+    toggleFormButton.classList.add("hidden");
+    toggleFormButton.disabled = true;
+    reviewForm.classList.add("hidden");
+    reviewForm.querySelectorAll("input, select, textarea, button").forEach((input) => { input.disabled = true; });
+    const notice = document.createElement("p");
+    notice.className = "hero-text";
+    notice.textContent = "Avaliações de clientes — disponíveis para consulta. A conta de parceiro não publica avaliações.";
+    toggleFormButton.before(notice);
+  }
+
   const reviewsBackLink = document.getElementById("reviews-back-link");
-  if (reviewsBackLink && lojaId) {
+  if (reviewsBackLink && partnerView) {
+    reviewsBackLink.href = "cadastro-dono.html";
+    reviewsBackLink.textContent = "← Voltar ao painel do parceiro";
+    reviewsBackLink.hidden = false;
+  } else if (reviewsBackLink && lojaId) {
     reviewsBackLink.href = `perfil.html?shopId=${encodeURIComponent(lojaId)}`;
     reviewsBackLink.textContent = `← Voltar para ${shopName}`;
     reviewsBackLink.hidden = false;
@@ -4325,7 +4928,7 @@ async function initReviewsPage() {
           <p class="meta"><span class="stars">&#9733; ${rating}</span> ${dateLabel}</p>
           <p>${safeComment}</p>
           ${safePhoto ? `<img src="${photoSrc}" alt="Foto enviada pelo cliente" loading="lazy" />` : ""}
-          ${review.id ? `<button class="btn btn-ghost" type="button" data-report-review="${review.id}" data-report-shop="${lojaId || review.lojaId || ""}" data-report-label="avaliação de ${safeName}">Denunciar avaliação</button>` : ""}
+          ${review.id && !partnerView ? `<button class="btn btn-ghost" type="button" data-report-review="${review.id}" data-report-shop="${lojaId || review.lojaId || ""}" data-report-label="avaliação de ${safeName}">Denunciar avaliação</button>` : ""}
         </article>`;
       })
       .join("");
@@ -4377,7 +4980,7 @@ async function initReviewsPage() {
     reviewForm.classList.toggle("hidden");
   });
 
-  reviewForm.addEventListener("submit", async (event) => {
+  reviewForm.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     if (!requireAuth("avaliar")) return;
 
@@ -4389,11 +4992,11 @@ async function initReviewsPage() {
     const photoFile = formData.get("photoFile");
 
     if (!reviewer || !comentario || !nota) {
-      notify("Preencha nome, nota e comentário para publicar sua avaliação.");
+      notify("Preencha nome, nota e comentário para publicar sua avaliação.", "error");
       return;
     }
     if (fotoUrl && !/^https?:\/\//i.test(fotoUrl)) {
-      notify("Informe uma URL de foto válida com http ou https.");
+      notify("Informe uma URL de foto válida com http ou https.", "error");
       return;
     }
 
@@ -4402,7 +5005,7 @@ async function initReviewsPage() {
       try {
         fotoPayload = await uploadImageFile(photoFile, "avaliacao", userFetch);
       } catch (err) {
-        notify(err.message || "Não foi possível usar a foto enviada.");
+        notify(err.message || "Não foi possível usar a foto enviada.", "error");
         return;
       }
     }
@@ -4425,7 +5028,7 @@ async function initReviewsPage() {
             clearCurrentUser();
             redirectToLogin("avaliar");
           } else {
-            notify(data.error || "Erro ao publicar avaliação.");
+            notify(data.error || "Erro ao publicar avaliação.", "error");
           }
           return;
         }
@@ -4438,14 +5041,14 @@ async function initReviewsPage() {
           renderReviewsList(currentReviews);
         }
       } catch {
-        notify("Erro de conexão. Tente novamente.");
+        notify("Erro de conexão. Tente novamente.", "error");
         return;
       }
     }
 
     reviewForm.reset();
     reviewForm.classList.add("hidden");
-  });
+  }));
 }
 
 // ── Autenticação do cliente ──────────────────────────────────────────────────
@@ -4470,6 +5073,7 @@ function initAuthPage() {
     !loginPanel || !signupPanel || !authTitle || !authSubtitle
   ) return;
 
+  const validarEmail = configurarValidacaoEmail("signup-email", "email-validation-msg");
   const params = new URLSearchParams(window.location.search);
   const next = params.get("next") || "index.html";
 
@@ -4550,10 +5154,6 @@ function initAuthPage() {
     return digits.replace(/(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
   }
 
-  function isValidEmail(email) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  }
-
   function setMode(mode) {
     const isLogin = mode === "login";
     loginPanel.classList.toggle("hidden", !isLogin);
@@ -4596,6 +5196,8 @@ function initAuthPage() {
   }
 
   function handleAuthQueryFeedback() {
+    if (params.get("auth") === "session_expired") notify("Sua sessão foi encerrada. Faça login novamente.", "warning");
+    if (params.get("auth") === "password_changed") notify("Senha atualizada. Faça login com a nova senha.", "success");
     const auth = params.get("auth");
     if (!auth) return;
 
@@ -4604,36 +5206,34 @@ function initAuthPage() {
       const email = String(params.get("email") || "").trim().toLowerCase();
       const token = params.get("token");
       if (!token) {
-        notify("Login com Google concluído sem token de acesso. Tente novamente.");
+        notify("Não foi possível concluir o login com Google. Tente novamente ou entre com e-mail e senha.", "error");
         return;
       }
       upsertGoogleUser(name, email, token);
-      notify("Login com Google realizado com sucesso.");
       window.history.replaceState({}, "", "cadastro.html");
-      window.location.href = normalizedNextUrl();
+      redirectWithNotice(normalizedNextUrl(), "Login com Google realizado com sucesso.");
       return;
     }
 
     if (auth === "google_not_configured") {
       notify(
-        "Login Google ainda não configurado no servidor. Preencha GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no arquivo .env.",
-      );
+        "O login com Google está indisponível no momento. Entre com e-mail e senha.", "error");
       window.history.replaceState({}, "", "cadastro.html");
       return;
     }
 
     if (auth === "google_failed") {
-      notify("Não foi possível concluir login com Google. Tente novamente.");
+      notify("Não foi possível concluir login com Google. Tente novamente.", "error");
       window.history.replaceState({}, "", "cadastro.html");
     }
   }
 
   const reason = params.get("reason");
   if (reason === "agendar") {
-    notify("Para agendar um serviço, faça login primeiro.");
+    notify("Para agendar um serviço, faça login primeiro.", "info");
     setMode("login");
   } else if (reason === "avaliar") {
-    notify("Para avaliar o estabelecimento, faça login primeiro.");
+    notify("Para avaliar o estabelecimento, faça login primeiro.", "info");
     setMode("login");
   } else {
     setMode(params.get("mode") === "signup" ? "signup" : "login");
@@ -4653,13 +5253,13 @@ function initAuthPage() {
   cpfInput.addEventListener("blur", validateCpfField);
   phoneInput.addEventListener("input", () => { phoneInput.value = formatPhone(phoneInput.value); });
 
-  loginForm.addEventListener("submit", async (event) => {
+  loginForm.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     const formData = new FormData(loginForm);
     const email = String(formData.get("email") || "").trim().toLowerCase();
     const password = String(formData.get("password") || "");
 
-    if (!email || !password) { notify("Informe e-mail e senha para entrar."); return; }
+    if (!email || !password) { notify("Informe e-mail e senha para entrar.", "error"); return; }
 
     try {
       const response = await fetch("/api/auth/login", {
@@ -4668,20 +5268,19 @@ function initAuthPage() {
         body: JSON.stringify({ email, senha: password }),
       });
       const data = await response.json();
-      if (!response.ok) { notify(data.error || "E-mail ou senha inválidos."); return; }
+      if (!response.ok) { if (tratarPendenciaEmail(data, "usuario", email)) return; notify(data.error || "E-mail ou senha inválidos.", "error"); return; }
 
       setCurrentUser(
         { name: data.user.nome, email: data.user.email, authProvider: "email" },
         data.token,
       );
-      notify("Login realizado com sucesso.");
-      window.location.href = "servicos.html";
+      redirectWithNotice(normalizedNextUrl(), "Login realizado com sucesso.");
     } catch {
-      notify("Erro ao conectar com o servidor. Tente novamente.");
+      notify("Erro ao conectar com o servidor. Tente novamente.", "error");
     }
-  });
+  }));
 
-  signupForm.addEventListener("submit", async (event) => {
+  signupForm.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     const formData = new FormData(signupForm);
     const name = String(formData.get("name") || "").trim();
@@ -4692,17 +5291,17 @@ function initAuthPage() {
     const passwordConfirm = String(formData.get("passwordConfirm") || "");
     const termsAccepted = Boolean(formData.get("terms"));
 
+    if (!validarEmail(true)) { document.getElementById("signup-email")?.focus(); return; }
     if (!name || !email || !cpf || !phone || !password || !passwordConfirm) {
-      notify("Preencha todos os campos obrigatórios.");
+      notify("Preencha todos os campos obrigatórios.", "error");
       return;
     }
-    if (!isValidEmail(email)) { notify("Informe um e-mail válido."); return; }
-    if (cpf.length !== 11) { notify("Informe um CPF válido com 11 dígitos."); return; }
-    if (!(await validateCpfField())) { notify("Informe um CPF válido para continuar."); return; }
-    if (phone.length < 10) { notify("Informe um telefone válido."); return; }
-    if (password.length < 6) { notify("A senha precisa ter no mínimo 6 caracteres."); return; }
-    if (password !== passwordConfirm) { notify("As senhas não coincidem."); return; }
-    if (!termsAccepted) { notify("Você precisa aceitar os termos para criar a conta."); return; }
+    if (cpf.length !== 11) { notify("Informe um CPF válido com 11 dígitos.", "error"); return; }
+    if (!(await validateCpfField())) { notify("Informe um CPF válido para continuar.", "error"); return; }
+    if (phone.length < 10) { notify("Informe um telefone válido.", "error"); return; }
+    if (AutoShinePassword.erroSenha(password)) { notify(AutoShinePassword.erroSenha(password), "error"); return; }
+    if (password !== passwordConfirm) { notify("As senhas não coincidem.", "error"); return; }
+    if (!termsAccepted) { notify("Você precisa aceitar os termos para criar a conta.", "error"); return; }
 
     try {
       const response = await fetch("/api/auth/signup", {
@@ -4711,19 +5310,16 @@ function initAuthPage() {
         body: JSON.stringify({ nome: name, email, cpf, telefone: phone, senha: password }),
       });
       const data = await response.json();
-      if (!response.ok) { notify(data.error || "Erro ao criar conta."); return; }
-
-      setCurrentUser(
-        { name: data.user.nome, email: data.user.email, authProvider: "email" },
-        data.token,
-      );
-      notify("Cadastro realizado com sucesso. Bem-vindo ao AutoShine.");
-      signupForm.reset();
-      window.location.href = "servicos.html";
+      if (data.verificacaoPendente) {
+        signupForm.reset();
+        abrirVerificacaoEmail("usuario", email, data.error || data.mensagem, !response.ok);
+        return;
+      }
+      notify(data.error || "Não foi possível concluir o cadastro.", "error");
     } catch {
-      notify("Erro ao conectar com o servidor. Tente novamente.");
+      notify("Erro ao conectar com o servidor. Tente novamente.", "error");
     }
-  });
+  }));
 
   function startGoogleAuth() {
     const nextUrl = encodeURIComponent(normalizedNextUrl());
@@ -4745,7 +5341,7 @@ const adminTokenKey = "autoshine:admin-token";
 function initResetSenhaPage() {
   const params = new URLSearchParams(window.location.search);
   const token = params.get("token");
-  const tipo = params.get("tipo") || "usuario";
+  const tipo = params.get("tipo") === "dono" ? "dono" : "usuario";
 
   const requestPanel = document.getElementById("reset-request-panel");
   const confirmPanel = document.getElementById("reset-confirm-panel");
@@ -4756,6 +5352,9 @@ function initResetSenhaPage() {
   const invalidToken = document.getElementById("reset-invalid-token");
   const loginLink = document.getElementById("reset-login-link");
   const tipoInput = document.getElementById("reset-tipo");
+  const newLink = document.getElementById("reset-new-link");
+  if (newLink) newLink.href = `reset-senha.html?tipo=${tipo}`;
+  let confirmando = false, solicitando = false;
 
   if (token) {
     requestPanel?.classList.add("hidden");
@@ -4767,13 +5366,15 @@ function initResetSenhaPage() {
         : "cadastro.html?perfil=cliente&mode=login";
     }
 
-    confirmForm?.addEventListener("submit", async (e) => {
+    confirmForm?.addEventListener("submit", guardAction(async (e) => {
       e.preventDefault();
+      if (confirmando) return;
       const novaSenha = document.getElementById("reset-new-password")?.value || "";
       const novaSenhaConfirm = document.getElementById("reset-confirm-password")?.value || "";
-      if (novaSenha.length < 6) { notify("A senha deve ter no mínimo 6 caracteres."); return; }
-      if (novaSenha !== novaSenhaConfirm) { notify("As senhas não coincidem."); return; }
+      if (AutoShinePassword.erroSenha(novaSenha)) { notify(AutoShinePassword.erroSenha(novaSenha), "error"); return; }
+      if (novaSenha !== novaSenhaConfirm) { notify("As senhas não coincidem.", "error"); return; }
 
+      confirmando = true;
       const btn = confirmForm.querySelector("button[type=submit]");
       if (btn) btn.disabled = true;
       try {
@@ -4784,33 +5385,40 @@ function initResetSenhaPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          if (res.status === 400 && data.error?.includes("inválido")) {
+          if (data.code === "RESET_TOKEN_INVALIDO") {
             confirmForm.classList.add("hidden");
             invalidToken?.classList.remove("hidden");
           } else {
-            notify(data.error || "Erro ao redefinir senha.");
+            notify(data.error || "Erro ao redefinir senha.", "error");
           }
           return;
         }
+        if (tipo === "dono") clearDonoToken();
+        else clearCurrentUser();
+        confirmForm.reset();
+        window.history.replaceState({}, "", `reset-senha.html?tipo=${tipo}`);
         confirmForm.classList.add("hidden");
         confirmSuccess?.classList.remove("hidden");
       } catch {
-        notify("Erro de conexão. Tente novamente.");
+        notify("Erro de conexão. Tente novamente.", "error");
       } finally {
+        confirmando = false;
         if (btn) btn.disabled = false;
       }
-    });
+    }));
   } else {
     if (tipoInput) tipoInput.value = tipo;
 
-    requestForm?.addEventListener("submit", async (e) => {
+    requestForm?.addEventListener("submit", guardAction(async (e) => {
       e.preventDefault();
+      if (solicitando) return;
       const email = document.getElementById("reset-email")?.value.trim() || "";
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        notify("Informe um email válido.");
+        notify("Informe um email válido.", "error");
         return;
       }
 
+      solicitando = true;
       const btn = requestForm.querySelector("button[type=submit]");
       if (btn) btn.disabled = true;
       try {
@@ -4821,17 +5429,18 @@ function initResetSenhaPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          notify(data.error || "Erro ao enviar email.");
+          notify(data.error || "Erro ao enviar email.", "error");
           return;
         }
         requestForm.classList.add("hidden");
         requestSuccess?.classList.remove("hidden");
       } catch {
-        notify("Erro de conexão. Tente novamente.");
+        notify("Erro de conexão. Tente novamente.", "error");
       } finally {
+        solicitando = false;
         if (btn) btn.disabled = false;
       }
-    });
+    }));
   }
 }
 
@@ -4870,6 +5479,7 @@ if (page === "perfil") {
   initProfilePage();
 }
 if (page === "perfil-usuario") initUserProfilePage();
+if (page === "perfil-dono") initOwnerProfilePage();
 
 if (page === "parceiro") {
   initPartnerPage();
@@ -5190,7 +5800,7 @@ async function initAdminPage() {
     const normalized = value.toLowerCase();
     const className = normalized === "finalizado" || normalized === "resolvida" || normalized === "ativo"
       ? "admin-status-active"
-      : normalized === "cancelado" || normalized === "arquivada" || normalized === "bloqueado"
+      : normalized === "cancelado" || normalized === "expirado" || normalized === "arquivada" || normalized === "bloqueado"
         ? "admin-status-blocked"
         : "admin-status-pending";
     return `<span class="admin-status ${className}">${safe}</span>`;
@@ -5748,13 +6358,15 @@ async function initAdminPage() {
         <tr>
           <td><strong>${escapeHtml(item.usuario?.nome || item.nomeCliente || "Cliente")}</strong><p class="empty-copy">${escapeHtml(item.usuario?.email || item.emailCliente || "-")}</p></td>
           <td>${escapeHtml(item.loja?.nome || "-")}</td>
-          <td>${escapeHtml(item.servico?.nome || "-")}</td>
+          <td>${escapeHtml(bookingServiceName(item))}<p class="empty-copy">${escapeHtml(bookingPriceLabel(item))} · ${escapeHtml(bookingDurationLabel(item))}</p></td>
           <td>${escapeHtml(item.data)} ${escapeHtml(item.hora)}</td>
           <td>${statusBadge(item.status)}</td>
           <td class="admin-actions">
-            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="booking-status" data-status="finalizado" data-id="${item.id}">Finalizar</button>
-            <button class="btn btn-secondary admin-action-btn" data-admin-resource-action="booking-status" data-status="cancelado" data-id="${item.id}">Cancelar</button>
-            <button class="btn btn-danger admin-action-btn" data-admin-resource-action="delete-booking" data-id="${item.id}">Excluir</button>
+            ${item.regras?.podeConfirmar ? `<button class="btn btn-secondary" data-admin-resource-action="booking-status" data-status="confirmado" data-revision="${item.revisao}" data-id="${item.id}">Confirmar</button>` : ''}
+            ${item.regras?.podeFinalizar ? `<button class="btn btn-secondary" data-admin-resource-action="booking-status" data-status="finalizado" data-revision="${item.revisao}" data-id="${item.id}">Finalizar</button>` : ''}
+            ${item.regras?.podeCancelar ? `<button class="btn btn-ghost" data-admin-resource-action="booking-status" data-status="cancelado" data-revision="${item.revisao}" data-exception="${item.regras.exigeExcecaoPrazo}" data-id="${item.id}">Cancelar</button>` : ''}
+            ${item.regras?.motivoFinalizar ? `<p class="empty-copy">${escapeHtml(item.regras.motivoFinalizar)}</p>` : ''}
+            ${bookingHistoryHtml(item, 'admin')}
           </td>
         </tr>`).join("") : "";
     } catch {
@@ -5896,7 +6508,7 @@ async function initAdminPage() {
     }
   }
 
-  tbody.addEventListener("click", async (e) => {
+  tbody.addEventListener("click", guardAction(async (e) => {
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
     const action = btn.dataset.action;
@@ -5913,9 +6525,10 @@ async function initAdminPage() {
       const res = await adminFetch(`/api/admin/lojas/${id}/inativar`, { method: "PUT" });
       if (res.ok) {
         await refreshAdminData();
+        notify("Lava jato inativado por 30 dias.", "success");
       } else {
-        const data = await res.json();
-        notify(data.error || "Erro ao inativar loja.");
+        const data = await res.json().catch(() => ({}));
+        notify(data.error || "Erro ao inativar loja.", "error");
       }
       return;
     }
@@ -5924,9 +6537,10 @@ async function initAdminPage() {
       const res = await adminFetch(`/api/admin/lojas/${id}/aprovar`, { method: "PUT" });
       if (res.ok) {
         await refreshAdminData();
+        notify("Loja aprovada e visível no marketplace.", "success");
       } else {
-        const data = await res.json();
-        notify(data.error || "Erro ao aprovar loja.");
+        const data = await res.json().catch(() => ({}));
+        notify(data.error || "Erro ao aprovar loja.", "error");
       }
       return;
     }
@@ -5935,13 +6549,14 @@ async function initAdminPage() {
       const res = await adminFetch(`/api/admin/lojas/${id}/${action}`, { method: "PUT" });
       if (res.ok) {
         await refreshAdminData();
+        notify(action === "bloquear" ? "Lava jato bloqueado." : "Lava jato desbloqueado.", "success");
       } else {
-        notify(`Erro ao ${action} loja.`);
+        notify(`Erro ao ${action} loja.`, "error");
       }
     }
-  });
+  }, '[data-action]'));
 
-  shopForm?.addEventListener("submit", async (e) => {
+  shopForm?.addEventListener("submit", guardAction(async (e) => {
     e.preventDefault();
     const lojaId = shopIdInput?.value.trim();
     if (!lojaId) {
@@ -5999,9 +6614,9 @@ async function initAdminPage() {
     } finally {
       if (submitBtn) submitBtn.disabled = false;
     }
-  });
+  }));
 
-  userForm?.addEventListener("submit", async (e) => {
+  userForm?.addEventListener("submit", guardAction(async (e) => {
     e.preventDefault();
     const id = userIdInput?.value.trim();
     const nome = userNameInput?.value.trim() || "";
@@ -6026,8 +6641,8 @@ async function initAdminPage() {
       setResourceFeedback(userFeedback, "Telefone deve ter ao menos 10 dígitos.", "error");
       return;
     }
-    if (senha && senha.length < 6) {
-      setResourceFeedback(userFeedback, "Nova senha deve ter pelo menos 6 caracteres.", "error");
+    if (senha && AutoShinePassword.erroSenha(senha)) {
+      setResourceFeedback(userFeedback, AutoShinePassword.erroSenha(senha), "error");
       return;
     }
 
@@ -6050,9 +6665,9 @@ async function initAdminPage() {
     } finally {
       if (userSubmitBtn) userSubmitBtn.disabled = false;
     }
-  });
+  }));
 
-  ownerForm?.addEventListener("submit", async (e) => {
+  ownerForm?.addEventListener("submit", guardAction(async (e) => {
     e.preventDefault();
     const id = ownerEditIdInput?.value.trim();
     const nome = ownerEditNameInput?.value.trim() || "";
@@ -6072,8 +6687,8 @@ async function initAdminPage() {
       setResourceFeedback(ownerFeedback, "CNPJ deve ter 14 dígitos.", "error");
       return;
     }
-    if (senha && senha.length < 6) {
-      setResourceFeedback(ownerFeedback, "Nova senha deve ter pelo menos 6 caracteres.", "error");
+    if (senha && AutoShinePassword.erroSenha(senha)) {
+      setResourceFeedback(ownerFeedback, AutoShinePassword.erroSenha(senha), "error");
       return;
     }
 
@@ -6096,9 +6711,9 @@ async function initAdminPage() {
     } finally {
       if (ownerSubmitBtn) ownerSubmitBtn.disabled = false;
     }
-  });
+  }));
 
-  reviewForm?.addEventListener("submit", async (e) => {
+  reviewForm?.addEventListener("submit", guardAction(async (e) => {
     e.preventDefault();
     const id = reviewIdInput?.value.trim();
     const nota = Number(reviewRatingInput?.value);
@@ -6134,7 +6749,7 @@ async function initAdminPage() {
     } finally {
       if (reviewSubmitBtn) reviewSubmitBtn.disabled = false;
     }
-  });
+  }));
 
   servicesList?.addEventListener("click", (e) => {
     const removeBtn = e.target.closest("[data-admin-remove-service]");
@@ -6241,7 +6856,7 @@ async function initAdminPage() {
     tab.addEventListener("click", () => setAdminSection(tab.dataset.adminTab));
   });
 
-  managementShell.addEventListener("click", async (event) => {
+  managementShell.addEventListener("click", guardAction(async (event) => {
     const actionBtn = event.target.closest("[data-admin-resource-action]");
     if (!actionBtn) return;
     const action = actionBtn.dataset.adminResourceAction;
@@ -6317,17 +6932,17 @@ async function initAdminPage() {
       }
 
       if (action === "booking-status") {
+        const confirmation = await confirmAction(`Alterar o agendamento #${id} para "${actionBtn.dataset.status}"? O motivo será compartilhado com cliente e estabelecimento.`, {
+          title: "Atualizar agendamento", confirmLabel: "Atualizar", requireReason: true,
+          allowDeadlineException: actionBtn.dataset.exception === 'true',
+        });
+        if (!confirmation) return;
         const res = await adminFetch(`/api/admin/agendamentos/${id}/status`, {
           method: "PUT",
-          body: JSON.stringify({ status: actionBtn.dataset.status }),
+          body: JSON.stringify({ status: actionBtn.dataset.status, revisao: Number(actionBtn.dataset.revision), ...confirmation }),
         });
-        if (!res.ok) throw new Error("Erro ao atualizar agendamento.");
-      }
-
-      if (action === "delete-booking") {
-    if (!(await confirmAction("Excluir este agendamento permanentemente?", { danger: true, confirmLabel: "Excluir" }))) return;
-        const res = await adminFetch(`/api/admin/agendamentos/${id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Erro ao excluir agendamento.");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Erro ao atualizar agendamento.");
       }
 
       if (action === "delete-review") {
@@ -6351,10 +6966,17 @@ async function initAdminPage() {
       }
 
       await refreshAdminData();
+      const messages = {
+        "delete-user": "Usuário excluído com sucesso.", "delete-owner": "Parceiro excluído com sucesso.",
+        "booking-status": "Situação do agendamento atualizada.",
+        "delete-review": "Avaliação excluída com sucesso.", "report-status": "Situação da denúncia atualizada.",
+        "delete-report": "Denúncia excluída com sucesso.",
+      };
+      if (messages[action]) notify(messages[action], "success");
     } catch (err) {
-      notify(err.message || "Não foi possível concluir a ação.");
+      notify(err.message || "Não foi possível concluir a ação.", "error");
     }
-  });
+  }, '[data-admin-resource-action]'));
 
   ownerLoginInput?.addEventListener("input", () => {
     ownerLoginInput.value = normalizeOwnerLogin(ownerLoginInput.value);
@@ -6380,7 +7002,7 @@ async function initAdminPage() {
     ownerEditCnpjInput.value = onlyDigitsAdmin(ownerEditCnpjInput.value).slice(0, 14);
   });
 
-  loginForm.addEventListener("submit", async (e) => {
+  loginForm.addEventListener("submit", guardAction(async (e) => {
     e.preventDefault();
     if (loginError) {
       loginError.textContent = "";
@@ -6413,7 +7035,7 @@ async function initAdminPage() {
         loginError.classList.remove("hidden");
       }
     }
-  });
+  }));
 
   logoutBtn?.addEventListener("click", () => {
     clearAdminToken();
@@ -6430,3 +7052,6 @@ async function initAdminPage() {
     showAuth();
   }
 }
+
+// Consumido uma única vez, após a inicialização da página de destino.
+consumeNotice();

@@ -91,6 +91,7 @@
 
           <button class="btn btn-primary btn-block" type="submit">Entrar</button>
           <p class="auth-forgot"><a href="reset-senha.html?tipo=usuario">Esqueci minha senha</a></p>
+          <div id="login-pending" class="hidden" role="alert"><p data-pending-message></p><a href="verificar-email.html?tipo=usuario">Concluir meu cadastro ou reenviar o link</a></div>
         </form>
       </div>
 
@@ -99,6 +100,7 @@
       <p class="auth-separator"><span>ou preencha seus dados</span></p>
 
       <form id="signup-form" class="booking-form" novalidate>
+          <p>Após criar a conta, confirme seu e-mail uma única vez. Depois, entre normalmente com sua senha.</p>
         <div class="field-grid">
           <div class="field">
             <label for="signup-name">Nome completo</label>
@@ -106,7 +108,8 @@
           </div>
           <div class="field">
             <label for="signup-email">Email</label>
-            <input id="signup-email" name="email" type="email" placeholder="Ex.: joao@email.com" required />
+            <input id="signup-email" name="email" type="email" placeholder="Ex.: joao@email.com" required maxlength="254" autocomplete="email" aria-describedby="email-validation-msg" />
+            <p id="email-validation-msg" class="empty-copy validation-msg" aria-live="polite"></p>
           </div>
         </div>
 
@@ -125,11 +128,11 @@
         <div class="field-grid">
           <div class="field">
             <label for="signup-password">Senha</label>
-            <input id="signup-password" name="password" type="password" minlength="6" placeholder="Mínimo de 6 caracteres" required />
+            <input id="signup-password" name="password" type="password" minlength="8" placeholder="8 caracteres, letras e números" required />
           </div>
           <div class="field">
             <label for="signup-password-confirm">Confirmar senha</label>
-            <input id="signup-password-confirm" name="passwordConfirm" type="password" minlength="6" placeholder="Digite novamente" required />
+            <input id="signup-password-confirm" name="passwordConfirm" type="password" minlength="8" placeholder="Digite novamente" required />
           </div>
         </div>
 
@@ -172,6 +175,7 @@
             </div>
             <button class="btn btn-primary btn-block" type="submit">Entrar</button>
             <p class="auth-forgot"><a href="reset-senha.html?tipo=dono">Esqueci minha senha</a></p>
+          <div id="dono-login-pending" class="hidden" role="alert"><p data-pending-message></p><a href="verificar-email.html?tipo=dono">Concluir meu cadastro ou reenviar o link</a></div>
           </form>
         </div>
 
@@ -182,6 +186,7 @@
           </button>
           <p class="auth-separator"><span>ou preencha os dados da empresa</span></p>
           <form id="owner-register-form" class="booking-form" novalidate>
+          <p>Após criar a conta, confirme seu e-mail uma única vez. Depois, entre normalmente com sua senha.</p>
             <div class="field-grid">
               <div class="field">
                 <label for="owner-register-name">Nome do responsável</label>
@@ -194,8 +199,9 @@
             </div>
             <div class="field-grid">
               <div class="field">
-                <label for="owner-register-email">E-mail <span class="field-hint">— recuperação de senha</span></label>
-                <input id="owner-register-email" name="email" type="email" placeholder="Ex.: contato@empresa.com.br" />
+                <label for="owner-register-email">E-mail <span class="field-hint">— confirmação e recuperação de senha</span></label>
+                <input id="owner-register-email" name="email" type="email" required placeholder="Ex.: contato@empresa.com.br" maxlength="254" autocomplete="email" aria-describedby="owner-email-validation-msg" />
+            <p id="owner-email-validation-msg" class="empty-copy validation-msg" aria-live="polite"></p>
               </div>
               <div class="field">
                 <label for="owner-register-cnpj">CNPJ da empresa</label>
@@ -206,11 +212,11 @@
             <div class="field-grid">
               <div class="field">
                 <label for="owner-register-password">Senha</label>
-                <input id="owner-register-password" name="password" type="password" minlength="6" required placeholder="Mínimo de 6 caracteres" />
+                <input id="owner-register-password" name="password" type="password" minlength="8" required placeholder="8 caracteres, letras e números" />
               </div>
               <div class="field">
                 <label for="owner-register-password-confirm">Confirmar senha</label>
-                <input id="owner-register-password-confirm" name="passwordConfirm" type="password" minlength="6" required placeholder="Digite novamente" />
+                <input id="owner-register-password-confirm" name="passwordConfirm" type="password" minlength="8" required placeholder="Digite novamente" />
               </div>
             </div>
             <label class="auth-checkbox">
@@ -224,6 +230,7 @@
     </section>
   </main>
 
+  <script src="assets/js/politica-senha.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

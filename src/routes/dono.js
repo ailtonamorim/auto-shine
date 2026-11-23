@@ -1,3 +1,5 @@
+const { exigirEnvioEmail, pendenciaEmail, responderCadastroPendente } = require("../utils/verificacao-email");
+const { erroSenha } = require("../utils/senha");
 const express = require("express");
 const bcrypt = require("bcrypt");
 const prisma = require("../config/database");
@@ -12,14 +14,16 @@ const router = express.Router();
 router.post("/cadastro", limitarAuth, async (req, res) => {
   try {
     const { nome, login, cnpj, email, senha } = req.body;
-    if (!nome || !login || !cnpj || !senha) return res.status(400).json({ error: "Preencha todos os campos." });
+    if (!nome || !login || !cnpj || !email || !senha) return res.status(400).json({ error: "Preencha todos os campos." });
     const loginNorm = normalizarLoginDono(login);
     const cnpjNorm = normalizarCnpj(cnpj);
     const emailNorm = email ? normalizarEmail(email) : null;
     if (loginNorm.length < 4) return res.status(400).json({ error: "Login deve ter pelo menos 4 caracteres." });
     if (!cnpjTemDigitoValido(cnpjNorm)) return res.status(400).json({ error: "CNPJ inválido." });
-    if (String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
-    if (emailNorm && !emailValido(emailNorm)) return res.status(400).json({ error: "Email inválido." });
+    const erroSenhaNova = erroSenha(senha);
+    if (erroSenhaNova) return res.status(400).json({ error: erroSenhaNova });
+    if (typeof email !== "string" || !emailValido(emailNorm)) return res.status(400).json({ error: "Email inválido." });
+    exigirEnvioEmail();
     try {
       const cnpjValidado = await consultarCnpjBrasilApi(cnpjNorm);
       if (!cnpjValidado.valido) console.warn(`Aviso: CNPJ ${cnpjNorm} não encontrado na Receita Federal, mas permitindo cadastro.`);
@@ -36,11 +40,10 @@ router.post("/cadastro", limitarAuth, async (req, res) => {
     }
     const senhaHash = await bcrypt.hash(senha, 10);
     const dono = await prisma.dono.create({ data: { nome: String(nome).trim(), login: loginNorm, cnpj: cnpjNorm, email: emailNorm, senha: senhaHash } });
-    const token = gerarTokenDono(dono);
-    res.status(201).json({ token, dono: { id: dono.id, nome: dono.nome, login: dono.login, cnpj: dono.cnpj } });
+    return responderCadastroPendente(res, dono, "dono");
   } catch (err) {
     console.error("Erro no cadastro do dono:", err);
-    res.status(500).json({ error: "Erro interno." });
+    res.status(err.status || (err.code === "P2002" ? 409 : 500)).json({ error: err.status === 503 ? err.message : "Não foi possível cadastrar. Confira se o login ou e-mail já está em uso." });
   }
 });
 
@@ -55,6 +58,8 @@ router.post("/login", limitarAuth, async (req, res) => {
     if (dono.suspensoAte && dono.suspensoAte > new Date()) return res.status(403).json({ error: `Conta de parceiro suspensa até ${dono.suspensoAte.toLocaleDateString("pt-BR")}.` });
     if (!dono.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
     if (!(await bcrypt.compare(senha, dono.senha))) return res.status(401).json({ error: "Login ou senha inválidos." });
+    const pendencia = pendenciaEmail(dono);
+    if (pendencia) return res.status(403).json(pendencia);
     const token = gerarTokenDono(dono);
     res.json({ token, dono: { id: dono.id, nome: dono.nome, login: dono.login } });
   } catch (err) {

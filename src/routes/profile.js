@@ -1,3 +1,5 @@
+const { erroSenha, dadosTrocaSenha } = require("../utils/senha");
+const { limitarAuth } = require("../middlewares/security");
 const express = require("express");
 const bcrypt = require("bcrypt");
 const prisma = require("../config/database");
@@ -176,7 +178,7 @@ router.put("/api/profile", autenticarUsuario, async (req, res) => {
   }
 });
 
-router.post("/api/profile/password", autenticarUsuario, async (req, res) => {
+router.post("/api/profile/password", limitarAuth, autenticarUsuario, async (req, res) => {
   try {
     const { senhaAtual, novaSenha, confirmarSenha } = req.body || {};
 
@@ -188,14 +190,8 @@ router.post("/api/profile/password", autenticarUsuario, async (req, res) => {
       return res.status(400).json({ error: "A confirmação da nova senha não confere." });
     }
 
-    if (String(novaSenha).length < 8) {
-      return res.status(400).json({ error: "A nova senha deve ter pelo menos 8 caracteres." });
-    }
-
-    const senhaForte = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(String(novaSenha));
-    if (!senhaForte) {
-      return res.status(400).json({ error: "A nova senha precisa ter letras e números." });
-    }
+    const erroSenhaNova = erroSenha(novaSenha);
+    if (erroSenhaNova) return res.status(400).json({ error: erroSenhaNova });
 
     const usuario = await prisma.usuario.findUnique({ where: { id: Number(req.usuario.id) } });
     if (!usuario) {
@@ -212,12 +208,15 @@ router.post("/api/profile/password", autenticarUsuario, async (req, res) => {
     }
 
     const novaSenhaHash = await bcrypt.hash(String(novaSenha), 10);
-    await prisma.usuario.update({
-      where: { id: usuario.id },
-      data: { senha: novaSenhaHash },
+    const result = await prisma.usuario.updateMany({
+      where: { id: usuario.id, senha: usuario.senha, authVersion: req.usuario.authVersion ?? 0 },
+      data: dadosTrocaSenha(novaSenhaHash),
     });
+    if (result.count !== 1) {
+      return res.status(409).json({ error: "A conta foi atualizada durante a operação. Faça login novamente." });
+    }
 
-    return res.json({ message: "Senha atualizada com sucesso." });
+    return res.json({ message: "Senha atualizada com sucesso. Faça login novamente." });
   } catch (error) {
     console.error("Erro ao atualizar senha:", error);
     return res.status(500).json({ error: "Não foi possível atualizar a senha." });

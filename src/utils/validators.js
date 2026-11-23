@@ -3,7 +3,11 @@ function normalizarEmail(email) {
 }
 
 function emailValido(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizarEmail(email));
+  if (typeof email !== "string") return false;
+  const valor = normalizarEmail(email);
+  return valor.length <= 254 && valor.split("@")[0].length <= 64
+    && !/[\s,;<>()[\]\\"]/.test(valor)
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor);
 }
 
 function normalizarTelefone(telefone) {

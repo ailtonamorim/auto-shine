@@ -10,7 +10,18 @@
     "check": "node scripts/check.js",
     "test": "node --test",
     "seed": "prisma db seed",
-    "migrate": "prisma migrate dev"
+    "migrate": "prisma migrate dev",
+    "test:senha": "node --test tests/recuperacao-senha.test.js",
+    "test:agendamentos": "node --test tests/agendamento-snapshot.test.js",
+    "test:agenda": "node --test tests/agenda.test.js",
+    "test:agenda:postgres": "node --test tests/agenda-postgres.test.js",
+    "test:popups": "node --test tests/popups.test.js",
+    "test:fluxo-email": "node --test tests/fluxo-email.test.js",
+    "test:email": "node --test tests/verificacao-email.test.js",
+    "test:expiracao": "node --test tests/expiracao-agendamentos.test.js",
+    "test:regras": "node --test tests/cancelamento-status.test.js",
+    "test:notificacoes": "node --test tests/notificacoes.test.js",
+    "test:notificacoes:postgres": "node --test tests/notificacoes-postgres.test.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -23,6 +34,7 @@
     "express": "^4.21.2",
     "express-session": "^1.18.2",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.5.0",
     "nodemailer": "^9.0.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",

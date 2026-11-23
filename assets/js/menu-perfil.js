@@ -77,7 +77,7 @@
     } catch {}
     const access = header.querySelector(".btn-acessar");
     if (access) access.hidden = Boolean((user && token) || partner);
-    if (user && token) {
+    if (user && token && !partner) {
       const menu = window.createUserProfileMenu(user, () => {
         localStorage.removeItem("autoshine:current-user");
         localStorage.removeItem("autoshine:token");

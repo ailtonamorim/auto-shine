@@ -1,4 +1,8 @@
+const { sincronizarExpirados } = require('../services/expiracao-agendamentos');
+const { agoraAgenda } = require('../utils/agenda-tempo');
+const { erroSenha, dadosTrocaSenha } = require("../utils/senha");
 const express = require("express");
+const { snapshotServico } = require("../utils/agendamento-snapshot");
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const prisma = require("../config/database");
@@ -9,6 +13,11 @@ const { normalizarLoginDono, normalizarCnpj, normalizarEmail, normalizarCpf, nor
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("../utils/agenda");
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
 
+const { bloquearAgenda, comAgendaBloqueada } = require('../utils/agenda-transacao');
+const { validarHorario, duracaoReserva, configuracaoAgenda } = require('../utils/agenda');
+const { erro, motivoObrigatorio, diferencas } = require('../utils/agendamento-edicao');
+const { validarOperacao, comRegras } = require('../utils/agendamento-regras');
+const { enfileirarNotificacoes } = require('../services/notificacoes');
 const router = express.Router();
 
 const adminLogin = process.env.ADMIN_LOGIN;
@@ -106,6 +115,7 @@ router.get("/dashboard", autenticarAdmin, async (req, res) => {
           status: true,
           lojaId: true,
           valorServico: true,
+          precoCentavos: true,
           servico: { select: { preco: true } },
         },
       }),
@@ -133,9 +143,13 @@ router.get("/dashboard", autenticarAdmin, async (req, res) => {
     });
     const diasPorChave = new Map(dias.map((dia) => [dia.data, dia]));
     const totaisPorLoja = new Map();
-    const agendamentosNaoCancelados = agendamentos.filter((agendamento) => agendamento.status !== "cancelado");
+    // Reservas expiradas (sem confirmação) também não geram receita.
+    const semReceita = new Set(["cancelado", "expirado"]);
+    // Valor histórico: valorServico; reservas feitas antes dele usam o snapshot em centavos; por último, o preço atual.
+    const valorAgendamento = (a) => a.valorServico ?? (a.precoCentavos != null ? a.precoCentavos / 100 : a.servico.preco);
+    const agendamentosNaoCancelados = agendamentos.filter((agendamento) => !semReceita.has(agendamento.status));
     const gmvEstimado = agendamentosNaoCancelados.reduce(
-      (total, agendamento) => total + (agendamento.valorServico ?? agendamento.servico.preco),
+      (total, agendamento) => total + valorAgendamento(agendamento),
       0,
     );
     agendamentos.forEach((agendamento) => {
@@ -144,7 +158,7 @@ router.get("/dashboard", autenticarAdmin, async (req, res) => {
       const dia = diasPorChave.get(chave);
       if (dia) {
         dia.total += 1;
-        if (agendamento.status !== "cancelado") dia.receita += agendamento.valorServico ?? agendamento.servico.preco;
+        if (!semReceita.has(agendamento.status)) dia.receita += valorAgendamento(agendamento);
       }
       totaisPorLoja.set(agendamento.lojaId, (totaisPorLoja.get(agendamento.lojaId) || 0) + 1);
     });
@@ -302,20 +316,27 @@ router.put("/lojas/:id", autenticarAdmin, async (req, res) => {
     const donoUpdate = { nome: donoNome, login: donoLogin, cnpj: cnpj || null };
     const novaSenha = String(donoInput?.senha || "");
     if (novaSenha) {
-      if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
-      donoUpdate.senha = await bcrypt.hash(novaSenha, 10);
+      const erroSenhaNova = erroSenha(novaSenha);
+      if (erroSenhaNova) return res.status(400).json({ error: erroSenhaNova });
+      Object.assign(donoUpdate, dadosTrocaSenha(await bcrypt.hash(novaSenha, 10)));
     }
 
     const lojaData = prepararLojaAdmin({ ...atual, ...(lojaInput || {}) });
     const servicos = prepararServicosAdmin(servicosInput);
     if (Array.isArray(servicosInput) && !servicos.length) return res.status(400).json({ error: "Adicione pelo menos um serviço para a loja." });
     for (const servico of servicos) {
+      snapshotServico(servico);
       if (!servico.nome || !servico.descricao || !servico.duracao || !Number.isFinite(servico.preco) || servico.preco < 0) {
         return res.status(400).json({ error: "Preencha nome, descrição, preço e duração dos serviços." });
       }
     }
 
     const completa = await prisma.$transaction(async (tx) => {
+      await bloquearAgenda(tx, id);
+      const lojaAtual = await tx.loja.findUnique({ where: { id } });
+      Object.assign(lojaData, configuracaoAgenda(lojaInput || {}, lojaAtual));
+      if (lojaInput?.agendaDias === undefined) lojaData.agendaDias = lojaAtual.agendaDias;
+      if (lojaInput?.agendaHorarios === undefined) lojaData.agendaHorarios = lojaAtual.agendaHorarios;
       await tx.dono.update({ where: { id: atual.donoId }, data: donoUpdate });
       const loja = await tx.loja.update({ where: { id }, data: lojaData });
       const idsMantidos = [];
@@ -492,10 +513,16 @@ router.put("/usuarios/:id", autenticarAdmin, async (req, res) => {
       if (cpfExistente && cpfExistente.id !== id) return res.status(409).json({ error: "Este CPF ja pertence a outro usuario." });
     }
     const data = { nome, email, cpf: cpf || null, telefone: telefone || null };
+    if (email !== atual.email) Object.assign(data, {
+      emailVerificadoEm: null, emailVerificacaoToken: null, emailVerificacaoExpiraEm: null,
+      emailVerificacaoEnviadaEm: null, resetToken: null, resetTokenExpiry: null,
+      googleId: null, authVersion: { increment: 1 },
+    });
     const novaSenha = String(req.body?.senha || "");
     if (novaSenha) {
-      if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
-      data.senha = await bcrypt.hash(novaSenha, 10);
+      const erroSenhaNova = erroSenha(novaSenha);
+      if (erroSenhaNova) return res.status(400).json({ error: erroSenhaNova });
+      Object.assign(data, dadosTrocaSenha(await bcrypt.hash(novaSenha, 10)));
     }
     const usuario = await prisma.usuario.update({ where: { id }, data, select: usuarioAdminSelect });
     res.json({ usuario });
@@ -576,8 +603,9 @@ router.put("/donos/:id", autenticarAdmin, async (req, res) => {
     const data = { nome, login, cnpj: cnpj || null };
     const novaSenha = String(req.body?.senha || "");
     if (novaSenha) {
-      if (novaSenha.length < 6) return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." });
-      data.senha = await bcrypt.hash(novaSenha, 10);
+      const erroSenhaNova = erroSenha(novaSenha);
+      if (erroSenhaNova) return res.status(400).json({ error: erroSenhaNova });
+      Object.assign(data, dadosTrocaSenha(await bcrypt.hash(novaSenha, 10)));
     }
     const dono = await prisma.dono.update({ where: { id }, data, select: donoAdminSelect });
     res.json({ dono });
@@ -604,15 +632,17 @@ router.put("/avaliacoes/:id/:acao(bloquear|desbloquear)", autenticarAdmin, (req,
 });
 
 router.get("/agendamentos", autenticarAdmin, async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
-    const agendamentos = await prisma.agendamento.findMany({
-      include: { usuario: { select: { id: true, nome: true, email: true } }, loja: { select: { id: true, nome: true } }, servico: { select: { id: true, nome: true, preco: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 300,
+    const carregar = () => prisma.agendamento.findMany({
+      include: { usuario: { select: { id: true, nome: true, email: true } }, loja: { select: { id: true, nome: true } }, servico: { select: { id: true, nome: true, preco: true } }, alteracoes: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] } },
+      orderBy: { createdAt: "desc" }, take: 300,
     });
-    res.json({ agendamentos });
-  } catch {
-    res.status(500).json({ error: "Erro ao carregar agendamentos." });
+    let agendamentos = await carregar();
+    if (await sincronizarExpirados(agendamentos)) agendamentos = await carregar();
+    res.json({ agendamentos: agendamentos.map(ag => comRegras(ag, 'admin')) });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.status ? err.message : "Erro ao carregar agendamentos." });
   }
 });
 
@@ -620,26 +650,36 @@ router.put("/agendamentos/:id/status", autenticarAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const status = String(req.body?.status || "").trim().toLowerCase();
-    if (!id || !["pendente", "finalizado", "cancelado"].includes(status)) return res.status(400).json({ error: "Status invalido." });
-    const agendamento = await prisma.agendamento.update({ where: { id }, data: { status } });
-    res.json({ agendamento });
-  } catch {
-    res.status(500).json({ error: "Erro ao atualizar agendamento." });
+    if (!Number.isSafeInteger(id) || id < 1 || !["confirmado", "finalizado", "cancelado"].includes(status)) throw erro(400, 'Status ou agendamento inválido. Reservas encerradas não podem ser reabertas.');
+    const motivo = motivoObrigatorio(req.body.motivo);
+    const anterior = await prisma.agendamento.findUnique({ where: { id } });
+    if (!anterior) throw erro(404, 'Agendamento não encontrado.');
+    const agendamento = await comAgendaBloqueada(anterior.lojaId, async tx => {
+      const ag = await tx.agendamento.findUnique({ where: { id }, include: { loja: true } });
+      if (!ag) throw erro(404, 'Agendamento não encontrado.');
+      if (!Number.isInteger(req.body.revisao) || req.body.revisao !== ag.revisao) throw Object.assign(erro(409, 'Este agendamento foi atualizado. Atualize a lista antes de continuar.'), { code: 'REVISAO_DESATUALIZADA' });
+      const now = new Date();
+      const regra = validarOperacao(ag, { tipo: 'admin', acao: status === 'cancelado' ? 'cancelar' : 'status', dados: { status }, excecaoPrazo: req.body.excecaoPrazo, now });
+      const result = await tx.agendamento.updateMany({ where: { id, revisao: ag.revisao, status: ag.status }, data: { status, revisao: { increment: 1 } } });
+      if (result.count !== 1) throw erro(409, 'O agendamento mudou. Atualize a lista.');
+      const { anterior: antes, atual } = diferencas(ag, { status });
+      const autorNome = String(req.admin?.login || req.admin?.nome || 'Administrador');
+      const motivoFinal = regra.excecaoUsada ? `[Exceção de prazo: ${regra.antecedenciaMinutos} min] ${motivo}` : motivo;
+      await tx.alteracaoAgendamento.create({ data: {
+        agendamentoId: id, autorTipo: 'admin', autorNome, motivo: motivoFinal,
+        anterior: antes, atual, vistoClienteEm: null, vistoParceiroEm: null,
+      } });
+      await enfileirarNotificacoes(tx, { agendamentoId: id, autorTipo: 'admin', autorNome, motivo: motivoFinal, anterior: antes, atual, now });
+      return tx.agendamento.findUnique({ where: { id } });
+    });
+    res.json({ agendamento: comRegras(agendamento, 'admin') });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.status ? err.message : "Erro ao atualizar agendamento.", code: err.code });
   }
 });
 
-router.delete("/agendamentos/:id", autenticarAdmin, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ error: "ID invalido." });
-    await prisma.denuncia.deleteMany({ where: { agendamentoId: id } });
-    await prisma.avaliacao.deleteMany({ where: { agendamentoId: id } });
-    await prisma.agendamento.delete({ where: { id } });
-    res.json({ ok: true });
-  } catch {
-    res.status(500).json({ error: "Erro ao excluir agendamento." });
-  }
-});
+router.delete("/agendamentos/:id", autenticarAdmin, (_req, res) =>
+  res.status(405).json({ error: 'Use Cancelar agendamento com motivo. O registro e o histórico devem ser preservados.' }));
 
 router.get("/avaliacoes", autenticarAdmin, async (_req, res) => {
   try {

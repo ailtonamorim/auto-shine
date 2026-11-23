@@ -222,7 +222,7 @@ async function initUserProfilePage() {
   profileThemeToggle?.addEventListener("click", () => window.AutoShineTheme.toggle());
   window.addEventListener("autoshine:themechange", syncThemeToggle);
 
-  form.addEventListener("submit", async (event) => {
+  form.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     const nome = nameInput.value.trim();
     const telefone = phoneInput.value.trim();
@@ -257,15 +257,15 @@ async function initUserProfilePage() {
     } finally {
       setSubmitState(document.getElementById("profile-save-btn"), false, "Salvar alterações");
     }
-  });
+  }));
 
-  passwordForm.addEventListener("submit", async (event) => {
+  passwordForm.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     const formData = new FormData(passwordForm);
     const payload = {
-      senhaAtual: String(formData.get("senhaAtual") || "").trim(),
-      novaSenha: String(formData.get("novaSenha") || "").trim(),
-      confirmarSenha: String(formData.get("confirmarSenha") || "").trim(),
+      senhaAtual: String(formData.get("senhaAtual") || ""),
+      novaSenha: String(formData.get("novaSenha") || ""),
+      confirmarSenha: String(formData.get("confirmarSenha") || ""),
     };
 
     if (!payload.senhaAtual || !payload.novaSenha || !payload.confirmarSenha) {
@@ -273,8 +273,9 @@ async function initUserProfilePage() {
       return;
     }
 
-    if (payload.novaSenha.length < 8 || !/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(payload.novaSenha)) {
-      notify("A nova senha precisa ter pelo menos 8 caracteres com letras e números.", "error");
+    const erroSenhaNova = AutoShinePassword.erroSenha(payload.novaSenha);
+    if (erroSenhaNova) {
+      notify(erroSenhaNova, "error");
       return;
     }
 
@@ -295,17 +296,19 @@ async function initUserProfilePage() {
       if (!response.ok) throw new Error(data.error || "Não foi possível alterar a senha.");
       notify(data.message || "Senha atualizada com sucesso.", "success");
       passwordForm.reset();
+      clearCurrentUser();
+      window.location.href = "cadastro.html?perfil=cliente&mode=login&auth=password_changed";
     } catch (error) {
       notify(error.message || "Erro ao atualizar a senha.", "error");
     } finally {
       setSubmitState(button, false, "Atualizar senha");
     }
-  });
+  }));
 
   addressAddButton.addEventListener("click", () => openAddressForm());
   addressCancelButton.addEventListener("click", resetAddressForm);
 
-  addressForm.addEventListener("submit", async (event) => {
+  addressForm.addEventListener("submit", guardAction(async (event) => {
     event.preventDefault();
     const formData = new FormData(addressForm);
     const payload = {
@@ -352,9 +355,9 @@ async function initUserProfilePage() {
     } finally {
       setSubmitState(button, false, state.editingAddressId ? "Atualizar endereço" : "Salvar endereço");
     }
-  });
+  }));
 
-  addressList.addEventListener("click", async (event) => {
+  addressList.addEventListener("click", guardAction(async (event) => {
     const button = event.target.closest("button[data-address-action]");
     if (!button) return;
 
@@ -366,7 +369,7 @@ async function initUserProfilePage() {
 
     if (action === "edit") openAddressForm(address);
     if (action === "delete") {
-      const confirmed = window.confirm("Deseja remover este endereço da sua conta?");
+      const confirmed = await confirmAction("Deseja remover este endereço da sua conta?", { title: "Remover endereço", danger: true, confirmLabel: "Remover endereço" });
       if (!confirmed) return;
 
       try {
@@ -379,7 +382,7 @@ async function initUserProfilePage() {
         notify(error.message || "Erro ao remover endereço.", "error");
       }
     }
-  });
+  }, 'button[data-address-action]'));
 
   document.querySelectorAll("[data-profile-tab]").forEach((tab) => {
     tab.addEventListener("click", () => {

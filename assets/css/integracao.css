@@ -515,6 +515,36 @@ html[data-theme="light"] .app-toast button {
   color: var(--text);
 }
 
+/* Feedback compartilhado: cores semânticas também no tema claro. */
+.app-modal-open { overflow: hidden !important; }
+.app-toast { grid-template-columns: 26px minmax(0, 1fr) auto; border-left-width: 4px; }
+.app-toast-content { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.app-toast-content strong { font-size: 0.9rem; }
+.app-toast-icon {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  border: 1px solid currentColor; border-radius: 50%; font-weight: 700;
+}
+.app-toast-success { --toast-accent: #5cdd93; }
+.app-toast-error { --toast-accent: #ff8585; }
+.app-toast-warning { --toast-accent: #ffd178; }
+.app-toast-info { --toast-accent: #91baff; }
+html[data-theme="light"] .app-toast-success { --toast-accent: #167341; }
+html[data-theme="light"] .app-toast-error { --toast-accent: #b42332; }
+html[data-theme="light"] .app-toast-warning { --toast-accent: #8a5800; }
+html[data-theme="light"] .app-toast-info { --toast-accent: #245caf; }
+.app-toast[class*="app-toast-"], html[data-theme="light"] .app-toast[class*="app-toast-"] {
+  border-color: var(--toast-accent);
+}
+.app-toast .app-toast-icon, .app-toast-content strong { color: var(--toast-accent); }
+.app-toast button:focus-visible, .confirm-dialog button:focus-visible {
+  outline: 3px solid var(--primary, #2f7fff); outline-offset: 3px;
+}
+.confirm-dialog-card { max-height: calc(100dvh - 36px); overflow-y: auto; }
+.toast-stack { max-height: min(60dvh, 560px); overflow-y: auto; }
+@media (prefers-reduced-motion: reduce) {
+  .app-toast { animation: none; transition: none; }
+}
+
 html[data-theme="light"] .report-dialog-feedback.is-error {
   color: var(--danger) !important;
 }
@@ -854,3 +884,135 @@ html[data-theme="light"] .owner-plan-badge,
 html[data-theme="light"] .owner-timeline-hour { color: var(--link-color); }
 html[data-theme="light"] .owner-review-card p { color: var(--text); }
 html[data-theme="light"] .owner-review-rating { color: #946000; }
+
+/* Prévia de serviços: camada fora do grid e painel inferior em telas de toque. */
+.shop-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.shop-content .shop-card-actions .btn {
+  min-height: 44px;
+  padding: 10px 12px;
+  margin-top: 0;
+  width: auto;
+  flex: 1;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.shop-content .shop-card-actions [data-shop-preview] { color: var(--link-color); flex: 0 0 auto; }
+.shop-card.shop-preview-active { transform: none; }
+.shop-preview[hidden], .shop-preview-backdrop[hidden] { display: none; }
+.shop-preview {
+  position: fixed;
+  z-index: 1100;
+  isolation: isolate;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--blue-soft-strong);
+  border-radius: 20px;
+  box-shadow: 0 20px 65px rgba(0, 0, 0, 0.45);
+  animation: shop-preview-enter 220ms ease-out;
+}
+.shop-preview-photo { height: 148px; background: var(--surface); }
+.shop-preview-photo img { width: 100%; height: 100%; object-fit: cover; }
+.shop-preview-close, .shop-preview .shop-card-favorite {
+  width: 44px;
+  height: 44px;
+  top: 10px;
+}
+.shop-preview-close {
+  position: absolute;
+  left: 10px;
+  z-index: 2;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--favorite-btn-bg);
+  color: var(--favorite-btn-color);
+  cursor: pointer;
+  font-size: 28px;
+  line-height: 1;
+}
+.shop-preview .shop-card-favorite { right: 10px; }
+.shop-preview-content { display: grid; gap: 10px; padding: 18px; }
+.shop-preview h2 { font-size: 1.2rem; line-height: 1.25; overflow-wrap: anywhere; }
+.shop-preview-label { color: var(--link-color); font-size: 0.73rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.shop-preview-description {
+  font-size: 0.88rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.shop-preview-services { list-style: none; padding: 0; margin: 0; }
+.shop-preview-services li { padding: 10px 0; border-top: 1px solid var(--line); }
+.shop-preview-services li > strong { display: block; font-size: 0.9rem; overflow-wrap: anywhere; }
+.shop-preview-services li > span { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; margin-top: 3px; font-size: 0.83rem; color: var(--muted); overflow-wrap: anywhere; }
+.shop-preview-services b { color: var(--link-color); font-weight: 600; }
+.shop-preview-more, .shop-preview-empty { font-size: 0.85rem; }
+.shop-preview-content > .btn { min-height: 46px; text-align: center; }
+.shop-preview button:focus-visible, .shop-preview a:focus-visible, [data-shop-preview]:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.shop-preview-backdrop { position: fixed; inset: 0; z-index: 1099; background: rgba(0, 0, 0, 0.6); }
+body.shop-preview-lock { overflow: hidden; }
+.shop-preview.is-sheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: 100%;
+  max-height: min(88dvh, 760px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: 22px 22px 0 0;
+  animation: shop-preview-sheet-enter 220ms ease-out;
+}
+html[data-theme="light"] .shop-preview { box-shadow: 0 20px 55px rgba(38, 63, 92, 0.22); }
+@keyframes shop-preview-enter { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes shop-preview-sheet-enter { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .shop-preview, .shop-preview.is-sheet { animation: none; }
+  .shop-card, .shop-card-img-wrap img { transition: none; }
+}
+
+/* Cadastro e edição pertencem à área Meu lava-jato. */
+.partner-editor-hint { margin-bottom: 24px; max-width: 70ch; }
+#partner-shop-editor > .section-head { flex-wrap: wrap; gap: 16px; }
+#partner-shop-editor .eyebrow { margin-bottom: 8px; }
+#partner-shop-editor .wizard-progress-step.hidden,
+#partner-shop-editor .wizard-progress-line.hidden { display: none; }
+#partner-shop-editor h2:focus, #partner-overview-title:focus { outline: none; }
+
+/* Resumo, edição e avisos dos agendamentos. */
+.booking-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0; flex-wrap: wrap; }
+.booking-summary-card { overflow-wrap: anywhere; }
+html[data-theme="light"] .booking-summary-card { background: var(--card); color: var(--text); border-color: var(--line); }
+html[data-theme="light"] .booking-summary-card h3 { color: var(--text-strong); }
+.booking-summary-data { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.booking-summary-data dt { font-size: .82rem; opacity: .7; margin-bottom: 5px; }
+.booking-summary-data dd { margin: 0; font-weight: 600; }
+.booking-summary-card .booking-item-actions { flex-wrap: wrap; gap: 10px; }
+.booking-update-notice { padding: 14px; border: 1px solid #5288db; border-radius: 12px; background: rgba(49, 111, 217, .12); margin: 16px 0; }
+.booking-editor { border-top: 1px solid rgba(128, 145, 170, .35); margin-top: 20px; padding-top: 20px; display: grid; gap: 16px; }
+.booking-editor h4 { font-size: 1.1rem; margin: 0; }
+.booking-editor .field { min-width: 0; }
+.booking-editor input, .booking-editor select, .booking-editor textarea { width: 100%; box-sizing: border-box; }
+.booking-editor [data-booking-feedback] { white-space: pre-wrap; }
+.booking-history { margin-top: 20px; border-top: 1px solid rgba(128, 145, 170, .35); padding-top: 16px; }
+.booking-history summary { cursor: pointer; font-weight: 600; }
+.booking-history > ol { padding-left: 22px; }
+.booking-history > ol > li { padding: 14px 0; border-bottom: 1px solid rgba(128, 145, 170, .25); }
+.booking-history ul { padding-left: 18px; }
+.booking-history p, .booking-history li { line-height: 1.6; }
+.booking-history .btn { margin-top: 12px; }
+@media (max-width: 600px) {
+  .booking-summary-data { grid-template-columns: 1fr; }
+  .booking-editor .field-grid { grid-template-columns: 1fr; }
+  .booking-summary-card .booking-item-actions > .btn { flex: 1 1 100%; }
+}
+
+/* Reserva encerrada automaticamente por falta de confirmação. */
+.booking-status-expired { color: #d4deed; background: #263245; border: 1px solid #526078; }
+html[data-theme="light"] .booking-status-expired { color: #374151; background: #e5e7eb; border-color: #9ca3af; }

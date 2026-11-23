@@ -12,6 +12,7 @@ const htmlPages = [
   "perfil-usuario.html",
   "servicos.html",
   "reset-senha.html",
+  "verificar-email.html",
   "agendamento.html",
   "meus-agendamentos.html",
   "avaliacoes.html",
@@ -89,7 +90,7 @@ function runCommand(label, command, args, options = {}) {
 }
 
 function checkJavaScriptSyntax() {
-  ["server.js", "database-admin.js", "assets/js/app.js", "assets/js/tema.js", "assets/js/menu-perfil.js", "assets/js/perfil-usuario.js", "src/routes/profile.js", "prisma/seed.js"].forEach((relativePath) => {
+  ["server.js", "database-admin.js", "assets/js/app.js", "assets/js/tema.js", "assets/js/menu-perfil.js", "assets/js/perfil-usuario.js", "src/routes/profile.js", "src/services/expiracao-agendamentos.js", "src/utils/agendamento-expiracao.js", "src/utils/agendamento-regras.js", "src/routes/agendamentos.js", "src/routes/admin.js", "src/utils/agenda.js", "src/routes/auth.js", "src/routes/dono.js", "src/routes/resetSenha.js", "src/routes/verificacaoEmail.js", "src/utils/verificacao-email.js", "src/utils/conta-google.js", "src/config/email.js", "src/middlewares/auth.js", "assets/js/verificar-email.js", "prisma/seed.js"].forEach((relativePath) => {
     if (!fileExists(relativePath)) return;
     runCommand(`Sintaxe JS valida: ${relativePath}`, process.execPath, ["--check", fullPath(relativePath)]);
   });
