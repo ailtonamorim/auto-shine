@@ -1,29 +1,28 @@
 ALTER TABLE "Usuario"
-  ADD COLUMN IF NOT EXISTS "emailCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "emailIndex" TEXT,
-  ADD COLUMN IF NOT EXISTS "cpfCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "cpfIndex" TEXT,
-  ADD COLUMN IF NOT EXISTS "telefoneCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "googleIdCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "googleIdIndex" TEXT,
-  ADD COLUMN IF NOT EXISTS "resetTokenHash" TEXT;
+  ADD COLUMN "emailCipher" TEXT;
+ALTER TABLE "Usuario" ADD COLUMN "emailIndex" TEXT;
+ALTER TABLE "Usuario" ADD COLUMN "cpfCipher" TEXT;
+ALTER TABLE "Usuario" ADD COLUMN "cpfIndex" TEXT;
+ALTER TABLE "Usuario" ADD COLUMN "telefoneCipher" TEXT;
+ALTER TABLE "Usuario" ADD COLUMN "googleIdCipher" TEXT;
+ALTER TABLE "Usuario" ADD COLUMN "googleIdIndex" TEXT;
+ALTER TABLE "Usuario" ADD COLUMN "resetTokenHash" TEXT;
 
 ALTER TABLE "Dono"
-  ADD COLUMN IF NOT EXISTS "emailCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "emailIndex" TEXT,
-  ADD COLUMN IF NOT EXISTS "cnpjCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "cnpjIndex" TEXT,
-  ADD COLUMN IF NOT EXISTS "googleIdCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "googleIdIndex" TEXT,
-  ADD COLUMN IF NOT EXISTS "resetTokenHash" TEXT;
+  ADD COLUMN "emailCipher" TEXT;
+ALTER TABLE "Dono" ADD COLUMN "emailIndex" TEXT;
+ALTER TABLE "Dono" ADD COLUMN "cnpjCipher" TEXT;
+ALTER TABLE "Dono" ADD COLUMN "cnpjIndex" TEXT;
+ALTER TABLE "Dono" ADD COLUMN "googleIdCipher" TEXT;
+ALTER TABLE "Dono" ADD COLUMN "googleIdIndex" TEXT;
+ALTER TABLE "Dono" ADD COLUMN "resetTokenHash" TEXT;
 
 ALTER TABLE "Agendamento"
-  ADD COLUMN IF NOT EXISTS "notasCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "nomeClienteCipher" TEXT,
-  ADD COLUMN IF NOT EXISTS "emailClienteCipher" TEXT;
+  ADD COLUMN "notasCipher" TEXT;
+ALTER TABLE "Agendamento" ADD COLUMN "nomeClienteCipher" TEXT;
+ALTER TABLE "Agendamento" ADD COLUMN "emailClienteCipher" TEXT;
 
-ALTER TABLE "Denuncia"
-  ADD COLUMN IF NOT EXISTS "detalhesCipher" TEXT;
+ALTER TABLE "Denuncia" ADD COLUMN "detalhesCipher" TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "Usuario_emailIndex_key" ON "Usuario"("emailIndex");
 CREATE UNIQUE INDEX IF NOT EXISTS "Usuario_cpfIndex_key" ON "Usuario"("cpfIndex");

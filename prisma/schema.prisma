@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -84,7 +84,7 @@ model Loja {
   inativoAte   DateTime?
   statusAprovacao String     @default("aprovada")
   healthStatus String       @default("healthy") @map("health_status")
-  healthReasons String[]    @default([]) @map("health_reasons")
+  healthReasons String      @default("[]") @map("health_reasons")
   donoId       Int
   dono         Dono          @relation(fields: [donoId], references: [id])
   servicos     ServicoLoja[]

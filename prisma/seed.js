@@ -14,11 +14,14 @@ async function upsertDono({ nome, login, cnpj }) {
 
 async function upsertUsuario({ nome, email, cpf, telefone }) {
   const senha = await bcrypt.hash("cliente123", 10);
-  return prisma.usuario.upsert({
-    where: { email },
-    update: { nome, cpf, telefone },
-    create: { nome, email, cpf, telefone, senha },
-  });
+  const usuario = await prisma.usuario.findFirst({ where: { email } });
+  if (usuario) {
+    return prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { nome, cpf, telefone },
+    });
+  }
+  return prisma.usuario.create({ data: { nome, email, cpf, telefone, senha } });
 }
 
 function localDateKey(offsetDays = 0) {
@@ -105,12 +108,11 @@ async function seedDashboardDemoData(lojas) {
     const createdAt = new Date();
     createdAt.setDate(createdAt.getDate() - index * 3);
     createdAt.setHours(12, 0, 0, 0);
-    const cliente = await prisma.usuario.upsert({
-      where: { email },
-      update: { nome, createdAt },
-      create: { nome, email, createdAt },
-    });
-    clientes.push(cliente);
+    const cliente = await prisma.usuario.findFirst({ where: { email } });
+    const clienteAtualizado = cliente
+      ? await prisma.usuario.update({ where: { id: cliente.id }, data: { nome, createdAt } })
+      : await prisma.usuario.create({ data: { nome, email, createdAt } });
+    clientes.push(clienteAtualizado);
   }
 
   const servicosPorLoja = new Map();
