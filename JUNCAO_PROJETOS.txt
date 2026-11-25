@@ -47,11 +47,7 @@ PENDÊNCIAS QUE JÁ ESTAVAM NO MAIN (não foram criadas pela junção)
 ---------------------------------------------------------------
 - multer: src/routes/defesaDenuncia.js usa a biblioteca "multer", que não estava no
   package.json; sem ela o servidor nem iniciava. Foi adicionada como dependência.
-- Defesa de denúncia (POST /api/denuncias/:id/responder): usa os campos respostaLoja,
-  anexosResposta e dataResposta e a tabela Notificacao, que não existem no schema nem nas
-  migrations. Hoje essa rota sempre responde erro 500. Falta uma migration (Diego).
-- Perfil do parceiro (perfil-dono.html): o botão de salvar dados da conta chama
-  PUT /api/dono/me, que não existe. Loja e serviços salvam normalmente.
+- (Resolvido na segunda junção) Defesa de denúncia e PUT /api/dono/me.
 
 ATENÇÃO: scripts/migrar-dados-sensiveis.js
 ------------------------------------------
@@ -72,3 +68,28 @@ COMO RODAR
 Testes: npm test (todos) — ou os scripts test:* do package.json.
 Já falhavam antes da junção (não foram alterados): 1 caso em tests/fluxo-email.test.js
 (projeto da Ana) e 1 caso em tests/serializers.test.js (projeto dos colegas).
+
+
+SEGUNDA JUNÇÃO — 23/11/2026 (noite): branch juncao-agendamento-notificacoes + main 3ef37fa
+========================================================================================
+O main recebeu a branch do Diego (cookie de login, notificações e denúncias do parceiro,
+PUT /api/dono/me) e o revert do SQLite. Foi feito um git merge de verdade (ancestral d7082e3).
+
+Decisões nos conflitos:
+- Tokens: mantêm authVersion (sessão encerrada ao trocar senha) e ganham "role" (Diego).
+- Middleware de autenticação: verificação completa da Ana (versão do login, e-mail confirmado,
+  bloqueio) + papel do token e cookie "autoshine_auth" do Diego, que só decide redirecionamentos
+  de páginas. As APIs continuam exigindo o token no cabeçalho.
+- Cadastro de cliente e parceiro: continua exigindo confirmação do e-mail antes de entrar
+  (o cookie só é criado no login).
+- PUT /api/dono/me: nome e CNPJ podem ser editados; o e-mail NÃO muda por ali, porque o novo
+  endereço precisaria ser confirmado. Troca de e-mail continua pelo admin. O token devolvido
+  agora inclui a versão do login (antes encerrava a sessão de quem já tinha trocado a senha).
+  Na página perfil-dono, o campo de e-mail ficou somente leitura com uma explicação.
+- Painel do parceiro: mantidas as 3 abas da Ana (o formulário fica em "Meu lava-jato");
+  saiu o item "Cadastro" do menu do topo. Aceita abrir aba por ?tab= e por #.
+  Entraram o botão "Denúncias", "Ações rápidas" e as notificações do Diego; "Avaliações" ficou.
+- package.json: o script "build" continua "prisma generate && prisma migrate deploy".
+  O main tinha trocado por "prisma db push", que ignora as migrations (e a checagem de contas
+  duplicadas) e pode apagar dados. Railway e Render não usam esse script.
+- Pendência da defesa de denúncia resolvida pelo main (migrations 20261026190000 e 20261103090000).

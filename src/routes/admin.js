@@ -5,10 +5,12 @@ const express = require("express");
 const { snapshotServico } = require("../utils/agendamento-snapshot");
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
+const path = require("path");
 const prisma = require("../config/database");
 const { autenticarAdmin } = require("../middlewares/auth");
 const { limitarAuth } = require("../middlewares/security");
 const { gerarTokenAdmin } = require("../utils/tokens");
+const { setAuthCookie } = require("../middlewares/auth");
 const { normalizarLoginDono, normalizarCnpj, normalizarEmail, normalizarCpf, normalizarTelefone, emailValido, cnpjTemDigitoValido, cpfTemDigitoValido, fotoAvaliacaoValida, serializarFotosAdicionais, serializarListaTexto, coordenadasValidas, imagemLojaValida } = require("../utils/validators");
 const { serializarAgendaDias, serializarAgendaHorarios, diasPadraoAgenda, horariosPadrao } = require("../utils/agenda");
 const { deletarLojaComRelacionados, prepararLojaAdmin, prepararServicosAdmin } = require("../utils/loja");
@@ -19,6 +21,7 @@ const { erro, motivoObrigatorio, diferencas } = require('../utils/agendamento-ed
 const { validarOperacao, comRegras } = require('../utils/agendamento-regras');
 const { enfileirarNotificacoes } = require('../services/notificacoes');
 const router = express.Router();
+const reportUploadsDir = path.join(__dirname, "../../uploads/denuncias");
 
 const adminLogin = process.env.ADMIN_LOGIN;
 const adminSenha = process.env.ADMIN_SENHA;
@@ -58,7 +61,9 @@ router.post("/login", limitarAuth, async (req, res) => {
   } catch {
     return res.status(401).json({ error: "Login ou senha incorretos." });
   }
-  res.json({ token: gerarTokenAdmin() });
+  const token = gerarTokenAdmin();
+  setAuthCookie(res, token);
+  res.json({ token });
 });
 
 router.get("/dashboard", autenticarAdmin, async (req, res) => {
@@ -746,7 +751,7 @@ router.get("/denuncias", autenticarAdmin, async (_req, res) => {
     const denuncias = await prisma.denuncia.findMany({
       include: {
         usuario: { select: { id: true, nome: true, email: true } },
-        loja: { select: { id: true, nome: true } },
+        loja: { select: { id: true, nome: true, bloqueado: true } },
         avaliacao: { select: { id: true, comentario: true, nota: true } },
         agendamento: { select: { id: true, data: true, hora: true, status: true } },
       },
@@ -759,15 +764,114 @@ router.get("/denuncias", autenticarAdmin, async (_req, res) => {
   }
 });
 
+router.get("/denuncias/:id/anexos/:filename", autenticarAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const filename = path.basename(req.params.filename);
+    if (!Number.isInteger(id) || id < 1 || filename !== req.params.filename) return res.status(400).json({ error: "Anexo inválido." });
+    const denuncia = await prisma.denuncia.findUnique({ where: { id }, select: { anexosResposta: true } });
+    if (!denuncia) return res.status(404).json({ error: "Denúncia não encontrada." });
+    let anexos = [];
+    try { anexos = JSON.parse(denuncia.anexosResposta || "[]"); } catch {}
+    if (!Array.isArray(anexos) || !anexos.includes(filename)) return res.status(404).json({ error: "Anexo não encontrado." });
+    res.sendFile(path.join(reportUploadsDir, filename));
+  } catch (err) {
+    console.error("Erro ao carregar anexo da denúncia:", err);
+    res.status(500).json({ error: "Não foi possível carregar o anexo." });
+  }
+});
+
+async function atualizarDenunciaAdmin(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const statusInformado = req.body?.status !== undefined;
+    const status = String(req.body?.status || "").trim().toLowerCase().replaceAll("-", "_");
+    const parecerAdmin = req.body?.parecerAdmin === undefined ? undefined : String(req.body.parecerAdmin).trim();
+    const bloquearLoja = req.body?.bloquearLoja === true || status === "procedente";
+    const statusPermitidos = ["pendente", "em_analise", "aguardando_defesa", "contestada", "rejeitada", "procedente"];
+
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "ID inválido." });
+    if (statusInformado && !statusPermitidos.includes(status)) return res.status(400).json({ error: "Status inválido." });
+    if (!statusInformado && !bloquearLoja) return res.status(400).json({ error: "Informe um status ou solicite o bloqueio da loja." });
+    if (parecerAdmin !== undefined && parecerAdmin.length > 5000) return res.status(400).json({ error: "O parecer deve ter no máximo 5.000 caracteres." });
+    if (["procedente", "rejeitada"].includes(status) && (!parecerAdmin || parecerAdmin.length < 10)) {
+      return res.status(400).json({ error: "Informe um parecer com pelo menos 10 caracteres antes de concluir a denúncia." });
+    }
+
+    const denuncia = await prisma.$transaction(async (tx) => {
+      const atual = await tx.denuncia.findUnique({ where: { id }, select: { id: true, lojaId: true, motivo: true } });
+      if (!atual) return null;
+      if (bloquearLoja && !atual.lojaId) {
+        const erro = new Error("Esta denúncia não está vinculada a uma loja.");
+        erro.status = 400;
+        throw erro;
+      }
+
+      const data = {};
+      if (statusInformado) data.status = status;
+      if (parecerAdmin !== undefined) data.parecerAdmin = parecerAdmin || null;
+      const atualizada = await tx.denuncia.update({
+        where: { id },
+        data,
+        include: { loja: { select: { id: true, nome: true, bloqueado: true } } },
+      });
+      if (bloquearLoja) await tx.loja.update({ where: { id: atual.lojaId }, data: { bloqueado: true } });
+      if (atual.lojaId && status === "aguardando_defesa") {
+        await tx.notificacao.create({
+          data: {
+            lojaId: atual.lojaId,
+            tipo: "SOLICITACAO_DEFESA",
+            titulo: "A equipe solicitou sua defesa",
+            mensagem: `Envie sua resposta sobre a denúncia: "${atual.motivo}". Você pode anexar comprovantes pelo painel do parceiro.`,
+          },
+        });
+      } else if (atual.lojaId && status === "em_analise") {
+        await tx.notificacao.create({
+          data: {
+            lojaId: atual.lojaId,
+            tipo: "DENUNCIA_EM_ANALISE",
+            titulo: "Denúncia em análise",
+            mensagem: `A equipe iniciou a análise da denúncia: "${atual.motivo}". Nenhuma decisão final foi tomada ainda.`,
+          },
+        });
+      } else if (atual.lojaId && (["procedente", "rejeitada"].includes(status) || bloquearLoja)) {
+        const resultado = status === "procedente" || bloquearLoja
+          ? { titulo: "Denúncia concluída: procedente", mensagem: "A denúncia foi considerada procedente e a loja foi bloqueada." }
+          : { titulo: "Denúncia concluída: rejeitada", mensagem: "A denúncia foi rejeitada e não houve bloqueio da loja." };
+        await tx.notificacao.create({
+          data: {
+            lojaId: atual.lojaId,
+            tipo: "DENUNCIA_CONCLUIDA",
+            titulo: resultado.titulo,
+            mensagem: `${resultado.mensagem}${parecerAdmin ? ` Parecer: ${parecerAdmin}` : ""}`,
+          },
+        });
+      }
+      return atualizada;
+    });
+
+    if (!denuncia) return res.status(404).json({ error: "Denúncia não encontrada." });
+    res.status(200).json({ denuncia, message: "Denúncia atualizada com sucesso." });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Erro ao atualizar denúncia." });
+  }
+}
+
+router.patch("/denuncias/:id", autenticarAdmin, atualizarDenunciaAdmin);
+router.patch("/denuncias/:id/status", autenticarAdmin, atualizarDenunciaAdmin);
+
 router.put("/denuncias/:id/status", autenticarAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const status = String(req.body?.status || "").trim().toLowerCase();
-    if (!id || !["aberta", "em_analise", "resolvida", "arquivada"].includes(status)) return res.status(400).json({ error: "Status invalido." });
-    const denuncia = await prisma.denuncia.update({ where: { id }, data: { status } });
-    res.json({ denuncia });
-  } catch {
-    res.status(500).json({ error: "Erro ao atualizar denúncia." });
+    const statusRecebido = String(req.body?.status || "").trim().toLowerCase();
+    const status = { resolvida: "procedente", arquivada: "rejeitada", aberta: "pendente" }[statusRecebido] || statusRecebido;
+    if (!Number.isInteger(id) || id < 1 || !["pendente", "em_analise", "aguardando_defesa", "contestada", "rejeitada", "procedente"].includes(status)) {
+      return res.status(400).json({ error: "Status inválido." });
+    }
+    req.body.status = status;
+    return atualizarDenunciaAdmin(req, res);
+  } catch (err) {
+    res.status(500).json({ error: err.message || "Erro ao atualizar denúncia." });
   }
 });
 

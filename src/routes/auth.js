@@ -7,6 +7,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const prisma = require("../config/database");
 const { gerarTokenUsuario, gerarTokenDono } = require("../utils/tokens");
+const { setAuthCookie, clearAuthCookie } = require("../middlewares/auth");
 const { normalizarEmail, emailValido, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
 const { limitarAuth } = require("../middlewares/security");
 
@@ -64,6 +65,7 @@ router.get("/auth/google/callback", (req, res, next) => {
           const dono = await obterContaGoogle(user, "dono");
           if (dono.bloqueado || (dono.suspensoAte && dono.suspensoAte > new Date())) return res.redirect("/cadastro-dono.html?auth=blocked");
           const token = gerarTokenDono(dono);
+          setAuthCookie(res, token);
           const next = encodeURIComponent(returnTo);
           res.redirect(`/cadastro-dono.html?auth=dono_google_success&token=${token}&next=${next}`);
         } catch (err) {
@@ -79,6 +81,7 @@ router.get("/auth/google/callback", (req, res, next) => {
         const usuario = await obterContaGoogle(user, "usuario");
         if (usuario.bloqueado || (usuario.suspensoAte && usuario.suspensoAte > new Date())) return res.redirect("/cadastro.html?mode=login&auth=blocked");
         const token = gerarTokenUsuario(usuario);
+        setAuthCookie(res, token);
         const name = encodeURIComponent(usuario.nome);
         const emailParam = encodeURIComponent(usuario.email);
         const next = encodeURIComponent(returnTo);
@@ -92,10 +95,16 @@ router.get("/auth/google/callback", (req, res, next) => {
 });
 
 router.get("/auth/logout", (req, res, next) => {
+  clearAuthCookie(res);
   req.logout((err) => {
     if (err) return next(err);
     req.session.destroy(() => res.redirect("/index.html"));
   });
+});
+
+router.post("/api/auth/logout", (_req, res) => {
+  clearAuthCookie(res);
+  res.status(204).end();
 });
 
 router.get("/api/auth/me", (req, res) => res.json({ authenticated: Boolean(req.user), user: req.user || null }));
@@ -137,6 +146,7 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
     const pendencia = pendenciaEmail(usuario);
     if (pendencia) return res.status(403).json(pendencia);
     const token = gerarTokenUsuario(usuario);
+    setAuthCookie(res, token);
     res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
   } catch (err) {
     console.error("Erro no login:", err);

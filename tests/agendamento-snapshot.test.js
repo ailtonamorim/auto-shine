@@ -225,10 +225,12 @@ test('finalização preserva o preço reservado para o cálculo do painel',async
 function renderDashboard(rows) {
   const context=vm.createContext({Intl,Date,
     cachedShops:[{id:1,nome:'Loja',servicos:[],avaliacoes:[]}],cachedBookings:rows,
-    dashboardRoot:{innerHTML:''},selectedDashboardShopId:'1',ownerSidebarCollapsed:false,
+    dashboardRoot:{innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[]},selectedDashboardShopId:'1',ownerSidebarCollapsed:false,
     getDonoFromToken:()=>({nome:'Parceiro'}),
     parseScheduleTimes:()=>['10:00'],parseScheduleDays:()=>['0','1','2','3','4','5','6'],
     defaultBookingTimes:[],defaultScheduleDays:[],
+    // Notificações do parceiro (Diego) vivem no escopo da página; o teste começa sem nenhuma.
+    partnerNotifications:[],unreadPartnerNotifications:0,
     escapeHtml:ui.escapeHtml,
     bookingRevenue:ui.bookingRevenue,bookingRevenueLabel:ui.bookingRevenueLabel,bookingServiceName:ui.bookingServiceName,
   });

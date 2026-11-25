@@ -15,6 +15,7 @@ if (missingConfig.length) {
 }
 
 const { aplicarHeadersSeguranca } = require("./src/middlewares/security");
+const { autorizarPagina } = require("./src/middlewares/auth");
 const { iniciarHealthWorker } = require("./src/services/health-worker");
 
 const authRouter = require("./src/routes/auth");
@@ -89,12 +90,14 @@ app.use("/api", utilsRouter);
 app.use("/api/admin", adminRouter);
 
 app.use("/assets", express.static(path.join(baseDir, "assets")));
-app.get("/", (_req, res) => res.sendFile(path.join(baseDir, "index.html")));
+app.get("/", (req, res, next) => {
+  autorizarPagina("index.html")(req, res, () => res.sendFile(path.join(baseDir, "index.html")));
+});
 app.get("/parceiro-cadastrar.html", (_req, res) => res.redirect(301, "/cadastro-dono.html"));
 app.get("/:page", (req, res, next) => {
   const { page } = req.params;
   if (!publicPages.has(page)) return next();
-  return res.sendFile(path.join(baseDir, page));
+  return autorizarPagina(page)(req, res, () => res.sendFile(path.join(baseDir, page)));
 });
 
 app.use((_req, res) => {

@@ -3,6 +3,13 @@ const prisma = require("../config/database");
 const { autenticarUsuario } = require("../middlewares/auth");
 
 const router = express.Router();
+const motivosLoja = new Set([
+  "Informações divergentes",
+  "Preço diferente do anunciado",
+  "Atendimento inadequado",
+  "Conteúdo incorreto",
+  "Outro motivo",
+]);
 
 router.post("/", autenticarUsuario, async (req, res) => {
   try {
@@ -15,8 +22,15 @@ router.post("/", autenticarUsuario, async (req, res) => {
 
     if (!["loja", "avaliacao", "agendamento"].includes(tipo)) return res.status(400).json({ error: "Tipo de denúncia inválido." });
     if (motivo.length < 4) return res.status(400).json({ error: "Informe um motivo para a denúncia." });
+    if (tipo === "loja" && !motivosLoja.has(motivo)) return res.status(400).json({ error: "Selecione um motivo válido para denunciar a loja." });
 
-    const data = { tipo, motivo: motivo.slice(0, 120), detalhes: detalhes ? detalhes.slice(0, 600) : null, usuarioId: req.usuario.id };
+    const data = {
+      tipo,
+      motivo: motivo.slice(0, 120),
+      detalhes: detalhes ? detalhes.slice(0, 600) : null,
+      status: tipo === "loja" ? "pendente" : "aberta",
+      usuarioId: req.usuario.id,
+    };
 
     if (tipo === "loja") {
       if (!lojaId) return res.status(400).json({ error: "Informe a loja denunciada." });
@@ -41,7 +55,20 @@ router.post("/", autenticarUsuario, async (req, res) => {
       data.lojaId = agendamento.lojaId;
     }
 
-    const denuncia = await prisma.denuncia.create({ data });
+    const denuncia = await prisma.$transaction(async (tx) => {
+      const criada = await tx.denuncia.create({ data });
+      if (data.lojaId) {
+        await tx.notificacao.create({
+          data: {
+            lojaId: data.lojaId,
+            titulo: "Nova denúncia recebida",
+            mensagem: `Sua loja recebeu uma denúncia pelo motivo: ${data.motivo}. A equipe fará a análise.`,
+            tipo: "DENUNCIA_RECEBIDA",
+          },
+        });
+      }
+      return criada;
+    });
     res.status(201).json({ denuncia });
   } catch (err) {
     console.error("Erro ao criar denúncia:", err);

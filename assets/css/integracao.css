@@ -43,6 +43,18 @@
   --favorite-btn-color: #f7f9ff;
   --favorite-btn-hover-bg: rgba(47, 127, 255, 0.16);
   --favorite-btn-hover-border: rgba(47, 127, 255, 0.5);
+  --overlay-surface: #101f36;
+  --overlay-text: #f3f7ff;
+  --overlay-border: rgba(137, 169, 214, 0.3);
+  --overlay-card: rgba(7, 16, 29, 0.62);
+  --overlay-muted: #bac9df;
+  --overlay-accent: #9ac0ff;
+  --admin-surface: rgba(13, 22, 38, 0.88);
+  --admin-topbar: rgba(15, 23, 36, 0.96);
+  --admin-border: rgba(157, 195, 255, 0.16);
+  --admin-hover: rgba(47, 127, 255, 0.08);
+  --admin-text-strong: #f5f9ff;
+  --admin-text: #d3e2ff;
 }
 
 html[data-theme="light"] {
@@ -98,6 +110,18 @@ html[data-theme="light"] {
   --favorite-btn-color: #1d2733;
   --favorite-btn-hover-bg: rgba(47, 127, 255, 0.08);
   --favorite-btn-hover-border: rgba(47, 127, 255, 0.28);
+  --overlay-surface: #ffffff;
+  --overlay-text: #1d2733;
+  --overlay-border: rgba(15, 23, 36, 0.14);
+  --overlay-card: #f5f8ff;
+  --overlay-muted: #55657b;
+  --overlay-accent: #2456c8;
+  --admin-surface: #ffffff;
+  --admin-topbar: rgba(255, 255, 255, 0.96);
+  --admin-border: rgba(15, 23, 36, 0.1);
+  --admin-hover: rgba(47, 127, 255, 0.06);
+  --admin-text-strong: #0f172a;
+  --admin-text: #34445a;
 
   color-scheme: light;
 }
@@ -136,6 +160,19 @@ html[data-theme="light"] select,
 html[data-theme="light"] textarea {
   background: var(--input-bg);
   border: 1px solid var(--input-border);
+}
+
+html[data-theme="light"] input:-webkit-autofill,
+html[data-theme="light"] input:-webkit-autofill:hover,
+html[data-theme="light"] input:-webkit-autofill:focus,
+html[data-theme="light"] input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--input-autofill) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+}
+
+html[data-theme="light"] ::placeholder {
+  color: var(--muted);
+  opacity: 0.9;
 }
 
 html[data-theme="light"] .btn-secondary {
@@ -338,7 +375,7 @@ html[data-theme="light"] .report-dialog-kicker {
 html[data-theme="light"] .partner-bookings-shell {
   border-color: var(--line);
   background: radial-gradient(circle at 100% 0%, rgba(70, 129, 238, 0.16), transparent 45%),
-    linear-gradient(145deg, var(--card), rgba(9, 16, 28, 0.95));
+    linear-gradient(145deg, var(--card), color-mix(in srgb, var(--card) 92%, var(--blue) 8%));
 }
 
 html[data-theme="light"] .partner-bookings-shell .section-head h2 {
@@ -567,6 +604,7 @@ html[data-theme="light"] .booking-status-cancelado {
 
 .user-menu {
   position: relative;
+  z-index: 960;
   display: inline-flex;
   align-items: center;
 }
@@ -575,10 +613,10 @@ html[data-theme="light"] .booking-status-cancelado {
   border: 1px solid var(--line);
   background: rgba(47, 127, 255, 0.08);
   color: var(--text-strong);
-  gap: 5px;
+  gap: 8px;
   cursor: pointer;
   font: inherit;
-  padding-inline: 7px;
+  padding-inline: 12px;
 }
 
 .user-avatar {
@@ -611,7 +649,7 @@ html[data-theme="light"] .booking-status-cancelado {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  z-index: 30;
+  z-index: 980;
 }
 
 .user-menu-item {
@@ -647,6 +685,7 @@ html[data-theme="light"] .booking-status-cancelado {
 }
 .theme-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .theme-toggle [hidden], .user-menu-panel[hidden], .navbar [hidden] { display: none !important; }
+.topbar .main-nav[hidden] { display: none !important; }
 .theme-toggle:focus-visible, .user-menu-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .theme-toggle-floating { position: fixed; right: 16px; bottom: 16px; }
 .user-menu { flex-shrink: 0; }
@@ -654,7 +693,8 @@ html[data-theme="light"] .booking-status-cancelado {
 .user-menu-panel a.user-menu-item { color: var(--text); justify-content: flex-start; font-size: 0.9rem; padding: 10px 12px; }
 .user-menu-panel .user-menu-item:hover { background: var(--blue-soft); color: var(--text-strong); }
 .user-menu-panel [aria-current="page"] { background: var(--blue-soft); }
-.topbar > .user-menu { margin-left: auto; z-index: 352; }
+.topbar { z-index: 900; }
+.topbar > .user-menu { margin-left: auto; z-index: 960; }
 .topbar > .theme-toggle { margin-right: 8px; }
 .profile-user-card h1 { overflow-wrap: anywhere; }
 .profile-user-panel .profile-form.hidden { display: none !important; }
@@ -1016,3 +1056,26 @@ html[data-theme="light"] .booking-summary-card h3 { color: var(--text-strong); }
 /* Reserva encerrada automaticamente por falta de confirmação. */
 .booking-status-expired { color: #d4deed; background: #263245; border: 1px solid #526078; }
 html[data-theme="light"] .booking-status-expired { color: #374151; background: #e5e7eb; border-color: #9ca3af; }
+html[data-theme="light"] .user-booking-card,
+html[data-theme="light"] .booking-received-item,
+html[data-theme="light"] .partner-services-box,
+html[data-theme="light"] .partner-service-item,
+html[data-theme="light"] .owned-shop-card,
+html[data-theme="light"] .owned-shop-item,
+html[data-theme="light"] .owned-service-item,
+html[data-theme="light"] .partner-inline-service-editor {
+  border-color: var(--line);
+  background: linear-gradient(145deg, var(--card), color-mix(in srgb, var(--card) 94%, var(--blue) 6%));
+  color: var(--text);
+}
+
+html[data-theme="light"] .booking-received-item h3,
+html[data-theme="light"] .owned-shop-info h3,
+html[data-theme="light"] .owned-service-info strong,
+html[data-theme="light"] .partner-inline-service-editor h4 {
+  color: var(--text);
+}
+
+html[data-theme="light"] .owned-service-meta {
+  color: var(--link-color);
+}

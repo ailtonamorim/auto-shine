@@ -87,8 +87,6 @@ router.post("/", autenticarDono, async (req, res) => {
     const longitudeNum = Number(longitude);
     if (!coordenadasValidas(latitudeNum, longitudeNum)) return res.status(400).json({ error: "Latitude e longitude invalidas." });
     if (!imagemLojaValida(fotoUrl) || (capaUrl && !imagemLojaValida(capaUrl))) return res.status(400).json({ error: "Fotos devem ser URLs http/https ou arquivos em assets/img." });
-    const existente = await prisma.loja.findFirst({ where: { donoId: req.dono.donoId } });
-    if (existente) return res.status(409).json({ error: "Voce ja possui um lava jato publicado.", lojaId: existente.id });
     const loja = await prisma.loja.create({
       data: {
         nome, descricao, endereco,
