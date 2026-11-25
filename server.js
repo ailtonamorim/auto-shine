@@ -16,7 +16,6 @@ if (missingConfig.length) {
 
 const { aplicarHeadersSeguranca } = require("./src/middlewares/security");
 const { autorizarPagina } = require("./src/middlewares/auth");
-const { garantirIndicesBanco } = require("./src/utils/loja");
 const { iniciarHealthWorker } = require("./src/services/health-worker");
 
 const authRouter = require("./src/routes/auth");
@@ -55,6 +54,7 @@ const publicPages = new Set([
   "favoritos.html",
   "login.html",
   "reset-senha.html",
+  "verificar-email.html",
 ]);
 
 fs.mkdir(uploadsDir, { recursive: true }).catch((err) => {
@@ -79,6 +79,7 @@ app.use(authRouter);
 app.use(profileRouter);
 app.use("/api/dono", donoRouter);
 app.use("/api/reset-senha", resetSenhaRouter);
+app.use("/api/verificacao-email", require("./src/routes/verificacaoEmail"));
 app.use("/api/lojas", lojasRouter);
 app.use("/api/favoritos", favoritosRouter);
 app.use("/api/agendamentos", agendamentosRouter);
@@ -103,12 +104,18 @@ app.use((_req, res) => {
   res.status(404).json({ error: "Recurso não encontrado." });
 });
 
+const { iniciarExpiracao } = require("./src/services/expiracao-agendamentos");
+const { iniciarNotificacoes } = require("./src/services/fila-notificacoes");
 let server;
 
 async function iniciarServidor() {
-  await garantirIndicesBanco();
+  // A regra antiga de "1 reserva por horário" (garantirIndicesBanco) não é mais criada:
+  // ela impedia a capacidade simultânea da agenda. A migration 20261123150000 remove o índice.
   await iniciarHealthWorker();
   server = app.listen(PORT, () => {
+    const expiracao = iniciarExpiracao();
+    const notificacoes = iniciarNotificacoes();
+    server.once("close", () => { expiracao.parar(); notificacoes.parar(); });
     console.log(`AutoShine ativo em http://localhost:${PORT}`);
     const googleOAuthConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
     if (!googleOAuthConfigured) console.log("OAuth Google desativado: configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no .env");

@@ -25,4 +25,6 @@ const limitarValidacoes = criarLimitador({ janelaMs: 10 * 60 * 1000, maximo: 60 
 const limitarUploads = criarLimitador({ janelaMs: 10 * 60 * 1000, maximo: 40 });
 const limitarReset = criarLimitador({ janelaMs: 60 * 60 * 1000, maximo: 5 });
 
-module.exports = { aplicarHeadersSeguranca, criarLimitador, limitarAuth, limitarValidacoes, limitarUploads, limitarReset };
+const limitarVerificacao = criarLimitador({ janelaMs: 60 * 60 * 1000, maximo: 10 });
+
+module.exports = { limitarVerificacao, aplicarHeadersSeguranca, criarLimitador, limitarAuth, limitarValidacoes, limitarUploads, limitarReset };

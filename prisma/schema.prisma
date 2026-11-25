@@ -8,29 +8,35 @@ datasource db {
 }
 
 model Usuario {
-  id                Int           @id @default(autoincrement())
-  nome              String
-  email             String        @unique
-  cpf               String?       @unique
-  fotoPerfilUrl     String?
-  telefone          String?
-  senha             String?
-  bloqueado         Boolean       @default(false)
-  suspensoAte       DateTime?
-  googleId          String?       @unique
-  resetToken        String?       @unique
-  resetTokenExpiry  DateTime?
-  createdAt         DateTime      @default(now())
-  agendamentos      Agendamento[]
-  avaliacoes        Avaliacao[]
-  denuncias         Denuncia[]
-  favoritos         Favorito[]
-  enderecos         EnderecoUsuario[]
+  emailVerificadoEm         DateTime?
+  emailVerificacaoToken     String?   @unique
+  emailVerificacaoExpiraEm  DateTime?
+  emailVerificacaoEnviadaEm DateTime?
+
+  authVersion      Int               @default(0)
+  id               Int               @id @default(autoincrement())
+  nome             String
+  email            String            @unique
+  cpf              String?           @unique
+  fotoPerfilUrl    String?
+  telefone         String?
+  senha            String?
+  bloqueado        Boolean           @default(false)
+  suspensoAte      DateTime?
+  googleId         String?           @unique
+  resetToken       String?           @unique
+  resetTokenExpiry DateTime?
+  createdAt        DateTime          @default(now())
+  agendamentos     Agendamento[]
+  avaliacoes       Avaliacao[]
+  denuncias        Denuncia[]
+  favoritos        Favorito[]
+  enderecos        EnderecoUsuario[]
 }
 
 model EnderecoUsuario {
   id          Int      @id @default(autoincrement())
-  usuarioId    Int
+  usuarioId   Int
   nome        String
   cep         String?
   logradouro  String
@@ -49,52 +55,61 @@ model EnderecoUsuario {
 }
 
 model Dono {
-  id               Int      @id @default(autoincrement())
+  emailVerificadoEm         DateTime?
+  emailVerificacaoToken     String?   @unique
+  emailVerificacaoExpiraEm  DateTime?
+  emailVerificacaoEnviadaEm DateTime?
+
+  authVersion      Int       @default(0)
+  id               Int       @id @default(autoincrement())
   nome             String
-  login            String   @unique
-  email            String?  @unique
+  login            String    @unique
+  email            String?   @unique
   cnpj             String?
   senha            String?
-  bloqueado        Boolean  @default(false)
+  bloqueado        Boolean   @default(false)
   suspensoAte      DateTime?
-  googleId         String?  @unique
-  resetToken       String?  @unique
+  googleId         String?   @unique
+  resetToken       String?   @unique
   resetTokenExpiry DateTime?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
   lojas            Loja[]
 }
 
 model Loja {
-  id           Int           @id @default(autoincrement())
-  nome         String
-  descricao    String
-  endereco     String
-  latitude     Float
-  longitude    Float
-  precoMedio   Float         @default(0)
-  categoria    String        @default("serviços gerais")
-  fotoUrl      String
-  capaUrl      String?
-  fotosAdicionais String?
-  formasPagamento String @default("Pix, Cartão, Dinheiro")
-  politicaCancelamento String @default("Cancelamentos e reagendamentos podem ser feitos até 2 horas antes do horário marcado.")
-  agendaDias   String        @default("1,2,3,4,5,6")
-  agendaHorarios String      @default("08:00,09:30,11:00,13:30,15:00,16:30")
-  bloqueado    Boolean       @default(false)
-  inativoAte   DateTime?
-  statusAprovacao String     @default("aprovada")
-  healthStatus String       @default("healthy") @map("health_status")
-  healthReasons String[]    @default([]) @map("health_reasons")
-  donoId       Int
-  dono         Dono          @relation(fields: [donoId], references: [id])
-  servicos     ServicoLoja[]
-  agendamentos Agendamento[]
-  avaliacoes   Avaliacao[]
-  denuncias    Denuncia[]
-  notificacoes Notificacao[]
-  favoritos    Favorito[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  capacidadeSimultanea Int           @default(1)
+  agendaFechamento     String        @default("18:00")
+  agendaBloqueios      Json          @default("[]")
+  id                   Int           @id @default(autoincrement())
+  nome                 String
+  descricao            String
+  endereco             String
+  latitude             Float
+  longitude            Float
+  precoMedio           Float         @default(0)
+  categoria            String        @default("serviços gerais")
+  fotoUrl              String
+  capaUrl              String?
+  fotosAdicionais      String?
+  formasPagamento      String        @default("Pix, Cartão, Dinheiro")
+  politicaCancelamento String        @default("Cancelamentos e reagendamentos podem ser feitos até 2 horas antes do horário marcado.")
+  agendaDias           String        @default("1,2,3,4,5,6")
+  agendaHorarios       String        @default("08:00,09:30,11:00,13:30,15:00,16:30")
+  bloqueado            Boolean       @default(false)
+  inativoAte           DateTime?
+  statusAprovacao      String        @default("aprovada")
+  healthStatus         String        @default("healthy") @map("health_status")
+  healthReasons        String[]      @default([]) @map("health_reasons")
+  donoId               Int
+  dono                 Dono          @relation(fields: [donoId], references: [id])
+  servicos             ServicoLoja[]
+  agendamentos         Agendamento[]
+  avaliacoes           Avaliacao[]
+  denuncias            Denuncia[]
+  notificacoes         Notificacao[]
+  favoritos            Favorito[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   @@index([inativoAte])
 }
@@ -117,25 +132,35 @@ model ServicoLoja {
 }
 
 model Agendamento {
-  id           Int          @id @default(autoincrement())
-  data         String
-  hora         String
-  veiculo      String       @default("Carro")
-  notas        String?
-  status       String       @default("pendente")
-  nomeCliente  String?
-  emailCliente String?
-  valorServico Float?
-  codigoRetirada String?    @unique
-  usuarioId    Int?
-  lojaId       Int
-  servicoId    Int
-  usuario      Usuario?     @relation(fields: [usuarioId], references: [id])
-  loja         Loja         @relation(fields: [lojaId], references: [id])
-  servico      ServicoLoja  @relation(fields: [servicoId], references: [id])
-  avaliacao    Avaliacao?
-  denuncias    Denuncia[]
-  createdAt    DateTime     @default(now())
+  duracaoAgendaMinutos Int?
+  // Nulos somente para reservas antigas, cujo valor histórico não é conhecido.
+  servicoNome          String?
+  precoCentavos        Int?
+  duracaoMinutos       Int?
+  formaPagamento       String?
+  revisao              Int                    @default(0)
+  alteracoes           AlteracaoAgendamento[]
+  id                   Int                    @id @default(autoincrement())
+  data                 String
+  hora                 String
+  veiculo              String                 @default("Carro")
+  notas                String?
+  status               String                 @default("pendente")
+  nomeCliente          String?
+  emailCliente         String?
+  valorServico         Float?
+  codigoRetirada       String?                @unique
+  usuarioId            Int?
+  lojaId               Int
+  servicoId            Int
+  usuario              Usuario?               @relation(fields: [usuarioId], references: [id])
+  loja                 Loja                   @relation(fields: [lojaId], references: [id])
+  servico              ServicoLoja            @relation(fields: [servicoId], references: [id])
+  avaliacao            Avaliacao?
+  denuncias            Denuncia[]
+  createdAt            DateTime               @default(now())
+
+  @@index([lojaId, status, data])
 }
 
 model Avaliacao {
@@ -202,4 +227,79 @@ model Favorito {
   createdAt DateTime @default(now())
 
   @@unique([usuarioId, lojaId])
+}
+
+model AlteracaoAgendamento {
+  id              Int         @id @default(autoincrement())
+  agendamentoId   Int
+  autorTipo       String
+  autorNome       String
+  motivo          String
+  anterior        Json
+  atual           Json
+  vistoClienteEm  DateTime?
+  vistoParceiroEm DateTime?
+  createdAt       DateTime    @default(now())
+  agendamento     Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+
+  @@index([agendamentoId, createdAt])
+}
+
+// (Modelos anteriores do projeto preservados integralmente)
+
+// ==========================================
+// ENUMS E MODELO PARA TRANSACTIONAL OUTBOX (TÓPICO 8)
+// ==========================================
+
+enum NotificacaoStatus {
+  PENDENTE
+  PROCESSANDO
+  ENVIADO
+  FALHA
+}
+
+enum NotificacaoTipo {
+  NOVA_SOLICITACAO
+  ALTERACAO_CLIENTE
+  REAGENDAMENTO_CLIENTE
+  CANCELAMENTO_CLIENTE
+  ALTERACAO_ESTABELECIMENTO
+  CONFIRMACAO
+  FINALIZACAO
+  CANCELAMENTO_ESTABELECIMENTO
+  ALTERACAO_ADMIN
+  EXPIRACAO_AUTOMATICA
+}
+
+enum DestinatarioTipo {
+  CLIENTE
+  ESTABELECIMENTO
+  ADMIN
+}
+
+model NotificacaoFila {
+  id                 String            @id @default(uuid())
+  eventoId           String            @map("evento_id")
+  chaveIdempotencia  String            @unique @map("chave_idempotencia")
+  tipo               NotificacaoTipo
+  destinatarioEmail  String            @map("destinatario_email")
+  destinatarioTipo   DestinatarioTipo  @map("destinatario_tipo")
+  payload            Json
+  status             NotificacaoStatus @default(PENDENTE)
+  tentativas         Int               @default(0)
+  limiteTentativas   Int               @default(3) @map("limite_tentativas")
+  proximaTentativaEm DateTime          @default(now()) @map("proxima_tentativa_em")
+  enviadoEm          DateTime?         @map("enviado_em")
+  ultimaTentativaEm  DateTime?         @map("ultima_tentativa_em")
+  ultimaFalha        String?           @map("ultima_falha")
+  workerId           String?           @map("worker_id")
+  processandoAte     DateTime?         @map("processando_ate")
+  criadoEm           DateTime          @default(now()) @map("criado_em")
+  atualizadoEm       DateTime          @updatedAt @map("atualizado_em")
+
+  @@index([status, proximaTentativaEm], map: "idx_notificacao_fila_processamento")
+  @@index([status, processandoAte], map: "idx_notificacao_fila_expirados")
+  @@index([eventoId], map: "idx_notificacao_fila_evento")
+  @@index([destinatarioEmail], map: "idx_notificacao_fila_destinatario")
+  @@map("notificacao_fila")
 }

@@ -23,18 +23,6 @@ async function deletarLojaComRelacionados(id) {
   await prisma.loja.delete({ where: { id } });
 }
 
-async function garantirIndicesBanco() {
-  try {
-    await prisma.$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "Agendamento_lojaId_data_hora_ativo_key"
-      ON "Agendamento" ("lojaId", "data", "hora")
-      WHERE "status" IN ('pendente', 'confirmado')
-    `);
-  } catch (err) {
-    console.warn("Aviso: não foi possível criar índice de agendamento:", err?.message);
-  }
-}
-
 function prepararLojaAdmin(lojaInput = {}) {
   const loja = {
     nome: String(lojaInput.nome || "").trim(),
@@ -65,4 +53,4 @@ function prepararServicosAdmin(servicos = []) {
     .filter((servico) => servico.nome || servico.descricao || servico.duracao || Number.isFinite(servico.preco));
 }
 
-module.exports = { deletarLojaComRelacionados, filtroLojaDisponivel, garantirIndicesBanco, prepararLojaAdmin, prepararServicosAdmin };
+module.exports = { deletarLojaComRelacionados, filtroLojaDisponivel, prepararLojaAdmin, prepararServicosAdmin };

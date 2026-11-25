@@ -1,6 +1,9 @@
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
+const { snapshotServico } = require("../src/utils/agendamento-snapshot");
 
+const { comAgendaBloqueada } = require('../src/utils/agenda-transacao');
+const { validarHorario, duracaoReserva } = require('../src/utils/agenda');
 const prisma = new PrismaClient();
 
 async function upsertDono({ nome, login, cnpj }) {
@@ -85,10 +88,16 @@ async function upsertDemoAgendamento({ usuario, loja, servicoNome, data, hora, s
     await prisma.agendamento.deleteMany({ where: { id: { in: ids } } });
   }
 
-  if (manter) {
-    return prisma.agendamento.update({ where: { id: manter.id }, data: payload });
-  }
-  return prisma.agendamento.create({ data: payload });
+  return comAgendaBloqueada(loja.id, async tx => {
+    const lojaAtual = await tx.loja.findUnique({ where: { id: loja.id } });
+    const atual = manter ? await tx.agendamento.findUnique({ where: { id: manter.id } }) : null;
+    const snapshot = snapshotServico(servico);
+    if (['pendente','confirmado'].includes(status) && (!atual || atual.data !== data || atual.hora !== hora || !['pendente','confirmado'].includes(atual.status))) {
+      await validarHorario({ loja: lojaAtual, data, hora, duracaoMinutos: atual ? duracaoReserva(atual) : snapshot.duracaoMinutos, ignorarId: atual?.id, db: tx });
+    }
+    if (atual) return tx.agendamento.update({ where: { id: atual.id }, data: payload });
+    return tx.agendamento.create({ data: { ...payload, ...snapshot } });
+  }, prisma);
 }
 
 async function seedDashboardDemoData(lojas) {

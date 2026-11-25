@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <title>AutoShine — Confirmar e-mail</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <link rel="stylesheet" href="assets/css/integracao.css" />
+  <script src="assets/js/tema.js"></script>
+</head>
+<body data-page="verificar-email">
+  <div class="bg-decor"></div>
+  <header class="topbar container"><a class="brand" href="index.html"><span>LavaJá</span></a></header>
+  <main class="container">
+    <section class="auth-shell">
+      <p class="eyebrow">Segurança da conta</p>
+      <h1>Confirme seu e-mail</h1>
+      <p>Use o endereço informado no cadastro. Depois da confirmação, ele também servirá para recuperar sua senha.</p>
+      <p id="email-feedback" role="status" aria-live="polite"></p>
+      <div class="field">
+        <label for="email-tipo">Tipo de conta</label>
+        <select id="email-tipo"><option value="usuario">Cliente</option><option value="dono">Parceiro / empresa</option></select>
+      </div>
+      <form id="email-confirm-form" class="booking-form hidden">
+        <p>Estamos confirmando seu e-mail. Ao concluir, você será direcionado ao login. Se ocorrer uma falha, tente novamente abaixo.</p>
+        <button class="btn btn-primary" type="submit">Tentar confirmar novamente</button>
+      </form>
+      <form id="email-request-form" class="booking-form">
+        <div class="field"><label for="email-address">E-mail do cadastro</label><input id="email-address" type="email" autocomplete="email" maxlength="254" required /></div>
+        <button class="btn btn-primary" type="submit">Enviar novo link de confirmação</button>
+        <p>Confira sua caixa de entrada e o spam. Espere um minuto entre solicitações. Somente o link mais recente funciona.</p>
+      </form>
+      <details id="email-legacy-panel" class="hidden">
+        <summary>Sou parceiro e minha conta antiga não tem e-mail</summary>
+        <form id="email-link-form" class="booking-form">
+          <p>Informe seu login e senha atuais para vincular um endereço. Esta opção não troca um e-mail já cadastrado.</p>
+          <div class="field"><label for="email-login">Login do parceiro</label><input id="email-login" autocomplete="username" required /></div>
+          <div class="field"><label for="email-password">Senha atual</label><input id="email-password" type="password" autocomplete="current-password" required /></div>
+          <div class="field"><label for="email-new-address">E-mail para vincular</label><input id="email-new-address" type="email" autocomplete="email" maxlength="254" required /></div>
+          <button class="btn btn-secondary" type="submit">Vincular e enviar confirmação</button>
+        </form>
+      </details>
+      <p><a id="email-login-link" href="cadastro.html?mode=login">Voltar para entrar</a></p>
+      <p><a id="email-reset-link" href="reset-senha.html">Já confirmou? Recuperar senha</a></p>
+    </section>
+  </main>
+  <script src="assets/js/politica-senha.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script src="assets/js/verificar-email.js"></script>
+</body>
+</html>

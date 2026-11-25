@@ -1,0 +1,95 @@
+JUNÇÃO DOS PROJETOS — 23/11/2026
+=================================
+
+Base: projeto da Ana (com o tópico 8 — notificações por e-mail).
+Juntado com: main do GitHub até o commit d7082e3 ("feat: integrar perfil do parceiro (Diego)", 23/11).
+(O zip recebido dos colegas correspondia ao commit 54e2ff3; os 2 commits do Diego de 23/11 foram incluídos depois.)
+Ponto comum entre os dois: commit 5414799 (tema claro/escuro, 28/09).
+A pasta antiga "auto-shine-alteracoes-design-qualidade-cadastro/" ficou de fora (era uma cópia do projeto).
+
+
+O QUE VEIO DE CADA LADO
+-----------------------
+Ana: agenda com capacidade simultânea e regras de prazo, histórico de alterações,
+snapshot do serviço na reserva, expiração automática, verificação de e-mail,
+política de senha, fila de notificações por e-mail (tópico 8).
+
+Colegas: bloqueio e suspensão de contas, aprovação e inativação temporária de lojas,
+moderação de avaliações e denúncias anônimas, painel admin com período e GMV,
+saúde das lojas (health worker), logger/mascaramento/serializers, criptografia
+(src/utils/crypto.js + scripts), app mobile (app/) e guia (guia/).
+
+
+DECISÕES NOS CONFLITOS
+----------------------
+- Autenticação: mantido o esquema de sessão da Ana (authVersion + e-mail verificado)
+  com a checagem de conta bloqueada/suspensa dos colegas (responde 403 CONTA_BLOQUEADA).
+- Login com Google: fluxo da Ana (obterContaGoogle) + bloqueio/suspensão dos colegas.
+- Reservas e disponibilidade: código da Ana, usando filtroLojaDisponivel() dos colegas
+  (loja bloqueada, pendente, inativa ou de dono bloqueado não recebe reservas).
+  A reserva grava também valorServico, usado pelo painel admin.
+- Painel admin: versão dos colegas. Reservas "expirado" não contam como receita, e
+  reservas antigas sem valorServico usam o preço histórico (precoCentavos).
+- Cadastro de loja: entra como "pendente"; o parceiro vê o aviso de aprovação.
+- REMOVIDO garantirIndicesBanco(): criava um índice "1 reserva por horário" que quebrava
+  a capacidade simultânea. A migration 20261123150000 apaga esse índice se existir.
+
+
+MIGRATION NOVA: 20261123150000_restaurar_unicidade_contas
+---------------------------------------------------------
+Recoloca e-mail, CPF e Google ID únicos (Usuario e Dono), removidos pela migration
+20260928010000_use_hmac_indexes_for_uniqueness sem substituto.
+Se houver contas duplicadas, ela para sem alterar nada e mostra os IDs. Corrija e rode
+"npx prisma migrate deploy" de novo.
+
+
+PENDÊNCIAS QUE JÁ ESTAVAM NO MAIN (não foram criadas pela junção)
+---------------------------------------------------------------
+- multer: src/routes/defesaDenuncia.js usa a biblioteca "multer", que não estava no
+  package.json; sem ela o servidor nem iniciava. Foi adicionada como dependência.
+- (Resolvido na segunda junção) Defesa de denúncia e PUT /api/dono/me.
+
+ATENÇÃO: scripts/migrar-dados-sensiveis.js
+------------------------------------------
+NÃO rode este script por enquanto. Ele substitui e-mail e CPF por texto criptografado
+nas próprias colunas, mas o login, o cadastro e as notificações ainda leem essas colunas
+como texto normal. Rodar agora quebra o login e o envio de e-mails.
+A criptografia precisa ser terminada (ler/gravar pelas colunas *Cipher / *Index) antes.
+
+
+COMO RODAR
+----------
+1. Backup do banco.
+2. npm ci
+3. npx prisma generate
+4. npx prisma migrate deploy
+5. npm start
+
+Testes: npm test (todos) — ou os scripts test:* do package.json.
+Já falhavam antes da junção (não foram alterados): 1 caso em tests/fluxo-email.test.js
+(projeto da Ana) e 1 caso em tests/serializers.test.js (projeto dos colegas).
+
+
+SEGUNDA JUNÇÃO — 23/11/2026 (noite): branch juncao-agendamento-notificacoes + main 3ef37fa
+========================================================================================
+O main recebeu a branch do Diego (cookie de login, notificações e denúncias do parceiro,
+PUT /api/dono/me) e o revert do SQLite. Foi feito um git merge de verdade (ancestral d7082e3).
+
+Decisões nos conflitos:
+- Tokens: mantêm authVersion (sessão encerrada ao trocar senha) e ganham "role" (Diego).
+- Middleware de autenticação: verificação completa da Ana (versão do login, e-mail confirmado,
+  bloqueio) + papel do token e cookie "autoshine_auth" do Diego, que só decide redirecionamentos
+  de páginas. As APIs continuam exigindo o token no cabeçalho.
+- Cadastro de cliente e parceiro: continua exigindo confirmação do e-mail antes de entrar
+  (o cookie só é criado no login).
+- PUT /api/dono/me: nome e CNPJ podem ser editados; o e-mail NÃO muda por ali, porque o novo
+  endereço precisaria ser confirmado. Troca de e-mail continua pelo admin. O token devolvido
+  agora inclui a versão do login (antes encerrava a sessão de quem já tinha trocado a senha).
+  Na página perfil-dono, o campo de e-mail ficou somente leitura com uma explicação.
+- Painel do parceiro: mantidas as 3 abas da Ana (o formulário fica em "Meu lava-jato");
+  saiu o item "Cadastro" do menu do topo. Aceita abrir aba por ?tab= e por #.
+  Entraram o botão "Denúncias", "Ações rápidas" e as notificações do Diego; "Avaliações" ficou.
+- package.json: o script "build" continua "prisma generate && prisma migrate deploy".
+  O main tinha trocado por "prisma db push", que ignora as migrations (e a checagem de contas
+  duplicadas) e pode apagar dados. Railway e Render não usam esse script.
+- Pendência da defesa de denúncia resolvida pelo main (migrations 20261026190000 e 20261103090000).

@@ -1,3 +1,6 @@
+const { obterContaGoogle } = require("../utils/conta-google");
+const { exigirEnvioEmail, pendenciaEmail, responderCadastroPendente } = require("../utils/verificacao-email");
+const { erroSenha } = require("../utils/senha");
 const express = require("express");
 const bcrypt = require("bcrypt");
 const passport = require("passport");
@@ -5,7 +8,7 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const prisma = require("../config/database");
 const { gerarTokenUsuario, gerarTokenDono } = require("../utils/tokens");
 const { setAuthCookie, clearAuthCookie } = require("../middlewares/auth");
-const { normalizarEmail, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
+const { normalizarEmail, emailValido, cpfTemDigitoValido, redirecionamentoSeguro } = require("../utils/validators");
 const { limitarAuth } = require("../middlewares/security");
 
 const router = express.Router();
@@ -24,7 +27,7 @@ if (googleOAuthConfigured) {
     { clientID: googleClientId, clientSecret: googleClientSecret, callbackURL: googleCallbackUrl },
     (_at, _rt, profile, done) => {
       const email = Array.isArray(profile.emails) && profile.emails[0] ? profile.emails[0].value : "";
-      done(null, { id: profile.id, name: profile.displayName || "Usuario Google", email, provider: "google" });
+      done(null, { id: profile.id, name: profile.displayName || "Usuario Google", email, emailVerified: profile.emails?.[0]?.verified === true, provider: "google" });
     },
   ));
 }
@@ -59,14 +62,7 @@ router.get("/auth/google/callback", (req, res, next) => {
     if (parceiro) {
       (async () => {
         try {
-          let dono = await prisma.dono.findFirst({ where: { googleId: user.id } });
-          if (!dono) {
-            const base = String(user.email || user.name || "dono").split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 20) || "dono";
-            let login = base;
-            let i = 1;
-            while (await prisma.dono.findUnique({ where: { login } })) login = `${base}${i++}`;
-            dono = await prisma.dono.create({ data: { nome: user.name || "Parceiro Google", login, senha: null, googleId: user.id } });
-          }
+          const dono = await obterContaGoogle(user, "dono");
           if (dono.bloqueado || (dono.suspensoAte && dono.suspensoAte > new Date())) return res.redirect("/cadastro-dono.html?auth=blocked");
           const token = gerarTokenDono(dono);
           setAuthCookie(res, token);
@@ -82,14 +78,7 @@ router.get("/auth/google/callback", (req, res, next) => {
 
     (async () => {
       try {
-        const email = normalizarEmail(user.email);
-        if (!email) return res.redirect("/cadastro.html?mode=login&auth=google_failed");
-        let usuario = await prisma.usuario.findFirst({ where: { OR: [{ googleId: user.id }, { email }] } });
-        if (!usuario) {
-          usuario = await prisma.usuario.create({ data: { nome: user.name || email.split("@")[0] || "Usuario Google", email, googleId: user.id } });
-        } else if (!usuario.googleId) {
-          usuario = await prisma.usuario.update({ where: { id: usuario.id }, data: { googleId: user.id } });
-        }
+        const usuario = await obterContaGoogle(user, "usuario");
         if (usuario.bloqueado || (usuario.suspensoAte && usuario.suspensoAte > new Date())) return res.redirect("/cadastro.html?mode=login&auth=blocked");
         const token = gerarTokenUsuario(usuario);
         setAuthCookie(res, token);
@@ -126,20 +115,21 @@ router.post("/api/auth/signup", limitarAuth, async (req, res) => {
     const { nome, email, cpf, telefone, senha } = req.body;
     if (!nome || !email || !cpf || !telefone || !senha) return res.status(400).json({ error: "Todos os campos são obrigatórios." });
     const emailNorm = normalizarEmail(email);
+    if (typeof email !== "string" || !emailValido(emailNorm)) return res.status(400).json({ error: "Informe um e-mail válido." });
     const cpfNorm = String(cpf).replace(/\D/g, "");
     const telefoneNorm = String(telefone).replace(/\D/g, "");
     if (!cpfTemDigitoValido(cpfNorm)) return res.status(400).json({ error: "CPF invalido." });
-    if (String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
+    const erroSenhaNova = erroSenha(senha);
+    if (erroSenhaNova) return res.status(400).json({ error: erroSenhaNova });
+    exigirEnvioEmail();
     const existente = await prisma.usuario.findFirst({ where: { OR: [{ email: emailNorm }, { cpf: cpfNorm }] } });
-    if (existente) return res.status(409).json({ error: "Ja existe um cadastro com este email ou CPF." });
+    if (existente) return res.status(409).json({ error: "Já existe um cadastro com este e-mail ou CPF. Entre ou solicite a confirmação do e-mail." });
     const senhaHash = await bcrypt.hash(senha, 10);
     const usuario = await prisma.usuario.create({ data: { nome: String(nome).trim(), email: emailNorm, cpf: cpfNorm, telefone: telefoneNorm, senha: senhaHash } });
-    const token = gerarTokenUsuario(usuario);
-    setAuthCookie(res, token);
-    res.status(201).json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
+    return responderCadastroPendente(res, usuario, "usuario");
   } catch (err) {
     console.error("Erro no cadastro:", err);
-    res.status(500).json({ error: "Erro interno ao criar conta." });
+    res.status(err.status || (err.code === "P2002" ? 409 : 500)).json({ error: err.status === 503 ? err.message : "Não foi possível cadastrar. Confira se o e-mail ou CPF já está em uso." });
   }
 });
 
@@ -153,6 +143,8 @@ router.post("/api/auth/login", limitarAuth, async (req, res) => {
     if (usuario.suspensoAte && usuario.suspensoAte > new Date()) return res.status(403).json({ error: `Conta suspensa até ${usuario.suspensoAte.toLocaleDateString("pt-BR")}.` });
     if (!usuario.senha) return res.status(400).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
     if (!(await bcrypt.compare(senha, usuario.senha))) return res.status(401).json({ error: "Email ou senha inválidos." });
+    const pendencia = pendenciaEmail(usuario);
+    if (pendencia) return res.status(403).json(pendencia);
     const token = gerarTokenUsuario(usuario);
     setAuthCookie(res, token);
     res.json({ token, user: { id: usuario.id, nome: usuario.nome, email: usuario.email } });

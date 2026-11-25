@@ -130,6 +130,32 @@ Cada loja possui dias de funcionamento e horários configuráveis. O cadastro do
 
 O cadastro do parceiro pode buscar coordenadas pelo endereço e preencher o endereço pela localização atual. O servidor usa Nominatim/OpenStreetMap e envia o `GEOCODING_USER_AGENT` configurado no `.env`.
 
+## Notificações de agendamento (tópico 8)
+
+Toda mudança em um agendamento avisa a outra parte por e-mail, mostrando o que mudou (antes → agora), o motivo informado e o status atual.
+
+| Evento | Quem recebe |
+| --- | --- |
+| Nova solicitação | Estabelecimento (pedido) e cliente (recibo) |
+| Cliente altera, reagenda ou cancela | Estabelecimento |
+| Estabelecimento altera, confirma, finaliza ou cancela | Cliente |
+| Administrador altera | Cliente e estabelecimento |
+| Expiração automática | Cliente e estabelecimento |
+
+Definir a duração de uma reserva antiga não gera e-mail, porque só afeta a agenda interna.
+
+Como funciona (transactional outbox):
+
+- A notificação é gravada na tabela `notificacao_fila` **na mesma transação** da alteração e do histórico. Se a alteração falhar, nenhum aviso fica na fila. Se for confirmada, o aviso não se perde mesmo que o e-mail esteja fora do ar.
+- `src/services/fila-notificacoes.js` roda junto com o servidor e envia a cada 15 s. Várias instâncias podem rodar ao mesmo tempo sem duplicar envios.
+- Falhas temporárias são repetidas após 1 min e 5 min. Na 3ª falha, ou se o endereço for recusado, a linha fica com status `FALHA` e o erro em `ultima_falha`.
+- A entrega é "pelo menos uma vez": se o servidor cair logo depois de enviar e antes de registrar o envio, o e-mail pode sair de novo uma vez.
+- Sem `EMAIL_USER`/`EMAIL_PASS`, os avisos ficam `PENDENTE` e são enviados quando o e-mail for configurado.
+
+Variáveis opcionais: `NOTIFICACOES_EMAIL_ATIVAS=false` para não enviar (a fila continua sendo gravada) e `NOTIFICACOES_INTERVALO_MS` para mudar o intervalo.
+
+Para consultar falhas: `SELECT tipo, destinatario_email, tentativas, ultima_falha FROM notificacao_fila WHERE status = 'FALHA';`. Para reenviar: `UPDATE notificacao_fila SET status = 'PENDENTE', tentativas = 0, proxima_tentativa_em = now() WHERE id = '...';`.
+
 ## Pendências conhecidas
 
 Funcionalidades para evoluir depois da apresentação
@@ -140,7 +166,7 @@ Confirmação de e-mail e/ou telefone. Hoje qualquer cadastro pode criar conta s
 
 Fluxo de pagamento ou pelo menos indicação clara de pagamento no local/online.
 
-Notificações por e-mail/WhatsApp para confirmação, cancelamento e reagendamento.
+Notificações por WhatsApp para confirmação, cancelamento e reagendamento (o e-mail já está implementado; veja "Notificações de agendamento").
 
 Ordenação dos resultados da home por distância real usando a localização do usuário.
 

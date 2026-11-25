@@ -51,6 +51,7 @@
           </div>
           <button class="btn btn-primary btn-block" type="submit">Entrar</button>
           <p class="auth-forgot"><a href="reset-senha.html?tipo=dono">Esqueci minha senha</a></p>
+          <div id="dono-login-pending" class="hidden" role="alert"><p data-pending-message></p><a href="verificar-email.html?tipo=dono">Concluir meu cadastro ou reenviar o link</a></div>
         </form>
       </div>
 
@@ -60,6 +61,7 @@
         <p class="auth-separator"><span>ou preencha seus dados</span></p>
 
         <form id="owner-register-form" class="booking-form" novalidate>
+          <p>Após criar a conta, confirme seu e-mail uma única vez. Depois, entre normalmente com sua senha.</p>
           <div class="field">
             <label for="owner-register-name">Nome do responsável</label>
             <input id="owner-register-name" name="name" type="text" required placeholder="Ex: Carlos Silva" />
@@ -69,8 +71,9 @@
             <input id="owner-register-login" name="login" type="text" required placeholder="Ex: carlos.lavajato" />
           </div>
           <div class="field">
-            <label for="owner-register-email">Email <span class="field-hint">— para recuperação de senha</span></label>
-            <input id="owner-register-email" name="email" type="email" placeholder="Ex: carlos@seulavajato.com.br" />
+            <label for="owner-register-email">Email <span class="field-hint">— confirmação e recuperação de senha</span></label>
+            <input id="owner-register-email" name="email" type="email" required placeholder="Ex: carlos@seulavajato.com.br" maxlength="254" autocomplete="email" aria-describedby="owner-email-validation-msg" />
+            <p id="owner-email-validation-msg" class="empty-copy validation-msg" aria-live="polite"></p>
           </div>
           <div class="field">
             <label for="owner-register-cnpj">CNPJ da empresa</label>
@@ -80,11 +83,11 @@
           <div class="field-grid">
             <div class="field">
               <label for="owner-register-password">Senha</label>
-              <input id="owner-register-password" name="password" type="password" minlength="6" required placeholder="Mínimo de 6 caracteres" />
+              <input id="owner-register-password" name="password" type="password" minlength="8" required placeholder="8 caracteres, letras e números" />
             </div>
             <div class="field">
               <label for="owner-register-password-confirm">Confirmar senha</label>
-              <input id="owner-register-password-confirm" name="passwordConfirm" type="password" minlength="6" required placeholder="Repita a senha" />
+              <input id="owner-register-password-confirm" name="passwordConfirm" type="password" minlength="8" required placeholder="Repita a senha" />
             </div>
           </div>
           <label class="auth-checkbox">
@@ -105,8 +108,7 @@
 
       <nav class="panel partner-tabs reveal-item" aria-label="Seções do painel">
         <button class="partner-tab active" data-partner-tab="dashboard" type="button">Dashboard</button>
-        <button class="partner-tab" data-partner-tab="cadastro" type="button">Cadastro</button>
-        <button class="partner-tab" data-partner-tab="estabelecimento" type="button">Meu Lava Jato</button>
+        <button class="partner-tab" data-partner-tab="estabelecimento" type="button">Meu lava-jato</button>
         <button class="partner-tab" data-partner-tab="agendamentos" type="button">Agendamentos</button>
       </nav>
 
@@ -118,11 +120,17 @@
         </div>
       </section>
 
-      <section class="partner-tab-panel hidden" data-partner-panel="cadastro">
-        <div class="panel">
+      <section class="partner-tab-panel hidden" data-partner-panel="estabelecimento">
+        <div id="partner-shop-editor" class="panel hidden">
           <div class="section-head">
-            <h2 id="partner-form-title">Cadastrar seu lava jato</h2>
+            <div>
+              <p class="eyebrow">Meu lava-jato</p>
+              <h2 id="partner-form-title" tabindex="-1">Cadastrar seu lava-jato</h2>
+            </div>
+            <button id="partner-cancel-edit" class="btn btn-ghost hidden" type="button">Cancelar edição</button>
           </div>
+
+          <p id="partner-form-hint" class="empty-copy partner-editor-hint">Preencha as etapas para publicar seu estabelecimento.</p>
 
           <!-- Indicador de progresso -->
           <div class="wizard-progress" id="partner-wizard-progress">
@@ -277,11 +285,18 @@
               </div>
 
               <div class="partner-form-section">
-                <h3 class="partner-form-section-title">Horários de atendimento</h3>
+                <h3 class="partner-form-section-title">Horários de início</h3>
                 <p class="empty-copy partner-section-hint">Clique nos horários abaixo para ativar ou desativar. Os horários ativos aparecem em azul.</p>
                 <div class="schedule-time-presets" id="schedule-time-grid"></div>
                 <textarea id="partner-schedule-times" name="agendaHorarios" class="hidden">08:00, 09:30, 11:00, 13:30, 15:00, 16:30</textarea>
                 <p id="partner-schedule-feedback" class="empty-copy validation-msg"></p>
+                <div class="field-grid">
+                  <div class="field"><label for="partner-capacity">Veículos atendidos ao mesmo tempo</label><input id="partner-capacity" name="capacidadeSimultanea" type="number" min="1" max="100" step="1" value="1" required /></div>
+                  <div class="field"><label for="partner-closing">Encerramento dos atendimentos</label><input id="partner-closing" name="agendaFechamento" type="time" value="18:00" required /></div>
+                </div>
+                <div class="field"><label for="partner-blocks">Bloqueios por data (opcional)</label><textarea id="partner-blocks" name="agendaBloqueios" rows="4" placeholder="2026-12-25&#10;2026-12-24 12:00-18:00"></textarea></div>
+                <p class="empty-copy">Um bloqueio por linha: AAAA-MM-DD para o dia todo, ou AAAA-MM-DD HH:MM-HH:MM para um intervalo. Horários de Brasília. O serviço precisa terminar no mesmo dia, até o encerramento. Para serviços de vários dias, combine o atendimento diretamente.</p>
+                <p class="empty-copy">Mudanças na agenda valem para novas reservas e reagendamentos. Reservas existentes não são canceladas automaticamente; confira-as antes de reduzir a capacidade ou bloquear períodos.</p>
               </div>
 
               <div class="partner-form-section">
@@ -295,6 +310,7 @@
               <div class="wizard-nav">
                 <button type="button" class="btn btn-ghost" data-wizard-prev="3">← Voltar</button>
                 <button type="button" class="btn btn-primary wizard-next-btn" data-wizard-next="3">Próximo →</button>
+                <div id="partner-edit-submit-slot" class="hidden"></div>
               </div>
             </div>
 
@@ -324,7 +340,6 @@
               <div class="wizard-nav">
                 <button type="button" class="btn btn-ghost" data-wizard-prev="4">← Voltar</button>
                 <div class="wizard-submit-row">
-                  <button id="partner-cancel-edit" class="btn btn-ghost hidden" type="button" data-go-tab="estabelecimento">Cancelar edição</button>
                   <button id="partner-submit-btn" class="btn btn-primary" type="submit">Publicar lava jato</button>
                 </div>
               </div>
@@ -332,14 +347,12 @@
 
           </form>
         </div>
-      </section>
 
-      <section class="partner-tab-panel hidden" data-partner-panel="estabelecimento">
-        <div class="panel">
+        <div id="partner-shop-overview" class="panel">
           <div class="section-head">
-            <h2>Meu estabelecimento e serviços</h2>
+            <h2 id="partner-overview-title" tabindex="-1">Meu estabelecimento e serviços</h2>
           </div>
-          <div id="partner-owned-list" class="partner-owned-list"></div>
+          <div id="partner-owned-list" class="partner-owned-list"><p class="empty-copy">Carregando estabelecimento...</p></div>
         </div>
       </section>
 
@@ -427,6 +440,7 @@
     </div>
   </div>
 
+  <script src="assets/js/politica-senha.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
